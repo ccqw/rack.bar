@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1113">
+  <title>rack.bar — load the bar</title>
+  <meta name="description" content="Load a barbell to a target weight. Tells you exactly which plates to put on each side.">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--rack-bg);
+      color: var(--rack-fg);
+      font-family: var(--rack-font);
+      min-height: 100svh;
+      display: flex; flex-direction: column;
+      /* respect notches/home indicators on phones */
+      padding: env(safe-area-inset-top) env(safe-area-inset-right)
+               env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    /* The app owns the whole viewport — a single touch-first surface, no prose. */
+    main {
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: 4vh 5vw 6vh;
+    }
+  </style>
+</head>
+<body>
+  <!-- Placeholder application shell (scaffold). The real Decode/Encode console
+       replaces <rack-app> once the solver and bar graphic land. -->
+  <main>
+    <rack-app></rack-app>
+  </main>
+
+  <script type="module" src="./elements/app.ts"></script>
+</body>
+</html>

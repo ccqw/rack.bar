@@ -1,0 +1,30 @@
+name: CI
+
+# PR gate: the same typecheck -> test -> build steps deploy.yml runs on main, but
+# on pull requests, so a red merge is caught before it lands. Deliberately
+# duplicates deploy.yml's build steps; a reusable workflow is more concept than
+# these few lines warrant.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# Newest push per PR wins; superseded runs are cancelled, not queued.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

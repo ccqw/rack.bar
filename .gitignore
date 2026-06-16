@@ -1,0 +1,17 @@
+# Brainstorm/visual-companion scratch (not part of the site)
+.superpowers/
+
+# Build tooling
+node_modules/
+dist/
+
+# macOS
+.DS_Store
+
+# Editor noise
+*.swp
+.idea/
+.vscode/
+
+# Browser-automation droppings (Playwright MCP screenshots/snapshots)
+.playwright-mcp/

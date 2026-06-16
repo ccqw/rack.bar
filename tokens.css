@@ -1,0 +1,29 @@
+/* tokens.css — the single source of design truth.
+   These custom properties cross the Shadow DOM boundary, so both pages and
+   elements read them. Change a value here to restyle the whole site. */
+
+:root {
+  /* Type. System stack for now (no self-hosted font yet); the weight readout
+     wants tabular figures so digits don't jitter as the number changes. */
+  --rack-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --rack-font-num: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Surface — dark so the colored plates carry the screen. */
+  --rack-bg: #0f1113;
+  --rack-fg: #f2f2f3;
+  --rack-muted: #8b9197;
+  --rack-line: #23272b;
+  --rack-radius: 14px;
+
+  /* Plate colors — domain palette (CONTEXT.md), the IWF/Eleiko scheme. Lifters
+     name a plate by its color, so these are semantic, not decorative. The metal
+     change plates mirror their 10x bumper's color (25<->2.5 red, etc.). */
+  --rack-plate-red: #d5202a;     /* 25, 2.5 */
+  --rack-plate-blue: #1e5aa8;    /* 20, 2.0 */
+  --rack-plate-yellow: #f4c400;  /* 15, 1.5 */
+  --rack-plate-green: #2c9e47;   /* 10, 1.0 */
+  --rack-plate-white: #ededed;   /*  5, 0.5 */
+
+  /* Brand accent — the yellow plate doubles as the UI accent for now. */
+  --rack-accent: var(--rack-plate-yellow);
+}
