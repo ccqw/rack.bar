@@ -19,7 +19,7 @@ const EPS = 1e-9;
 /** One way to load the Bar: the Side Load, the Total it reaches, and the miss. */
 export interface Loadout {
   /** The Plates on one Side, heaviest-first -- the fewest that reach `total`. */
-  readonly side: Plate[];
+  readonly side: readonly Plate[];
   /** The Total actually on the Bar = Bar + 2 x Side Load (CONTEXT.md). */
   readonly total: number;
   /**
@@ -46,6 +46,14 @@ export function decode(
   bar: number = DEFAULT_BAR_KG,
   inventory: readonly Plate[] = ELEIKO_KG,
 ): Decoded {
+  // A non-finite Target (NaN, or Infinity from a "1e999"-style entry) has no
+  // achievable Total -- and an Infinity remaining would spin the greedy loop
+  // forever. Degrade to the bare Bar with a zero delta (we make no claim about
+  // how far off an unusable Target is).
+  if (!Number.isFinite(target)) {
+    return { primary: { side: [], total: bar, delta: 0 } };
+  }
+
   // A Target is Bar + 2 x Side Load, so each Side carries half the Plate weight.
   // The bare Bar is the floor: a Target lighter than it leaves the Side empty.
   let remaining = Math.max(0, (target - bar) / 2);

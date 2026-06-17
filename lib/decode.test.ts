@@ -87,6 +87,17 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
       expect(primary.delta).toBe(0);
       expect(totalKg(primary.side)).toBe(500);
     });
+
+    it('degrades a non-finite Target to the bare Bar instead of looping forever', () => {
+      // Infinity (e.g. from a "1e999" entry) would spin the greedy loop forever;
+      // NaN would yield a NaN delta. Both degrade to the bare Bar, zero delta.
+      for (const bad of [Infinity, -Infinity, NaN]) {
+        const { primary } = decode(bad);
+        expect(primary.side).toEqual([]);
+        expect(primary.total).toBe(20);
+        expect(primary.delta).toBe(0);
+      }
+    });
   });
 
   describe('parameterized core (ADR-0002)', () => {
@@ -104,6 +115,16 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
       // 41.5 per Side off this grid -> 25 + 15 = 40 per Side, leftover 1.5 dropped.
       expect(primary.total).toBe(100);
       expect(primary.delta).toBe(-3);
+    });
+
+    it('falls back to the bare Bar when the Inventory cannot reach the Target', () => {
+      // An empty Inventory builds nothing -- the at-or-under answer is the bare
+      // Bar, a large negative delta. (Surfacing this distinctly is the finite-
+      // Inventory slice's job; here we just pin the never-overshoot contract.)
+      const { primary } = decode(100, 20, []);
+      expect(primary.side).toEqual([]);
+      expect(primary.total).toBe(20);
+      expect(primary.delta).toBe(-80);
     });
   });
 });
