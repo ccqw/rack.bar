@@ -124,5 +124,17 @@ describe('<rack-console> (Decode: at-or-under + delta)', () => {
       expect(total(el)).toContain('100');
       expect(over(el).hidden).toBe(true);
     });
+
+    it('re-offers the round-up (not "back to") when a new off-grid Target is typed', () => {
+      const el = mountConsole();
+      type(el, '100.5');
+      over(el).click(); // showing over (101)
+      type(el, '142.5'); // new off-grid Target -> back on primary, over re-offered
+      expect(total(el)).toContain('142');
+      const opt = over(el);
+      expect(opt.hidden).toBe(false);
+      expect(opt.textContent!.toLowerCase()).toContain('round up'); // not the "back to" label
+      expect(opt.textContent).toContain('143');
+    });
   });
 });

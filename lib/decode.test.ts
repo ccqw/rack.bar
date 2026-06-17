@@ -123,10 +123,28 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
       expect(over!.delta).toBe(0.5);
     });
 
-    it('emits `over` Plates in non-increasing order, like primary', () => {
-      const { over } = decode(187.3);
+    it('offers `over` even when primary is the closer miss (always offer when under)', () => {
+      // 187.3 -> primary 187 (-0.3) is closer than over 188 (+0.7), yet the opt-in
+      // is still offered: the round-up is the lifter's choice, not gated on which
+      // miss is smaller. The step re-greedies the trailing 1 up to a 1.5 (yellow),
+      // biggest-first, rather than appending a 0.5.
+      const { primary, over } = decode(187.3);
+      expect(primary.total).toBe(187);
+      expect(over!.side.map((p) => p.kg)).toEqual([25, 25, 25, 5, 2.5, 1.5]);
+      expect(over!.total).toBe(188);
+      expect(over!.delta).toBeCloseTo(0.7, 10);
       const kgs = over!.side.map((p) => p.kg);
-      expect(kgs).toEqual([...kgs].sort((a, b) => b - a));
+      expect(kgs).toEqual([...kgs].sort((a, b) => b - a)); // non-increasing, like primary
+    });
+
+    it('computes `over` on a non-default Bar (threads bar through the step)', () => {
+      // 15 kg Bar, Target 56.5 -> 20.75 per Side. Primary 56 (20 + 0.5 per Side,
+      // -0.5); the step up is 57 (21 per Side: 20 + 1), +0.5 over.
+      const { primary, over } = decode(56.5, 15);
+      expect(primary.total).toBe(56);
+      expect(over!.side.map((p) => p.kg)).toEqual([20, 1]);
+      expect(over!.total).toBe(57);
+      expect(over!.delta).toBe(0.5);
     });
 
     it('never auto-selects `over`: primary is still at or under the Target', () => {

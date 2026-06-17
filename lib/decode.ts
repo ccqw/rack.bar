@@ -41,8 +41,10 @@ export interface Decoded {
    * The opt-in over-target alternative (ADR-0003): the least achievable Total
    * *strictly above* the Target, fewest Plates, with a positive `delta`. Present
    * only when `primary` lands strictly under the Target (`primary.delta < 0`) and
-   * the Inventory can build a higher Total; absent for exact, sub-Bar, non-finite,
-   * and unreachable Targets. Never auto-selected -- the shell offers it as a choice.
+   * the Inventory is non-empty -- so for the unlimited v1 set it appears whenever the
+   * Target is off-grid. Absent for an exact (`delta == 0`) or sub-Bar (`delta > 0`)
+   * Target, an empty Inventory, and -- via the early return below -- a non-finite
+   * Target. Never auto-selected -- the shell offers it as a choice.
    */
   readonly over?: Loadout;
 }
@@ -78,7 +80,8 @@ export function decode(
   // Target has nothing to round up to. The least achievable Total above the Target
   // is one grid step up: `primary`'s Side Load plus the smallest denomination,
   // re-filled biggest-first so any carry collapses to the fewest Plates. An empty
-  // Inventory has no denomination to step by, so there is no over option.
+  // Inventory has no denomination to step by (and `Math.min` of nothing is Infinity,
+  // which would spin fillSide's loop forever), so the length guard gates the block.
   if (primary.delta < -EPS && inventory.length > 0) {
     const step = Math.min(...inventory.map((p) => p.kg));
     const overSide = fillSide(sideLoadKg(side) + step, inventory);

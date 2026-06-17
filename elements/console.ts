@@ -3,9 +3,10 @@
 // the scaffold <rack-app> placeholder: this is the app from RBAR-2 on. Encode mode
 // and the Decode/Encode toggle land in RBAR-7.
 //
-// ADR-0003: decode() returns a `primary` Loadout that never overshoots; this shell
-// only reads primary.side / primary.total / primary.delta -- all the loading logic
-// lives in the pure core.
+// ADR-0003: decode() returns a `primary` Loadout that never overshoots, plus an
+// optional over-target `over` Loadout. This shell renders `primary` by default and
+// switches to `over` only on the explicit opt-in (never auto-selected) -- all the
+// loading logic lives in the pure core.
 import './entry.ts';
 import './sleeve.ts';
 import { decode } from '../lib/decode.ts';
@@ -107,7 +108,9 @@ class RackConsole extends HTMLElement {
     const shown = this.showingOver && over ? over : primary;
     this.sleeve.sideLoad = shown.side;
     this.total.textContent = `${shown.total} kg`;
-    this.setDelta(shown.delta, this.showingOver && over !== undefined);
+    // `shown === over` is true exactly when the over option is on screen -- the one
+    // signal setDelta needs to read a positive delta as "over target" not sub-Bar.
+    this.setDelta(shown.delta, shown === over);
     this.setOver(over ?? null);
   }
 

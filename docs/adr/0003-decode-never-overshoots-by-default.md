@@ -59,5 +59,8 @@ auto-pick, so the lifter should always have the round-up available when their Ta
 off-grid -- not only on the half of off-grid Targets where the overshoot happens to be
 the smaller miss. `over` is therefore **absent** exactly when there is nothing to offer:
 an exactly-achievable Target (`delta == 0`), a sub-Bar Target (`primary` already sits
-above the Target at the bare Bar, `delta > 0`), and an Inventory that cannot exceed the
-Target (e.g. empty Inventory -- a finite-Inventory concern deferred past v1).
+above the Target at the bare Bar, `delta > 0`), and -- by the guard's actual test, a
+non-empty Inventory -- an *empty* Inventory (no denomination to step up by). For the
+unlimited v1 set a non-empty Inventory can always exceed the Target, so `over` appears
+for every off-grid Target. A finite Inventory that is non-empty yet still cannot exceed
+the Target is not specially handled here (a finite-Inventory concern deferred past v1).
