@@ -18,7 +18,11 @@ const EPS = 1e-9;
 
 /** One way to load the Bar: the Side Load, the Total it reaches, and the miss. */
 export interface Loadout {
-  /** The Plates on one Side, heaviest-first -- the fewest that reach `total`. */
+  /**
+   * The Plates on one Side, heaviest-first. The fewest that reach `total` for a
+   * canonical Inventory like the default Eleiko set (see the greedy note on
+   * `decode`); a non-canonical custom Inventory may not be minimal.
+   */
   readonly side: readonly Plate[];
   /** The Total actually on the Bar = Bar + 2 x Side Load (CONTEXT.md). */
   readonly total: number;
