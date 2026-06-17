@@ -11,3 +11,14 @@ purely additive — new UI feeding existing parameters — instead of a core ref
 A future reader seeing a fixed-20 kg interface over a fully parameterized core
 should know the generality is deliberate, not accidental. The same principle
 governs the whole project: model the real inputs in the core, defer the UI.
+
+## 2026-06-16 -- naming: the Decode direction ships as `decode()`
+
+This ADR sketched the core as `solve(target, bar, inventory)`. The two directions
+later got first-class names in CONTEXT.md and the RBAR tickets: **Decode** (a Target
+maps to a Side Load) and **Encode** (a tapped Side Load maps to its Total). So the
+parameterized core lands as `decode(target, bar, inventory)` (RBAR-2 walking
+skeleton, deepened in RBAR-6); Encode is a separate pair of Side Load transforms
+(`addPlate`/`removePlate`, RBAR-7), not a second arg to `solve`. The decision this
+ADR records -- a parameterized core with deferred Bar/Inventory UI -- is unchanged;
+only the name `solve` is superseded by `decode` for the Decode direction.
