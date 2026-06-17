@@ -101,7 +101,7 @@ class RackConsole extends HTMLElement {
       this.sleeve.sideLoad = [];
       this.total.textContent = `${DEFAULT_BAR_KG} kg`;
       this.setDelta(null, false);
-      this.setOver(null);
+      this.setOver(null, DEFAULT_BAR_KG);
       return;
     }
     const { primary, over } = this.decoded;
@@ -111,7 +111,7 @@ class RackConsole extends HTMLElement {
     // `shown === over` is true exactly when the over option is on screen -- the one
     // signal setDelta needs to read a positive delta as "over target" not sub-Bar.
     this.setDelta(shown.delta, shown === over);
-    this.setOver(over ?? null);
+    this.setOver(over ?? null, primary.total);
   }
 
   // The delta note. Negative: the grid landed a few kg under the Target. Positive
@@ -136,7 +136,10 @@ class RackConsole extends HTMLElement {
   // The over-target opt-in control. Absent when there is no over option. Otherwise it
   // offers the *other* Loadout: round up to over while on primary, or drop back to
   // primary while on over -- so the lifter can always step either way.
-  private setOver(over: { total: number; delta: number } | null): void {
+  private setOver(
+    over: { total: number; delta: number } | null,
+    primaryTotal: number,
+  ): void {
     if (over === null) {
       this.over.hidden = true;
       this.over.textContent = '';
@@ -144,7 +147,7 @@ class RackConsole extends HTMLElement {
     }
     this.over.hidden = false;
     this.over.textContent = this.showingOver
-      ? `Back to ${this.decoded!.primary.total} kg (under target)`
+      ? `Back to ${primaryTotal} kg (under target)`
       : `Round up to ${over.total} kg (+${fmtKg(over.delta)})`;
   }
 }
