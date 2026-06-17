@@ -25,7 +25,11 @@ class RackEntry extends HTMLElement {
         input:focus { border-bottom-color: var(--rack-accent); }
       </style>
       <label for="t">Target (kg)</label>
-      <input id="t" type="number" inputmode="decimal" min="0" step="0.5"
+      <!-- step=1: every achievable Total is a whole kg. The smallest Plate is
+           0.5 kg, but it loads on both Sides (2 x 0.5 = 1), so the Total grid is
+           integers. Stepping by 0.5 would land on off-grid half-kilos every
+           other tick. -->
+      <input id="t" type="number" inputmode="numeric" min="0" step="1"
              placeholder="0" />
     `;
     const input = this.root.querySelector('input')!;

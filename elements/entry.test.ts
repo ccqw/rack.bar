@@ -20,6 +20,14 @@ describe('<rack-entry>', () => {
     expect(seen).toHaveBeenCalledWith(100);
   });
 
+  it('steps by whole kilos -- the achievable Total grid is integers', () => {
+    // Smallest Plate is 0.5 kg but it loads on both Sides (2 x 0.5 = 1 kg), so
+    // every loadable Total is a whole number. Stepping by 0.5 would land on
+    // off-grid half-kilos every other tick.
+    const { input } = mountEntry();
+    expect(input.step).toBe('1');
+  });
+
   it('reports an empty field as a null Target, never NaN', () => {
     const { el, input } = mountEntry();
     let detail: { target: number | null } | undefined;
