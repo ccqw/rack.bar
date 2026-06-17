@@ -9,7 +9,7 @@
 // (25,20,15,10,5 = 5x{5,4,3,2,1}; the change Plates mirror that at 0.5x), so no
 // search/backtracking is needed. A future non-canonical Inventory (finite home-gym
 // counts) would revisit this -- out of scope here (RBAR-6).
-import { ELEIKO_KG, DEFAULT_BAR_KG, totalKg } from './plates.ts';
+import { ELEIKO_KG, DEFAULT_BAR_KG, totalKg, sideLoadKg } from './plates.ts';
 import type { Plate } from './plates.ts';
 
 // Our denominations are exact binary fractions, but keep a hair of tolerance so a
@@ -33,10 +33,18 @@ export interface Loadout {
   readonly delta: number;
 }
 
-/** The result of decoding a Target. RBAR-11 adds an opt-in over-target `alternative`. */
+/** The result of decoding a Target. */
 export interface Decoded {
   /** The at-or-under suggestion (ADR-0003): greatest Total <= Target, fewest Plates. */
   readonly primary: Loadout;
+  /**
+   * The opt-in over-target alternative (ADR-0003): the least achievable Total
+   * *strictly above* the Target, fewest Plates, with a positive `delta`. Present
+   * only when `primary` lands strictly under the Target (`primary.delta < 0`) and
+   * the Inventory can build a higher Total; absent for exact, sub-Bar, non-finite,
+   * and unreachable Targets. Never auto-selected -- the shell offers it as a choice.
+   */
+  readonly over?: Loadout;
 }
 
 /**
@@ -60,8 +68,37 @@ export function decode(
 
   // A Target is Bar + 2 x Side Load, so each Side carries half the Plate weight.
   // The bare Bar is the floor: a Target lighter than it leaves the Side empty.
-  let remaining = Math.max(0, (target - bar) / 2);
+  const sidePerHalf = Math.max(0, (target - bar) / 2);
+  const side = fillSide(sidePerHalf, inventory);
+  const total = totalKg(side, bar);
+  const primary: Loadout = { side, total, delta: total - target };
 
+  // The opt-in over-target alternative (ADR-0003, RBAR-11): only when `primary`
+  // lands strictly under the Target -- an exact (delta 0) or sub-Bar (delta > 0)
+  // Target has nothing to round up to. The least achievable Total above the Target
+  // is one grid step up: `primary`'s Side Load plus the smallest denomination,
+  // re-filled biggest-first so any carry collapses to the fewest Plates. An empty
+  // Inventory has no denomination to step by, so there is no over option.
+  if (primary.delta < -EPS && inventory.length > 0) {
+    const step = Math.min(...inventory.map((p) => p.kg));
+    const overSide = fillSide(sideLoadKg(side) + step, inventory);
+    const overTotal = totalKg(overSide, bar);
+    return {
+      primary,
+      over: { side: overSide, total: overTotal, delta: overTotal - target },
+    };
+  }
+
+  return { primary };
+}
+
+/**
+ * Greedily fill one Side to the greatest reachable Side Load at or under
+ * `perSideKg`, biggest Plate first -- the fewest Plates for a canonical Inventory
+ * (see the greedy note on `decode`).
+ */
+function fillSide(perSideKg: number, inventory: readonly Plate[]): Plate[] {
+  let remaining = perSideKg;
   const side: Plate[] = [];
   for (const plate of inventory) {
     while (remaining >= plate.kg - EPS) {
@@ -69,7 +106,5 @@ export function decode(
       remaining -= plate.kg;
     }
   }
-
-  const total = totalKg(side, bar);
-  return { primary: { side, total, delta: total - target } };
+  return side;
 }
