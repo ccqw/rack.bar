@@ -1,11 +1,15 @@
 // <rack-console> -- the Decode surface. Wires the Target entry through decode() to
-// the sleeve graphic and the achieved Total (CONTEXT.md). It replaces the scaffold
-// <rack-app> placeholder: this is the app from RBAR-2 on. Encode mode and the
-// Decode/Encode toggle land in RBAR-7.
+// the sleeve graphic, the achieved Total, and the delta (CONTEXT.md). It replaces
+// the scaffold <rack-app> placeholder: this is the app from RBAR-2 on. Encode mode
+// and the Decode/Encode toggle land in RBAR-7.
+//
+// ADR-0003: decode() returns a `primary` Loadout that never overshoots; this shell
+// only reads primary.side / primary.total / primary.delta -- all the loading logic
+// lives in the pure core.
 import './entry.ts';
 import './sleeve.ts';
 import { decode } from '../lib/decode.ts';
-import { totalKg, DEFAULT_BAR_KG } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 
 type Sleeve = HTMLElement & { sideLoad: readonly Plate[] };
@@ -14,6 +18,7 @@ class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private sleeve!: Sleeve;
   private total!: HTMLElement;
+  private delta!: HTMLElement;
 
   connectedCallback(): void {
     this.root.innerHTML = `
@@ -29,23 +34,27 @@ class RackConsole extends HTMLElement {
           font-size: clamp(28px, 9vw, 40px); font-weight: 600;
           color: var(--rack-fg);
         }
-        /* The off-grid "can't build it exactly" note reads as a quiet aside. */
-        .readout output[data-loadable="no"] {
-          font-size: 16px; font-weight: 400; color: var(--rack-muted);
+        /* The "a few kg short" / "below the Bar" note reads as a quiet aside. */
+        .readout .delta {
+          display: block; margin-top: 2px;
+          font-size: 13px; color: var(--rack-muted);
         }
+        .readout .delta[hidden] { display: none; }
       </style>
       <div class="stack">
         <rack-entry></rack-entry>
         <rack-sleeve></rack-sleeve>
         <div class="readout">
           <span class="label">Total</span>
-          <output data-total data-loadable="yes">${DEFAULT_BAR_KG} kg</output>
+          <output data-total>${DEFAULT_BAR_KG} kg</output>
+          <span class="delta" data-delta hidden></span>
         </div>
       </div>
     `;
     const entry = this.root.querySelector('rack-entry')!;
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
     this.total = this.root.querySelector('[data-total]')!;
+    this.delta = this.root.querySelector('[data-delta]')!;
 
     entry.addEventListener('target', (e) => {
       this.update((e as CustomEvent<{ target: number | null }>).detail.target);
@@ -56,23 +65,36 @@ class RackConsole extends HTMLElement {
   private update(target: number | null): void {
     if (target === null) {
       this.sleeve.sideLoad = [];
-      this.setTotal(`${DEFAULT_BAR_KG} kg`, true);
+      this.total.textContent = `${DEFAULT_BAR_KG} kg`;
+      this.setDelta(null);
       return;
     }
-    const side = decode(target);
-    if (side === null) {
-      this.sleeve.sideLoad = [];
-      this.setTotal('not exactly loadable', false);
-      return;
-    }
-    this.sleeve.sideLoad = side;
-    this.setTotal(`${totalKg(side)} kg`, true);
+    const { primary } = decode(target);
+    this.sleeve.sideLoad = primary.side;
+    this.total.textContent = `${primary.total} kg`;
+    this.setDelta(primary.delta);
   }
 
-  private setTotal(text: string, loadable: boolean): void {
-    this.total.textContent = text;
-    this.total.dataset.loadable = loadable ? 'yes' : 'no';
+  // Negative delta: the grid landed a few kg under the Target. Positive delta: the
+  // Target is lighter than the bare Bar (the floor). Exact (0) or no Target: hidden.
+  private setDelta(delta: number | null): void {
+    if (delta === null || delta === 0) {
+      this.delta.hidden = true;
+      this.delta.textContent = '';
+      return;
+    }
+    this.delta.hidden = false;
+    this.delta.textContent =
+      delta < 0
+        ? `${fmtKg(-delta)} kg under target`
+        : `below the ${DEFAULT_BAR_KG} kg Bar`;
   }
+}
+
+// Strip floating-point fuzz and trailing zeros so a 0.5 kg miss reads "0.5", not
+// "0.5000000001" or "0.50".
+function fmtKg(kg: number): string {
+  return String(Number(kg.toFixed(2)));
 }
 
 customElements.define('rack-console', RackConsole);
