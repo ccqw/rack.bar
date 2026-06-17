@@ -1,5 +1,5 @@
-// <rack-sleeve> -- one loaded end of the Bar (a Side), drawn as colored discs with
-// the heaviest at the collar (CONTEXT.md: a Side Load is the Plates on one Side).
+// <rack-sleeve> -- one loaded Side of the Bar, drawn as colored discs with the
+// heaviest at the collar (CONTEXT.md: a Side Load is the Plates on one Side).
 // WALKING SKELETON (RBAR-2): a flat row of uniform discs in the Eleiko colors.
 // Real diameter-based sizing (ADR-0004) and the bar/collar graphic land in RBAR-9.
 import type { Plate } from '../lib/plates.ts';
