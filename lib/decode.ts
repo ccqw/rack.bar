@@ -1,41 +1,75 @@
 // Decode: a Target maps to the Side Load that builds it (CONTEXT.md) -- rack.bar's
 // primary direction. ADR-0002: the core is parameterized; Bar and Inventory are
-// inputs with v1 defaults. ADR-0003: the canonical pick is the fewest Plates,
-// loaded biggest-first.
+// inputs with v1 defaults. ADR-0003: Decode never overshoots by default -- the
+// primary suggestion is the greatest achievable Total at or under the Target, as
+// the fewest Plates loaded biggest-first.
 //
-// WALKING SKELETON (RBAR-2): exact Targets only -- a naive greedy heaviest-first
-// pass returning the exact Side Load when the Target lands on the achievable grid,
-// or null when it does not. Greedy is both exact and canonical for the Eleiko set
-// (every Plate is a multiple of 0.5 kg). RBAR-6 deepens this into nearest-at-or-
-// under with delta and edge handling; the signature is meant to hold.
-import { ELEIKO_KG, DEFAULT_BAR_KG } from './plates.ts';
+// A naive greedy heaviest-first pass is both minimal-Plate AND greatest-at-or-under
+// for the standard Eleiko set, because it is a canonical coin system
+// (25,20,15,10,5 = 5x{5,4,3,2,1}; the change Plates mirror that at 0.5x), so no
+// search/backtracking is needed. A future non-canonical Inventory (finite home-gym
+// counts) would revisit this -- out of scope here (RBAR-6).
+import { ELEIKO_KG, DEFAULT_BAR_KG, totalKg } from './plates.ts';
 import type { Plate } from './plates.ts';
 
 // Our denominations are exact binary fractions, but keep a hair of tolerance so a
 // future fractional Plate can't be defeated by floating-point drift.
 const EPS = 1e-9;
 
+/** One way to load the Bar: the Side Load, the Total it reaches, and the miss. */
+export interface Loadout {
+  /**
+   * The Plates on one Side, heaviest-first. The fewest that reach `total` for a
+   * canonical Inventory like the default Eleiko set (see the greedy note on
+   * `decode`); a non-canonical custom Inventory may not be minimal.
+   */
+  readonly side: readonly Plate[];
+  /** The Total actually on the Bar = Bar + 2 x Side Load (CONTEXT.md). */
+  readonly total: number;
+  /**
+   * `total - target`: 0 when exact, negative when the achievable grid lands short.
+   * Positive only when the Target is below the bare Bar (the Bar is the floor).
+   */
+  readonly delta: number;
+}
+
+/** The result of decoding a Target. RBAR-11 adds an opt-in over-target `alternative`. */
+export interface Decoded {
+  /** The at-or-under suggestion (ADR-0003): greatest Total <= Target, fewest Plates. */
+  readonly primary: Loadout;
+}
+
 /**
- * The Side Load that exactly reaches `target` on `bar`, drawn from `inventory`
- * (heaviest-first), as the fewest Plates biggest-first. Null when the Target is
- * below the bare Bar or not exactly buildable from the Inventory.
+ * Decode `target` on `bar`, drawing from `inventory`: the greatest achievable Total
+ * at or under the Target, as the fewest Plates biggest-first (ADR-0003). Never
+ * overshoots for any Target at or above the Bar; a sub-Bar Target floors at the bare
+ * Bar (empty Side Load, positive delta). Always returns a Loadout -- never null.
  */
 export function decode(
   target: number,
   bar: number = DEFAULT_BAR_KG,
   inventory: readonly Plate[] = ELEIKO_KG,
-): Plate[] | null {
-  // A Target is Bar + 2 x Side Load, so each Side carries half the Plate weight.
-  let remaining = (target - bar) / 2;
-  if (remaining < -EPS) return null;
+): Decoded {
+  // A non-finite Target (NaN, or Infinity from a "1e999"-style entry) has no
+  // achievable Total -- and an Infinity remaining would spin the greedy loop
+  // forever. Degrade to the bare Bar with a zero delta (we make no claim about
+  // how far off an unusable Target is).
+  if (!Number.isFinite(target)) {
+    return { primary: { side: [], total: bar, delta: 0 } };
+  }
 
-  const sideLoad: Plate[] = [];
+  // A Target is Bar + 2 x Side Load, so each Side carries half the Plate weight.
+  // The bare Bar is the floor: a Target lighter than it leaves the Side empty.
+  let remaining = Math.max(0, (target - bar) / 2);
+
+  const side: Plate[] = [];
   for (const plate of inventory) {
     while (remaining >= plate.kg - EPS) {
-      sideLoad.push(plate);
+      side.push(plate);
       remaining -= plate.kg;
     }
   }
-  // Any leftover means the grid cannot hit this Target exactly.
-  return Math.abs(remaining) <= EPS ? sideLoad : null;
+
+  const total = totalKg(side, bar);
+  return { primary: { side, total, delta: total - target } };
 }

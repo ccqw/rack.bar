@@ -27,12 +27,17 @@ function total(el: HTMLElement): string {
   return el.shadowRoot!.querySelector('[data-total]')!.textContent ?? '';
 }
 
-describe('<rack-console> (Decode walking skeleton)', () => {
-  it('decodes an exact Target into discs and the achieved Total', () => {
+function delta(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('[data-delta]')!;
+}
+
+describe('<rack-console> (Decode: at-or-under + delta)', () => {
+  it('decodes an exact Target into discs and the achieved Total, with no delta note', () => {
     const el = mountConsole();
     type(el, '100');
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
     expect(total(el)).toContain('100');
+    expect(delta(el).hidden).toBe(true);
   });
 
   it('shows the bare Bar and Total 20 for an empty Target', () => {
@@ -40,11 +45,28 @@ describe('<rack-console> (Decode walking skeleton)', () => {
     type(el, '');
     expect(discs(el).length).toBe(0);
     expect(total(el)).toContain('20');
+    expect(delta(el).hidden).toBe(true);
   });
 
-  it('renders no discs for an off-grid Target it cannot build exactly', () => {
+  it('rounds an off-grid Target down and renders how far under it landed', () => {
     const el = mountConsole();
     type(el, '100.5');
+    // Nearest at-or-under is 100 -> the same 25 + 15 Side Load is shown.
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+    expect(total(el)).toContain('100');
+    const note = delta(el);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain('0.5');
+    expect(note.textContent!.toLowerCase()).toContain('under');
+  });
+
+  it('floors a sub-Bar Target at the bare Bar and flags it', () => {
+    const el = mountConsole();
+    type(el, '10');
     expect(discs(el).length).toBe(0);
+    expect(total(el)).toContain('20');
+    const note = delta(el);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent!.toLowerCase()).toContain('bar');
   });
 });
