@@ -38,3 +38,29 @@ the lifter their Target is lighter than the unloaded Bar.
 Targets (e.g. 100.5, 142.5) round down to the nearest achievable Total with a
 negative delta. (The RBAR-6 ticket's "101, 102 -> 100" example predated this and
 assumed a 5 kg grid; corrected here to match the real Inventory.)
+
+## 2026-06-17 -- the over-target `alternative` (RBAR-11)
+
+RBAR-11 adds the opt-in over-target option this ADR promised. The result shape widens:
+
+    Decoded = { primary: Loadout; over?: Loadout }
+
+`over` is the **least achievable Total strictly above the Target** -- one grid step up
+from `primary` -- as the fewest Plates biggest-first. Its `delta` is positive (the
+overshoot). It is never auto-selected: the console offers it as an explicit choice
+beside `primary`, so the never-overshoot default is preserved.
+
+**When `over` is present (decided RBAR-11).** Whenever `primary` lands *strictly under*
+the Target (`primary.delta < 0`) and the Inventory can build a higher Total. This is
+the "always offer the round-up when the Target isn't exactly achievable" rule, chosen
+over the narrower "only when the over option is numerically closer than `primary`"
+reading of this ADR's opening prose. Rationale: `over` is a deliberate opt-in, not an
+auto-pick, so the lifter should always have the round-up available when their Target is
+off-grid -- not only on the half of off-grid Targets where the overshoot happens to be
+the smaller miss. `over` is therefore **absent** exactly when there is nothing to offer:
+an exactly-achievable Target (`delta == 0`), a sub-Bar Target (`primary` already sits
+above the Target at the bare Bar, `delta > 0`), and -- by the guard's actual test, a
+non-empty Inventory -- an *empty* Inventory (no denomination to step up by). For the
+unlimited v1 set a non-empty Inventory can always exceed the Target, so `over` appears
+for every off-grid Target. A finite Inventory that is non-empty yet still cannot exceed
+the Target is not specially handled here (a finite-Inventory concern deferred past v1).
