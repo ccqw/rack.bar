@@ -68,7 +68,7 @@ class RackEntry extends HTMLElement {
     this.root.innerHTML = `
       <style>
         :host { display: block; }
-        label {
+        .caption {
           display: block; text-align: center;
           color: var(--rack-muted); font-size: 13px; margin-bottom: 6px;
         }
@@ -119,7 +119,8 @@ class RackEntry extends HTMLElement {
         }
         .clear:focus-visible { outline: 2px solid var(--rack-accent); }
       </style>
-      <label id="lbl">Target (kg)</label>
+      <!-- A decorative caption; the value button carries its own live aria-label. -->
+      <div class="caption">Target (kg)</div>
       <div class="row">
         <button type="button" class="step" data-step="dec" aria-label="Decrease by ${STEP_KG} kg">-</button>
         <button type="button" class="value" data-value
