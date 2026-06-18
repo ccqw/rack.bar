@@ -86,6 +86,46 @@ describe('<rack-entry>', () => {
     expect(seen).toHaveBeenLastCalledWith(5);
   });
 
+  it('del on the untouched default clears to no Target (the default is a placeholder)', () => {
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    key(root, 'del');
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
+  it('drops a lone leading zero so the shown value matches the Target (0 then 5 -> 5)', () => {
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    key(root, '0');
+    key(root, '5');
+    expect(seen).toHaveBeenLastCalledWith(5);
+    expect(root.querySelector('[data-value]')!.textContent).toBe('5');
+  });
+
+  it('steps cleanly from a fractional value without float fuzz', () => {
+    const { el, root } = mountEntry();
+    el.display(142.5);
+    const seen = targetSpy(el);
+    tap(root, '[data-step="inc"]');
+    expect(seen).toHaveBeenLastCalledWith(143.5);
+  });
+
+  it('steps correctly from a mid-entry trailing-decimal draft (142. -> 143)', () => {
+    const { el, root } = mountEntry();
+    ['1', '4', '2', '.'].forEach((k) => key(root, k)); // draft "142." emits 142
+    const seen = targetSpy(el);
+    tap(root, '[data-step="inc"]');
+    expect(seen).toHaveBeenLastCalledWith(143);
+  });
+
+  it('reflects the keypad open state via aria-expanded', () => {
+    const { root } = mountEntry();
+    const value = root.querySelector<HTMLElement>('[data-value]')!;
+    expect(value.getAttribute('aria-expanded')).toBe('false');
+    tap(root, '[data-value]');
+    expect(value.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('never steps the Target below zero', () => {
     const { el, root } = mountEntry();
     el.display(0);

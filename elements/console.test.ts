@@ -52,7 +52,7 @@ function palette(el: HTMLElement): HTMLElement {
 }
 
 // The value currently shown in the Target field (what the +/- steppers move from).
-// An empty draft renders a muted "0" placeholder; report that as '' (no Target).
+// An empty draft renders the muted Bar-weight anchor; report that as '' (no Target).
 function entryValue(el: HTMLElement): string {
   const v = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value]')!;
   return v.classList.contains('empty') ? '' : v.textContent ?? '';

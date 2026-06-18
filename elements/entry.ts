@@ -24,6 +24,9 @@ const KEYPAD_ROWS: readonly (readonly string[])[] = [
   ['.', '0', 'del'],
 ];
 
+// Spoken labels for the non-digit keys; digits announce as themselves.
+const KEY_ARIA: Record<string, string> = { del: 'Delete', '.': 'Decimal point' };
+
 // The achievable Total grid is whole kilos: the smallest Plate is 0.5 kg but it loads
 // on both Sides (2 x 0.5 = 1 kg), so the sensible stepper nudge is 1 kg.
 const STEP_KG = 1;
@@ -55,18 +58,12 @@ class RackEntry extends HTMLElement {
   }
 
   connectedCallback(): void {
-    const keys = KEYPAD_ROWS.map(
-      (row) =>
-        row
-          .map((k) => {
-            const label = k === 'del' ? 'del' : k;
-            const aria =
-              k === 'del' ? 'Delete' : k === '.' ? 'Decimal point' : k;
-            return `<button type="button" class="key" data-key="${k}"
-                      aria-label="${aria}">${label}</button>`;
-          })
-          .join(''),
-    ).join('');
+    const keys = KEYPAD_ROWS.flat()
+      .map(
+        (k) => `<button type="button" class="key" data-key="${k}"
+                  aria-label="${KEY_ARIA[k] ?? k}">${k}</button>`,
+      )
+      .join('');
 
     this.root.innerHTML = `
       <style>
@@ -126,7 +123,7 @@ class RackEntry extends HTMLElement {
       <div class="row">
         <button type="button" class="step" data-step="dec" aria-label="Decrease by ${STEP_KG} kg">-</button>
         <button type="button" class="value" data-value
-                aria-labelledby="lbl" aria-haspopup="true">${DEFAULT_BAR_KG}</button>
+                aria-haspopup="true" aria-expanded="false">${DEFAULT_BAR_KG}</button>
         <button type="button" class="step" data-step="inc" aria-label="Increase by ${STEP_KG} kg">+</button>
       </div>
       <div class="keypad" data-keypad role="group" aria-label="Enter Target" hidden>
@@ -140,6 +137,7 @@ class RackEntry extends HTMLElement {
 
     this.valueEl.addEventListener('click', () => {
       this.keypad.hidden = !this.keypad.hidden;
+      this.valueEl.setAttribute('aria-expanded', String(!this.keypad.hidden));
     });
     this.root
       .querySelector('[data-step="inc"]')!
@@ -171,7 +169,10 @@ class RackEntry extends HTMLElement {
       if (fresh) this.draft = '';
       if (!this.draft.includes('.')) this.draft += this.draft === '' ? '0.' : '.';
     } else {
-      this.draft = (fresh ? '' : this.draft) + k;
+      // Drop a lone leading zero ("0" + "5" -> "5") so the shown draft matches the
+      // Target it decodes to; a leading zero before a decimal is kept by the '.' branch.
+      const base = fresh ? '' : this.draft;
+      this.draft = base === '0' ? k : base + k;
     }
     this.renderValue();
     this.emit();
@@ -200,8 +201,11 @@ class RackEntry extends HTMLElement {
   // a real value shows solid.
   private renderValue(): void {
     const empty = this.draft === '';
-    this.valueEl.textContent = empty ? String(DEFAULT_BAR_KG) : this.draft;
+    const shown = empty ? String(DEFAULT_BAR_KG) : this.draft;
+    this.valueEl.textContent = shown;
     this.valueEl.classList.toggle('empty', empty);
+    // Announce the live value (aria-labelledby would override the text and hide it).
+    this.valueEl.setAttribute('aria-label', `Target ${shown} kg`);
   }
 
   private emit(): void {
