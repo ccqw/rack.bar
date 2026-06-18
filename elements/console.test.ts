@@ -7,12 +7,14 @@ function mountConsole(): HTMLElement {
   return el;
 }
 
+// Type a Target through the entry's on-screen keypad (RBAR-8) -- the real input path.
+// Clears first, then taps each digit/decimal; '' just clears back to a bare Bar.
 function type(el: HTMLElement, value: string): void {
-  const input = el
-    .shadowRoot!.querySelector('rack-entry')!
-    .shadowRoot!.querySelector('input')!;
-  input.value = value;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
+  const root = el.shadowRoot!.querySelector('rack-entry')!.shadowRoot!;
+  const press = (k: string) =>
+    root.querySelector<HTMLButtonElement>(`[data-key="${CSS.escape(k)}"]`)!.click();
+  press('clear');
+  for (const ch of value) press(ch);
 }
 
 function discs(el: HTMLElement): HTMLElement[] {
@@ -49,9 +51,11 @@ function palette(el: HTMLElement): HTMLElement {
   return el.shadowRoot!.querySelector<HTMLElement>('rack-palette')!;
 }
 
-// The value currently in the Target field (what the +/- steppers move from).
+// The value currently shown in the Target field (what the +/- steppers move from).
+// An empty draft renders the muted Bar-weight anchor; report that as '' (no Target).
 function entryValue(el: HTMLElement): string {
-  return entry(el).shadowRoot!.querySelector('input')!.value;
+  const v = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value]')!;
+  return v.classList.contains('empty') ? '' : v.textContent ?? '';
 }
 
 // Tap a denomination key on the Encode palette (by kg).
@@ -298,7 +302,7 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
 
     it('seeds the Target field with the carried Total so the steppers move from it', () => {
       // After building in Encode and switching to Decode, the field must hold the
-      // current Total -- the native +/- spinner steps from the field value, so a blank
+      // current Total -- the +/- steppers step from the field value, so a blank
       // field would step from zero and throw away the loaded weight.
       const el = mountConsole();
       modeBtn(el, 'encode').click();
