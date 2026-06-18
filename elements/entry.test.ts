@@ -38,4 +38,23 @@ describe('<rack-entry>', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect(detail?.target).toBeNull();
   });
+
+  it('display() seeds or clears the field WITHOUT emitting a target event', () => {
+    // The load-bearing half of the contract: the console calls display() on switching
+    // back to Decode to seed the box with the carried Total (so the steppers move from
+    // it), and a stray target event would re-decode and stomp the carried Side Load
+    // (ADR-0005). Both seed and clear must stay silent.
+    const el = document.createElement('rack-entry') as HTMLElement & {
+      display(value: number | null): void;
+    };
+    document.body.append(el);
+    const input = el.shadowRoot!.querySelector('input')!;
+    const seen = vi.fn();
+    el.addEventListener('target', seen);
+    el.display(50);
+    expect(input.value).toBe('50');
+    el.display(null);
+    expect(input.value).toBe('');
+    expect(seen).not.toHaveBeenCalled();
+  });
 });

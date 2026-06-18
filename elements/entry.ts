@@ -5,6 +5,18 @@
 
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
+  private input!: HTMLInputElement;
+
+  /**
+   * Show `value` in the field without emitting a `target` event (null clears it). The
+   * console calls this when switching back into Decode (RBAR-7, ADR-0005): it seeds the
+   * box with the carried Side Load's Total so the +/- steppers move from the real
+   * current weight, not from zero -- and stays silent, so the hand-built loadout is not
+   * re-decoded (and never collapses to its canonical form) until the lifter acts.
+   */
+  display(value: number | null): void {
+    this.input.value = value === null ? '' : String(value);
+  }
 
   connectedCallback(): void {
     this.root.innerHTML = `
@@ -32,7 +44,8 @@ class RackEntry extends HTMLElement {
       <input id="t" type="number" inputmode="numeric" min="0" step="1"
              placeholder="0" />
     `;
-    const input = this.root.querySelector('input')!;
+    this.input = this.root.querySelector('input')!;
+    const input = this.input;
     input.addEventListener('input', () => {
       const raw = input.value.trim();
       const parsed = raw === '' ? null : Number(raw);
