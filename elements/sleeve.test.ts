@@ -102,6 +102,42 @@ describe('<rack-sleeve>', () => {
       const disc = discs(el)[0];
       expect(disc.querySelector('.label')).not.toBeNull(); // the label lives on the disc
       expect(labels(el)[0].getAttribute('aria-hidden')).toBe('true'); // not announced twice
+      // The disc itself carries the accessible name (so the aria-hidden caption isn't a gap).
+      expect(disc.getAttribute('aria-label')).toBe('25 kg red Plate');
+    });
+
+    it('names the disc with the Remove verb in Encode (the tap target a screen reader hears)', () => {
+      const el = mountSleeve();
+      el.interactive = true;
+      el.sideLoad = side(25);
+      expect(discs(el)[0].getAttribute('aria-label')).toBe('Remove 25 kg red Plate');
+    });
+  });
+
+  describe('digit stacking (a thin plate too narrow for a horizontal number)', () => {
+    function labelHtml(el: HTMLElement): string[] {
+      return [...el.shadowRoot!.querySelectorAll<HTMLElement>('.label')].map(
+        (l) => l.innerHTML,
+      );
+    }
+
+    it('stacks a thin change plate\'s digits one per line, upright', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(2.5, 0.5); // both under the 30 mm stack threshold
+      // textContent still reads the plain kg (the <br>s drop out), but the markup stacks.
+      expect(labelHtml(el)).toEqual(['2<br>.<br>5', '.<br>5']);
+    });
+
+    it('keeps a bumper\'s multi-digit number horizontal (wide enough, above the threshold)', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25, 10); // 58 / 35 mm thick, both >= 30 mm -> no stacking
+      expect(labelHtml(el)).toEqual(['25', '10']);
+    });
+
+    it('never stacks a single-digit label, thin plate or not', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(5, 2, 1); // thin plates, but one character each
+      expect(labelHtml(el)).toEqual(['5', '2', '1']);
     });
   });
 
