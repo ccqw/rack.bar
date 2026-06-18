@@ -5,6 +5,17 @@
 
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
+  private input!: HTMLInputElement;
+
+  /**
+   * Clear the field without emitting a `target` event. The console calls this when
+   * switching back into Decode (RBAR-7, ADR-0005): the carried Side Load stays on the
+   * Bar, the box just stops showing a stale Target -- no event, so nothing re-decodes
+   * until the lifter types again.
+   */
+  reset(): void {
+    this.input.value = '';
+  }
 
   connectedCallback(): void {
     this.root.innerHTML = `
@@ -32,7 +43,8 @@ class RackEntry extends HTMLElement {
       <input id="t" type="number" inputmode="numeric" min="0" step="1"
              placeholder="0" />
     `;
-    const input = this.root.querySelector('input')!;
+    this.input = this.root.querySelector('input')!;
+    const input = this.input;
     input.addEventListener('input', () => {
       const raw = input.value.trim();
       const parsed = raw === '' ? null : Number(raw);

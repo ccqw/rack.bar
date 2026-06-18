@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import './sleeve.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
@@ -7,12 +7,19 @@ function side(...kgs: number[]): Plate[] {
   return kgs.map((kg) => ELEIKO_KG.find((p) => p.kg === kg)!);
 }
 
-function mountSleeve(): HTMLElement & { sideLoad: readonly Plate[] } {
-  const el = document.createElement('rack-sleeve') as HTMLElement & {
-    sideLoad: readonly Plate[];
-  };
+type Sleeve = HTMLElement & {
+  sideLoad: readonly Plate[];
+  interactive: boolean;
+};
+
+function mountSleeve(): Sleeve {
+  const el = document.createElement('rack-sleeve') as Sleeve;
   document.body.append(el);
   return el;
+}
+
+function discs(el: HTMLElement): HTMLElement[] {
+  return [...el.shadowRoot!.querySelectorAll<HTMLElement>('.disc')];
 }
 
 describe('<rack-sleeve>', () => {
@@ -36,5 +43,41 @@ describe('<rack-sleeve>', () => {
     expect(el.shadowRoot!.querySelectorAll('.disc').length).toBe(1);
     el.sideLoad = side(25, 15, 5);
     expect(el.shadowRoot!.querySelectorAll('.disc').length).toBe(3);
+  });
+
+  describe('interactive mode (Encode: tap a disc to remove it)', () => {
+    it('draws inert discs by default (Decode shows, does not edit)', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      expect(discs(el)[0].tagName).toBe('DIV');
+    });
+
+    it('draws discs as buttons when interactive', () => {
+      const el = mountSleeve();
+      el.interactive = true;
+      el.sideLoad = side(25);
+      expect(discs(el)[0].tagName).toBe('BUTTON');
+    });
+
+    it('emits removeplate with the tapped Plate when interactive', () => {
+      const el = mountSleeve();
+      el.interactive = true;
+      el.sideLoad = side(25, 15);
+      const seen = vi.fn();
+      el.addEventListener('removeplate', (e) =>
+        seen((e as CustomEvent<{ plate: Plate }>).detail.plate),
+      );
+      discs(el)[0].click(); // the 25 disc
+      expect(seen).toHaveBeenCalledWith({ kg: 25, color: 'red' });
+    });
+
+    it('does not emit on a tap when not interactive', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      const seen = vi.fn();
+      el.addEventListener('removeplate', seen);
+      discs(el)[0].click();
+      expect(seen).not.toHaveBeenCalled();
+    });
   });
 });
