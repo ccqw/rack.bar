@@ -8,13 +8,14 @@ class RackEntry extends HTMLElement {
   private input!: HTMLInputElement;
 
   /**
-   * Clear the field without emitting a `target` event. The console calls this when
-   * switching back into Decode (RBAR-7, ADR-0005): the carried Side Load stays on the
-   * Bar, the box just stops showing a stale Target -- no event, so nothing re-decodes
-   * until the lifter types again.
+   * Show `value` in the field without emitting a `target` event (null clears it). The
+   * console calls this when switching back into Decode (RBAR-7, ADR-0005): it seeds the
+   * box with the carried Side Load's Total so the +/- steppers move from the real
+   * current weight, not from zero -- and stays silent, so the hand-built loadout is not
+   * re-decoded (and never collapses to its canonical form) until the lifter acts.
    */
-  reset(): void {
-    this.input.value = '';
+  display(value: number | null): void {
+    this.input.value = value === null ? '' : String(value);
   }
 
   connectedCallback(): void {

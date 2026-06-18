@@ -49,6 +49,11 @@ function palette(el: HTMLElement): HTMLElement {
   return el.shadowRoot!.querySelector<HTMLElement>('rack-palette')!;
 }
 
+// The value currently in the Target field (what the +/- steppers move from).
+function entryValue(el: HTMLElement): string {
+  return entry(el).shadowRoot!.querySelector('input')!.value;
+}
+
 // Tap a denomination key on the Encode palette (by kg).
 function tapAdd(el: HTMLElement, kg: number): void {
   const key = palette(el)
@@ -281,6 +286,23 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
       type(el, '100');
       expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
       expect(total(el)).toContain('100');
+    });
+
+    it('seeds the Target field with the carried Total so the steppers move from it', () => {
+      // After building in Encode and switching to Decode, the field must hold the
+      // current Total -- the native +/- spinner steps from the field value, so a blank
+      // field would step from zero and throw away the loaded weight.
+      const el = mountConsole();
+      modeBtn(el, 'encode').click();
+      tapAdd(el, 25);
+      tapAdd(el, 20); // Total 110
+      modeBtn(el, 'decode').click();
+      expect(entryValue(el)).toBe('110');
+      // an empty loadout seeds a blank field, not "20"
+      type(el, ''); // back to bare Bar in Decode
+      modeBtn(el, 'encode').click();
+      modeBtn(el, 'decode').click();
+      expect(entryValue(el)).toBe('');
     });
   });
 });

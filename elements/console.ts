@@ -20,7 +20,7 @@ type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
   interactive: boolean;
 };
-type Entry = HTMLElement & { reset(): void };
+type Entry = HTMLElement & { display(value: number | null): void };
 type Mode = 'decode' | 'encode';
 
 class RackConsole extends HTMLElement {
@@ -162,14 +162,18 @@ class RackConsole extends HTMLElement {
   }
 
   // Switch modes without disturbing the shared Side Load (ADR-0005). Entering Decode
-  // clears any stale Target box and decode state, so the carried loadout shows with no
-  // delta until a new Target is typed; entering Encode just hands editing to the taps.
+  // drops the decode state and seeds the Target box with the carried loadout's Total
+  // (so the +/- steppers move from the real current weight, not zero) -- silently, so
+  // the loadout shows with no delta until the lifter acts; entering Encode just hands
+  // editing to the taps.
   private setMode(mode: Mode): void {
     if (mode === this.mode) return;
     this.mode = mode;
     this.decoded = null;
     this.showingOver = false;
-    if (mode === 'decode') this.entry.reset();
+    if (mode === 'decode') {
+      this.entry.display(this.side.length > 0 ? encode(this.side) : null);
+    }
     this.render();
   }
 

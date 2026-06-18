@@ -69,10 +69,12 @@ class RackSleeve extends HTMLElement {
         .disc[data-color="red"],
         .disc[data-color="blue"],
         .disc[data-color="green"] { color: #fff; }
-        /* When interactive the disc is a <button>: strip the chrome so it looks
-           identical to the inert disc, but keep it tappable. */
+        /* When interactive the disc is a <button>: strip the button chrome so it
+           looks identical to the inert <div> disc, but keep it tappable. Note: do not
+           set font:inherit here -- that pulls in the host font and defeats the .disc
+           rule's monospace, making Encode discs look different from Decode. */
         button.disc {
-          padding: 0; border: none; font: inherit; cursor: pointer;
+          padding: 0; border: none; cursor: pointer;
         }
         button.disc:focus-visible { outline: 2px solid var(--rack-accent); }
       </style>
