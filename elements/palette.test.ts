@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import './palette.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
+import type { Plate } from '../lib/plates.ts';
 
 function mountPalette(): HTMLElement {
   const el = document.createElement('rack-palette');
@@ -29,10 +30,10 @@ describe('<rack-palette> (the Encode add-affordance)', () => {
     const el = mountPalette();
     const seen = vi.fn();
     el.addEventListener('addplate', (e) =>
-      seen((e as CustomEvent<{ plate: { kg: number; color: string } }>).detail.plate),
+      seen((e as CustomEvent<{ plate: Plate }>).detail.plate),
     );
     keys(el)[0].click(); // the 25 kg key
-    expect(seen).toHaveBeenCalledWith({ kg: 25, color: 'red' });
+    expect(seen).toHaveBeenCalledWith(ELEIKO_KG[0]); // the full 25 kg red Plate
   });
 
   it('bubbles and crosses the shadow boundary so the console can hear it', () => {

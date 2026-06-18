@@ -10,24 +10,39 @@ export interface Plate {
   readonly kg: number;
   /** Its color in the Eleiko scheme. */
   readonly color: PlateColor;
+  /**
+   * Real plate diameter, in millimetres -- drives the disc's rendered HEIGHT when
+   * drawn side-on (ADR-0004). The four competition bumpers (25-10) share one 450 mm
+   * diameter; only the 5 kg and the change plates step down.
+   */
+  readonly diameterMm: number;
+  /**
+   * Real plate thickness, in millimetres -- drives the disc's rendered WIDTH. Within
+   * the bumper tier this (not diameter) is the size cue: a 25 is as tall as a 10,
+   * just fatter (ADR-0004).
+   */
+  readonly widthMm: number;
 }
 
 /**
  * The v1 default Inventory: the unlimited standard Eleiko set down to 0.5 kg,
  * heaviest first (the order you actually load a Bar). The change plates mirror
- * their 10x bumper's color.
+ * their 10x bumper's color. The mm dimensions are the Eleiko reference table fixed
+ * in ADR-0004; the precise millimetres are not load-bearing (the sleeve scales them
+ * all under one fit-to-width factor) but the ladder is -- four identical 450 mm
+ * bumpers, then a real step down through the smaller plates.
  */
 export const ELEIKO_KG: readonly Plate[] = [
-  { kg: 25, color: 'red' },
-  { kg: 20, color: 'blue' },
-  { kg: 15, color: 'yellow' },
-  { kg: 10, color: 'green' },
-  { kg: 5, color: 'white' },
-  { kg: 2.5, color: 'red' },
-  { kg: 2, color: 'blue' },
-  { kg: 1.5, color: 'yellow' },
-  { kg: 1, color: 'green' },
-  { kg: 0.5, color: 'white' },
+  { kg: 25, color: 'red', diameterMm: 450, widthMm: 58 },
+  { kg: 20, color: 'blue', diameterMm: 450, widthMm: 50 },
+  { kg: 15, color: 'yellow', diameterMm: 450, widthMm: 39 },
+  { kg: 10, color: 'green', diameterMm: 450, widthMm: 35 },
+  { kg: 5, color: 'white', diameterMm: 228, widthMm: 20 },
+  { kg: 2.5, color: 'red', diameterMm: 207, widthMm: 15 },
+  { kg: 2, color: 'blue', diameterMm: 193, widthMm: 22 },
+  { kg: 1.5, color: 'yellow', diameterMm: 170, widthMm: 20 },
+  { kg: 1, color: 'green', diameterMm: 148, widthMm: 19 },
+  { kg: 0.5, color: 'white', diameterMm: 127, widthMm: 16 },
 ];
 
 /** Default Bar weight (men's, kg). Swappable later (ADR-0002, ROADMAP). */
