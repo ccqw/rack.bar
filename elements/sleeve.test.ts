@@ -45,6 +45,39 @@ describe('<rack-sleeve>', () => {
     expect(el.shadowRoot!.querySelectorAll('.disc').length).toBe(3);
   });
 
+  describe('real plate sizing (ADR-0004: side-on, height=diameter, width=thickness)', () => {
+    // happy-dom does no layout, so we assert the sizing *inputs* the element hands to
+    // CSS -- each disc carries its real mm as custom properties -- not painted pixels.
+    // The fit-to-width scale and the actual proportions are eyeballed on npm run dev.
+    function mm(disc: HTMLElement): { d: number; w: number } {
+      return {
+        d: Number(disc.style.getPropertyValue('--mm-d')),
+        w: Number(disc.style.getPropertyValue('--mm-w')),
+      };
+    }
+
+    it('drives each disc height from real diameter, width from real thickness', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25); // 450 mm diameter, 58 mm thick (ADR-0004)
+      expect(mm(discs(el)[0])).toEqual({ d: 450, w: 58 });
+    });
+
+    it('draws the same-diameter bumpers the same height, the heavier one fatter', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25, 10); // both 450 mm tall; 58 vs 35 mm thick
+      const [a, b] = discs(el).map(mm);
+      expect(a.d).toBe(b.d); // same height -- bumpers don't grow in diameter
+      expect(a.w).toBeGreaterThan(b.w); // the 25 reads as the fatter disc
+    });
+
+    it('nests the small plates down in height below a bumper', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25, 5); // 450 mm bumper vs 228 mm disc
+      const [bumper, small] = discs(el).map(mm);
+      expect(small.d).toBeLessThan(bumper.d);
+    });
+  });
+
   describe('interactive mode (Encode: tap a disc to remove it)', () => {
     it('draws inert discs by default (Decode shows, does not edit)', () => {
       const el = mountSleeve();
@@ -68,7 +101,7 @@ describe('<rack-sleeve>', () => {
         seen((e as CustomEvent<{ plate: Plate }>).detail.plate),
       );
       discs(el)[0].click(); // the 25 disc
-      expect(seen).toHaveBeenCalledWith({ kg: 25, color: 'red' });
+      expect(seen).toHaveBeenCalledWith(side(25)[0]); // the full 25 kg red Plate
     });
 
     it('does not emit on a tap when not interactive', () => {
