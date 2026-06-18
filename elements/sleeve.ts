@@ -19,11 +19,27 @@ import type { Plate } from '../lib/plates.ts';
 // would overflow the host width) zooms below this. px-per-mm = MAX_SCALE until the
 // row no longer fits, then it shrinks to fit. Gaps between discs are fixed px.
 const BUMPER_MM = 450;
-const TARGET_BUMPER_PX = 150;
+const TARGET_BUMPER_PX = 188; // a touch jumbo so the discs read clearly and the labels breathe
 const MAX_SCALE = TARGET_BUMPER_PX / BUMPER_MM; // px per mm at full zoom
-const GAP_PX = 2;
+const GAP_PX = 3;
 const BAR_STUB_PX = 32;
+// Floor each disc at one upright digit's width so its kg label still fits ON the plate. A
+// thin change plate stays far narrower than a bumper (so the size cue holds), just wide
+// enough for a digit; its multi-character label (e.g. 2.5) stacks one digit per line
+// rather than rotating, which keeps the digits upright (no head-tilt).
+const MIN_DISC_PX = 10;
+// Below this real thickness a horizontal multi-digit label can't fit the disc, so its
+// digits stack one per line (upright, not rotated). Cleanly splits the change tier
+// (<=22 mm) from the bumpers (>=35 mm); single-digit labels never stack.
+const STACK_BELOW_MM = 30;
 const FALLBACK_SCALE = MAX_SCALE; // used when the host has no measured width yet
+
+// The visible disc caption. Lifters read "point five", so drop the leading zero on the
+// sub-1 change plates (0.5 -> .5) -- narrower and natural -- while 1.5 / 2.5 keep theirs.
+// The full "0.5 kg" still goes to assistive tech via the disc's aria-label.
+function plateLabel(kg: number): string {
+  return kg < 1 ? String(kg).replace(/^0/, '') : String(kg);
+}
 
 class RackSleeve extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -67,20 +83,28 @@ class RackSleeve extends HTMLElement {
   private render(): void {
     // A button in Encode (tappable to remove), an inert div in Decode. Both keep the
     // `.disc` class and data-* tags, so the display contract is unchanged. Each disc
-    // carries its real mm as --mm-d (diameter -> height) and --mm-w (thickness ->
-    // width); CSS multiplies them by the shared --rack-mm-scale (px per mm) that fit()
-    // sets, so the whole row scales together (ADR-0004).
+    // carries its real mm as --mm-d (diameter -> height) and --mm-w (thickness -> width);
+    // CSS multiplies them by the shared --rack-mm-scale (px per mm) that fit() sets, so
+    // the whole row scales together (ADR-0004). The kg label sits ON the disc and wraps
+    // one digit per line, so it reads horizontally on a wide bumper and stacks upright on
+    // a thin change plate -- the geometry self-selects, no per-plate branching.
     const tag = this.removable ? 'button' : 'div';
     const attrs = this.removable ? ' type="button"' : '';
     const discs = this.plates
       .map((p) => {
         const style = `--disc: var(--rack-plate-${p.color}); --mm-d: ${p.diameterMm}; --mm-w: ${p.widthMm}`;
         // Both modes expose the kg + color to assistive tech; only Encode adds the
-        // "Remove" verb (the disc is a button there).
-        const label = this.removable
+        // "Remove" verb. The on-disc digits are decorative (aria-label carries the name).
+        const aria = this.removable
           ? ` aria-label="Remove ${p.kg} kg ${p.color} Plate"`
           : ` aria-label="${p.kg} kg ${p.color} Plate"`;
-        return `<${tag}${attrs} class="disc" data-kg="${p.kg}" data-color="${p.color}" style="${style}"${label}><span>${p.kg}</span></${tag}>`;
+        // On a thin change plate a horizontal number won't fit, so stack the digits one
+        // per line; the bumpers keep their number horizontal. textContent is unchanged
+        // (the <br>s drop out), so the label still reads as the plain kg to tests + AT.
+        const text = plateLabel(p.kg);
+        const labelHtml =
+          p.widthMm < STACK_BELOW_MM && text.length > 1 ? [...text].join('<br>') : text;
+        return `<${tag}${attrs} class="disc" data-kg="${p.kg}" data-color="${p.color}" style="${style}"${aria}><span class="label" aria-hidden="true">${labelHtml}</span></${tag}>`;
       })
       .join('');
     this.root.innerHTML = `
@@ -91,33 +115,33 @@ class RackSleeve extends HTMLElement {
         }
         /* The Bar stub; discs load outward from it, heaviest at the collar. */
         .bar {
-          width: ${BAR_STUB_PX}px; height: 8px;
+          flex: none; width: ${BAR_STUB_PX}px; height: 8px;
           background: var(--rack-muted); border-radius: 2px;
         }
-        /* Real side-on sizing: height from diameter, width from thickness, both under
-           one --rack-mm-scale (px per mm). The fallback keeps discs sane before fit()
-           has measured (e.g. in a no-layout test environment). */
+        /* Real side-on sizing: height from diameter, width from thickness, both under one
+           --rack-mm-scale (px per mm), floored at MIN_DISC_PX so a digit still fits. The
+           fallback keeps discs sane before fit() has measured (e.g. a no-layout test). */
         .disc {
           display: flex; align-items: center; justify-content: center;
           flex: none;
-          width: calc(var(--mm-w) * var(--rack-mm-scale, ${FALLBACK_SCALE}) * 1px);
+          width: max(${MIN_DISC_PX}px, calc(var(--mm-w) * var(--rack-mm-scale, ${FALLBACK_SCALE}) * 1px));
           height: calc(var(--mm-d) * var(--rack-mm-scale, ${FALLBACK_SCALE}) * 1px);
           border-radius: 4px;
           background: var(--disc);
-          font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
-          line-height: 1; overflow: hidden;
-          /* Discs are tall and thin at real proportions; read the kg down the disc so
-             it fits a bumper rather than spilling out the sides. */
-          writing-mode: vertical-rl;
-          color: #0f1113; /* white Plate needs dark ink */
         }
-        .disc[data-color="red"],
-        .disc[data-color="blue"],
-        .disc[data-color="green"] { color: #fff; }
-        /* When interactive the disc is a <button>: strip the button chrome so it
-           looks identical to the inert <div> disc, but keep it tappable. Note: do not
-           set font:inherit here -- that pulls in the host font and defeats the .disc
-           rule's monospace, making Encode discs look different from Decode. */
+        /* The kg digits, ON the plate. break-all wraps them one-per-line when the disc is
+           too narrow for a horizontal number, so 2.5 stacks as 2 / . / 5 -- upright, not
+           rotated. Dark ink on the light plates (white, yellow), light ink on the rest. */
+        .label {
+          font-family: var(--rack-font-num); font-size: 10px; font-weight: 700;
+          line-height: 1.15; text-align: center; white-space: nowrap;
+          color: #0f1113;
+        }
+        .disc[data-color="red"] .label,
+        .disc[data-color="blue"] .label,
+        .disc[data-color="green"] .label { color: #fff; }
+        /* When interactive the disc is a <button>: strip the button chrome so it looks
+           identical to the inert <div> disc, but keep it tappable. */
         button.disc {
           padding: 0; border: none; cursor: pointer;
         }
@@ -134,17 +158,31 @@ class RackSleeve extends HTMLElement {
     this.fit();
   }
 
-  // Pick the px-per-mm scale so the row fits the host width: full zoom (MAX_SCALE)
-  // until the plates would overflow, then shrink to fit (heavy bars zoom out, no
-  // horizontal scroll -- ADR-0004). No measured width yet (e.g. a no-layout test) ->
-  // leave the CSS fallback in place.
+  // Pick the px-per-mm scale so the row fits the host width: full zoom (MAX_SCALE) until
+  // the plates would overflow, then shrink to fit (heavy bars zoom out, no horizontal
+  // scroll -- ADR-0004). Each disc is floored at MIN_DISC_PX (a digit's width), so the
+  // row width is a max() per plate, not a plain sum -- monotonic in the scale, so a short
+  // binary search finds the largest scale that fits. No measured width yet (e.g. a
+  // no-layout test) -> leave the CSS fallback in place.
   private fit(): void {
     const hostWidth = this.clientWidth;
     if (hostWidth <= 0) return; // no layout yet (e.g. a no-layout test) -> CSS fallback stands
-    const totalThicknessMm = this.plates.reduce((mm, p) => mm + p.widthMm, 0);
     const avail = hostWidth - BAR_STUB_PX - GAP_PX * (this.plates.length + 1);
-    const fitScale = totalThicknessMm > 0 ? avail / totalThicknessMm : MAX_SCALE;
-    const scale = Math.min(MAX_SCALE, Math.max(0, fitScale));
+    const rowWidthAt = (s: number): number =>
+      this.plates.reduce((px, p) => px + Math.max(p.widthMm * s, MIN_DISC_PX), 0);
+    let scale: number;
+    if (rowWidthAt(MAX_SCALE) <= avail) {
+      scale = MAX_SCALE; // full zoom fits -> no shrink needed
+    } else {
+      let lo = 0;
+      let hi = MAX_SCALE;
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (rowWidthAt(mid) <= avail) lo = mid;
+        else hi = mid;
+      }
+      scale = lo;
+    }
     // Guard on the resulting scale, not the width: a new Side Load re-fits at the same
     // width, while setting an unchanged scale is skipped so the ResizeObserver this
     // triggers (disc heights shift the host height) can't loop.

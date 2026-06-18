@@ -78,6 +78,33 @@ describe('<rack-sleeve>', () => {
     });
   });
 
+  describe('kg labels (on the disc, one per Plate)', () => {
+    function labels(el: HTMLElement): HTMLElement[] {
+      return [...el.shadowRoot!.querySelectorAll<HTMLElement>('.label')];
+    }
+
+    it('renders one label per Plate, in Side Load order', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25, 15, 5);
+      expect(labels(el).map((l) => l.textContent)).toEqual(['25', '15', '5']);
+    });
+
+    it('drops the leading zero on the sub-1 change plate (0.5 -> .5)', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(2.5, 1.5, 0.5);
+      // 2.5 / 1.5 keep their leading digit; only the sub-1 plate loses the zero.
+      expect(labels(el).map((l) => l.textContent)).toEqual(['2.5', '1.5', '.5']);
+    });
+
+    it('puts the label on the disc, hidden from assistive tech (the disc carries the aria-label)', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      const disc = discs(el)[0];
+      expect(disc.querySelector('.label')).not.toBeNull(); // the label lives on the disc
+      expect(labels(el)[0].getAttribute('aria-hidden')).toBe('true'); // not announced twice
+    });
+  });
+
   describe('interactive mode (Encode: tap a disc to remove it)', () => {
     it('draws inert discs by default (Decode shows, does not edit)', () => {
       const el = mountSleeve();
