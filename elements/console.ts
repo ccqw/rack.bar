@@ -91,9 +91,13 @@ class RackConsole extends HTMLElement {
         .over:focus-visible { outline: 2px solid var(--rack-accent); }
       </style>
       <div class="stack">
+        <!-- The user-facing labels name the INPUT you work from ("By Weight" =
+             type a Target; "By Plates" = tap Plates), which is more intuitive than
+             the internal direction names. data-mode keeps the canonical Decode/Encode
+             vocabulary (CONTEXT.md) that the rest of the code speaks. -->
         <div class="modes" role="group" aria-label="Mode">
-          <button type="button" data-mode="decode" aria-pressed="true">Decode</button>
-          <button type="button" data-mode="encode" aria-pressed="false">Encode</button>
+          <button type="button" data-mode="decode" aria-pressed="true">By Weight</button>
+          <button type="button" data-mode="encode" aria-pressed="false">By Plates</button>
         </div>
         <rack-entry></rack-entry>
         <rack-palette hidden></rack-palette>

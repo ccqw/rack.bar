@@ -179,6 +179,14 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
     expect(palette(el).hidden).toBe(true);
   });
 
+  it('labels the toggle by input (By Weight / By Plates), not by direction name', () => {
+    // The user-facing copy names the input you work from; the internal direction
+    // stays Decode/Encode via data-mode (the controlled vocabulary).
+    const el = mountConsole();
+    expect(modeBtn(el, 'decode').textContent).toBe('By Weight');
+    expect(modeBtn(el, 'encode').textContent).toBe('By Plates');
+  });
+
   it('toggling to Encode reveals the palette and hides the Target entry', () => {
     const el = mountConsole();
     modeBtn(el, 'encode').click();
