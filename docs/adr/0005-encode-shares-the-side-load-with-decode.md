@@ -65,5 +65,6 @@ math leaves `lib/`.
 
 Real diameter-based plate sizing (ADR-0004) is still RBAR-9; the sleeve here keeps the
 skeleton's uniform discs. The hybrid steppers/keypad entry is RBAR-8. Bar selection and
-finite Inventory remain parked (ROADMAP) -- `encode`/`addPlate`/`removePlate` already
-take the Bar and draw from the Inventory denominations, so those stay additive.
+finite Inventory remain parked (ROADMAP) -- `encode` already takes the Bar as a parameter
+(ADR-0002) and the palette draws from the Inventory's denominations, so both stay
+additive: new UI feeding existing parameters, not a core change.

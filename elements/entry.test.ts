@@ -38,4 +38,21 @@ describe('<rack-entry>', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     expect(detail?.target).toBeNull();
   });
+
+  it('reset() clears the field WITHOUT emitting a target event', () => {
+    // The load-bearing half of the contract: the console calls reset() on switching
+    // back to Decode, and a stray target event would re-decode and stomp the carried
+    // Side Load (ADR-0005). Clearing must stay silent.
+    const el = document.createElement('rack-entry') as HTMLElement & {
+      reset(): void;
+    };
+    document.body.append(el);
+    const input = el.shadowRoot!.querySelector('input')!;
+    input.value = '100';
+    const seen = vi.fn();
+    el.addEventListener('target', seen);
+    el.reset();
+    expect(input.value).toBe('');
+    expect(seen).not.toHaveBeenCalled();
+  });
 });

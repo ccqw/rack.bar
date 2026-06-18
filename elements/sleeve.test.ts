@@ -79,5 +79,20 @@ describe('<rack-sleeve>', () => {
       discs(el)[0].click();
       expect(seen).not.toHaveBeenCalled();
     });
+
+    it('downgrades discs back to inert when interactive is turned off', () => {
+      // Switching Encode -> Decode flips interactive off on every render; the live
+      // remove buttons must become inert divs again, not leak a stale listener.
+      const el = mountSleeve();
+      el.interactive = true;
+      el.sideLoad = side(25);
+      expect(discs(el)[0].tagName).toBe('BUTTON');
+      el.interactive = false;
+      expect(discs(el)[0].tagName).toBe('DIV');
+      const seen = vi.fn();
+      el.addEventListener('removeplate', seen);
+      discs(el)[0].click();
+      expect(seen).not.toHaveBeenCalled();
+    });
   });
 });

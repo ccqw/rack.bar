@@ -75,7 +75,7 @@ describe('removePlate (a pure Side Load transform)', () => {
 
 describe('add/remove round-trip with encode', () => {
   it('tapping plates on then reading the Total agrees with encode', () => {
-    let s: Plate[] = [];
+    let s: readonly Plate[] = [];
     s = addPlate(s, p(25));
     s = addPlate(s, p(15));
     expect(encode(s)).toBe(100); // 20 + 2 x 40

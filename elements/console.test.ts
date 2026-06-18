@@ -226,6 +226,34 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
     expect(delta(el).hidden).toBe(true);
   });
 
+  it('carries the chosen over loadout through Encode and back without a stale note', () => {
+    // The three reset duties of a mode switch crossing at once: choose the over option
+    // (showingOver=true, side = the 101 loadout), flip to Encode and back. On return the
+    // over Side Load must persist, with no leftover over button or "over target" note.
+    const el = mountConsole();
+    type(el, '100.5');
+    over(el).click(); // -> over (101): 25 + 15 + 0.5
+    modeBtn(el, 'encode').click();
+    modeBtn(el, 'decode').click();
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15', '0.5']);
+    expect(total(el)).toContain('101');
+    expect(over(el).hidden).toBe(true);
+    expect(delta(el).hidden).toBe(true);
+  });
+
+  it('removes the tapped duplicate, not just any match, through the DOM path', () => {
+    // The disc->Plate binding is positional while removePlate matches by value; with two
+    // identical 25s loaded, tapping the second disc must still leave exactly one 25.
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 25);
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '25']);
+    tapDisc(el, 1); // tap the second 25 off
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25']);
+    expect(total(el)).toContain('70'); // 20 + 2 x 25
+  });
+
   describe('shared Side Load state persists across the switch', () => {
     it('carries the decoded Side Load into Encode, ready to edit', () => {
       const el = mountConsole();

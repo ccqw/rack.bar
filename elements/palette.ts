@@ -27,7 +27,7 @@ class RackPalette extends HTMLElement {
           border: 1px solid var(--rack-line); border-radius: var(--rack-radius);
           background: var(--disc);
           font-family: var(--rack-font-num); font-size: 14px; font-weight: 600;
-          color: #0f1113; /* light Plates need dark ink */
+          color: var(--rack-bg); /* light Plates need dark ink */
           cursor: pointer;
         }
         .key[data-color="red"],

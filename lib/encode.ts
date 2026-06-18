@@ -24,21 +24,25 @@ export function encode(
 
 /**
  * Tap a Plate onto a Side Load: a new heaviest-first Side Load with `plate` added.
- * Sorts a copy so the result is heaviest-first wherever the Plate slots in, and the
- * input is left untouched (ADR-0005).
+ * Sorts a copy by kg so the result is heaviest-first wherever the Plate slots in (the
+ * canonical set has no kg ties), and the input is left untouched (ADR-0005).
  */
-export function addPlate(side: readonly Plate[], plate: Plate): Plate[] {
+export function addPlate(side: readonly Plate[], plate: Plate): readonly Plate[] {
   return [...side, plate].sort((a, b) => b.kg - a.kg);
 }
 
 /**
  * Tap a loaded Plate off a Side Load: a new Side Load with the first Plate matching
  * `plate` (by kg and color) removed. A Plate not on the Side leaves the Side Load
- * unchanged. The result stays heaviest-first because the input was, and the input is
- * never mutated (ADR-0005). Removes a single match by value: for the canonical set
- * two Plates of the same kg are identical, so "remove a 25" needs no index.
+ * unchanged. Order-preserving: it assumes a heaviest-first input (the console always
+ * supplies one) and removes a single element without reordering, so the result is
+ * heaviest-first iff the input was; the input is never mutated (ADR-0005). Removes by
+ * value: for the canonical set two Plates of the same kg are identical, so no index.
  */
-export function removePlate(side: readonly Plate[], plate: Plate): Plate[] {
+export function removePlate(
+  side: readonly Plate[],
+  plate: Plate,
+): readonly Plate[] {
   const i = side.findIndex((p) => p.kg === plate.kg && p.color === plate.color);
   return i === -1 ? [...side] : [...side.slice(0, i), ...side.slice(i + 1)];
 }

@@ -11,8 +11,7 @@ import './entry.ts';
 import './palette.ts';
 import './sleeve.ts';
 import { decode } from '../lib/decode.ts';
-import { encode } from '../lib/encode.ts';
-import { addPlate, removePlate } from '../lib/encode.ts';
+import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded } from '../lib/decode.ts';
@@ -62,7 +61,7 @@ class RackConsole extends HTMLElement {
           border: none; border-radius: 999px; padding: 8px 20px; cursor: pointer;
         }
         .modes button[aria-pressed="true"] {
-          color: #0f1113; background: var(--rack-accent);
+          color: var(--rack-bg); background: var(--rack-accent);
         }
         .modes button:focus-visible { outline: 2px solid var(--rack-accent); }
         rack-entry[hidden], rack-palette[hidden] { display: none; }
@@ -132,14 +131,21 @@ class RackConsole extends HTMLElement {
       this.render();
     });
     // The over-target opt-in toggles between the at-or-under primary and the over option.
+    // The control is only shown with a decode result on hand (setOver), so a missing
+    // `decoded` here is an invariant breach, not a state to paper over: bail before
+    // flipping `showingOver` so a stray click can never strand the lifter over Target.
     this.over.addEventListener('click', () => {
+      if (!this.decoded) return;
       this.showingOver = !this.showingOver;
-      const { primary, over } = this.decoded ?? {};
-      this.side = (this.showingOver && over ? over : primary)?.side ?? [];
+      const { primary, over } = this.decoded;
+      this.side = (this.showingOver && over ? over : primary).side;
       this.render();
     });
     this.modeButtons.forEach((b) =>
-      b.addEventListener('click', () => this.setMode(b.dataset.mode as Mode)),
+      b.addEventListener('click', () => {
+        const mode = b.dataset.mode;
+        if (mode === 'decode' || mode === 'encode') this.setMode(mode);
+      }),
     );
 
     this.render(); // initial state: Decode, a bare Bar, no Target typed yet

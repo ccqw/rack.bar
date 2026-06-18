@@ -41,9 +41,7 @@ class RackSleeve extends HTMLElement {
     // A button in Encode (tappable to remove), an inert div in Decode. Both keep the
     // `.disc` class and data-* tags, so the display contract is unchanged.
     const tag = this.removable ? 'button' : 'div';
-    const attrs = this.removable
-      ? ' type="button"'
-      : '';
+    const attrs = this.removable ? ' type="button"' : '';
     const discs = this.plates
       .map(
         (p) =>
