@@ -167,7 +167,8 @@ class RackSleeve extends HTMLElement {
   private fit(): void {
     const hostWidth = this.clientWidth;
     if (hostWidth <= 0) return; // no layout yet (e.g. a no-layout test) -> CSS fallback stands
-    const avail = hostWidth - BAR_STUB_PX - GAP_PX * (this.plates.length + 1);
+    // The flex row is the bar stub + N discs (N+1 items), so there are N gaps between them.
+    const avail = hostWidth - BAR_STUB_PX - GAP_PX * this.plates.length;
     const rowWidthAt = (s: number): number =>
       this.plates.reduce((px, p) => px + Math.max(p.widthMm * s, MIN_DISC_PX), 0);
     let scale: number;
