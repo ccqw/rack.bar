@@ -19,7 +19,11 @@ below are intentionally deferred.
 
 - **Game / quiz mode** — the original second half: progressively harder drills on
   the Decode/Encode skill, built on the calculator's components.
-- **Pounds support** — lb plate set + bar; lb/kg switch. Additive to the solver.
+- **Pounds plate set** — a real lb Inventory (45/35/25/10/5/2.5 lb) + lb bar, so the
+  shown Plates match a US gym's rack and the solver runs natively in lb. (The lb/kg
+  _display + entry_ switch is a separate, narrower feature — a converting layer over
+  kg, see ADR-0006 — not this parked item. This parked item is only the physical lb
+  plate set.)
 - **Bar selection** — women's 15 kg, technique/training bars, custom. The Bar is
   already a first-class solver input; this is the UI to choose it.
 - **Finite Inventory** — enter how many pairs of each plate you own (home gym);

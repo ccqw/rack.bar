@@ -86,6 +86,44 @@ something sharper.
   tap-to-type keypad -- make the primary number feel like the hero.
 - The Decode/Encode toggle: right now it is functional; give it a real treatment.
 
+## Unit conversion (kg / lb) -- new chrome to design (RBAR-14)
+
+rack.bar now needs a pounds option, tracked as RBAR-14 and co-designed in this
+pass. It is a **display + entry layer only** -- the plates on screen are ALWAYS the
+kg Eleiko set (colors/sizing unchanged). Pounds is just how the numbers are read and
+typed. Full spec:
+`docs/adr/0006-pounds-is-a-display-unit-not-a-plate-set.md` and the Unit / Primary
+unit / Secondary unit terms in `CONTEXT.md`.
+
+Two new things to design:
+
+1. **A Primary unit toggle (kg | lb).** A *second* toggle, alongside the existing
+   By Weight / By Plates toggle. The real problem is two toggles on one small screen
+   without clutter -- they control different axes (kg/lb = what unit; By Weight /
+   By Plates = which direction). Make the relationship obvious; don't let them read
+   as one 4-way control.
+2. **A Secondary readout.** The Target and the Total each show the *other* unit small
+   alongside the primary number, e.g.:
+
+   ```
+   Target            Total
+   315 lb            314 lb
+   (142.9 kg)        (142.5 kg)
+   ```
+
+   Plus an affordance to hide the Secondary, so a lifter can read in just one Unit
+   (a setting, a tap on the readout -- whatever reads cleanest).
+
+Behavior to respect (fixed -- do not design around these):
+
+- Entry and the +/- steppers are always in the Primary unit; you flip the toggle to
+  enter/read in the other. No unit switch on the keypad.
+- lb shows as whole pounds; kg as-is. Steppers nudge 5 lb in lb, 1 kg in kg.
+- The entry caption ("Target (kg)") and the Total label reflect the Primary unit.
+- The "exact / under target / round up" affordances appear only when the numbers the
+  lifter *reads* actually differ -- so in lb the under/over note is usually absent.
+  Design the under-note + round-up button to be comfortable being absent.
+
 ## How it folds back
 
 Output returns via `--rack-*` tokens and element Shadow DOM styles, keeping the

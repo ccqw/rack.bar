@@ -51,12 +51,31 @@ The Plates available to draw from when decoding a Target. Defaults to an unlimit
 standard Eleiko set; will later support finite pair-counts for a home gym.
 _Avoid_: stock, supply.
 
+**Unit**:
+A system of weight measure the lifter reads and enters weights in: **kilograms**
+(kg) or **pounds** (lb). A Unit is how a weight is _shown_, not a different weight —
+Plates are always named by their kilogram weight and color (the v1 Eleiko set is
+metric); pounds is a conversion applied to entry and the readouts only.
+_Avoid_: measurement, system.
+
+**Primary unit**:
+The Unit the lifter has chosen for entry and the prominent readout. Every typed
+Target, and the steppers, work in the Primary unit.
+_Avoid_: main unit, default unit.
+
+**Secondary unit**:
+The other Unit, shown small alongside the Primary for reference. The lifter may
+hide it to read in just one Unit.
+_Avoid_: alternate unit.
+
 ## Relationships
 
 - A **Bar** plus a symmetric **Side Load** on each **Side** produces a **Total**.
 - A **Side Load** is built from **Plates** drawn from the **Inventory**.
 - **Decode**: a **Target** maps to a **Side Load** (and the **Total** it achieves).
 - **Encode**: a tapped-on **Side Load** maps to its **Total**.
+- A **Target** and a **Total** are weights; each can be read in either **Unit**, but
+  the **Plates** that build them are always kilograms.
 
 ## Example dialogue
 
