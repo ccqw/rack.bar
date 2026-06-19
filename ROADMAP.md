@@ -6,7 +6,10 @@ below are intentionally deferred.
 
 ## v1 (calculator)
 
-- Kilograms only, Eleiko color scheme.
+- Kilogram plate set, Eleiko color scheme — the Plates are always kg.
+- Pounds option: a kg/lb switch converts entry and the readouts (a Primary unit
+  with a Secondary readout alongside). A display + entry layer only — no lb plates
+  (RBAR-14, ADR-0006).
 - Fixed 20 kg Bar (modeled as swappable, UI deferred).
 - Unlimited standard Inventory (modeled as finite-ready, UI deferred).
 - Decode (Target -> Side Load) primary; Encode (tap plates -> Total) secondary.
