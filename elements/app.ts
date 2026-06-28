@@ -12,6 +12,7 @@
 // and only ever sees the Bar as a function argument (ADR-0001/0002).
 import './console.ts';
 import './setup.ts';
+import { isOfferedBar } from './setup.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 
 type Console = HTMLElement & { barKg: number };
@@ -32,6 +33,10 @@ class RackApp extends HTMLElement {
 
   connectedCallback(): void {
     this.barKg = this.loadBar();
+    // Children are defined before this runs (imports at top + rack-app's own define is
+    // last), so assigning innerHTML upgrades <rack-console>/<rack-setup> synchronously
+    // and their connectedCallbacks finish here -- which is why the barKg seeding below
+    // (after the queries) lands on already-connected elements, not inert ones.
     this.root.innerHTML = `
       <style>
         :host { display: flex; flex-direction: column; flex: 1; width: 100%; }
@@ -101,7 +106,11 @@ class RackApp extends HTMLElement {
 
   // Adopt a Bar chosen in Setup: persist it, thread it into the calculator, relabel the
   // pill, and reflect the active tile. The sheet stays open so the lifter sees the choice.
+  // The barchange payload is an external contract (ADR-0007 grows it in RBAR-16/17), so an
+  // off-menu Bar is an invariant breach, not a value to persist and feed the core -- ignore
+  // it rather than stranding the readout on a Bar no tile matches or poisoning storage.
   private adopt(kg: number): void {
+    if (!isOfferedBar(kg)) return;
     this.barKg = kg;
     this.saveBar(kg);
     this.console.barKg = kg;
@@ -113,17 +122,20 @@ class RackApp extends HTMLElement {
     this.pillLabel.textContent = `${this.barKg} kg bar`;
   }
 
-  // Read the persisted Bar. A missing, non-numeric, or non-positive value (including a
-  // blocked localStorage) falls back to the 20 kg default -- never throws.
+  // Read the persisted Bar. A missing, non-numeric, or off-menu value (including a
+  // blocked localStorage) falls back to the 20 kg default -- never throws. Validating
+  // against the offered set (not just "finite and positive") means a corrupt or legacy
+  // key can't load a Bar that no tile matches.
   private loadBar(): number {
     let raw: string | null = null;
     try {
       raw = localStorage.getItem(STORAGE_KEY);
     } catch {
-      raw = null; // localStorage can be unavailable (private mode); default quietly.
+      return DEFAULT_BAR_KG; // storage blocked (private mode); best-effort per ADR-0007.
     }
-    const n = raw === null ? NaN : Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : DEFAULT_BAR_KG;
+    if (raw === null) return DEFAULT_BAR_KG; // nothing persisted yet (first run).
+    const n = Number(raw);
+    return isOfferedBar(n) ? n : DEFAULT_BAR_KG;
   }
 
   // Persist the Bar, best-effort. A write can fail (quota, private mode); persistence is

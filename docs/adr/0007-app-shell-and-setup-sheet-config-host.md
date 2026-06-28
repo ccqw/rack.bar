@@ -31,9 +31,12 @@ property down -- so adding collars or the plate set does not change this contrac
 ## Configuration persists shell-side, one key per concern
 
 The chosen Bar survives a reload via `localStorage["rackbar.barKg"]`, read on init and
-written on every change. It defaults to 20 kg (`DEFAULT_BAR_KG`) when absent or
-unparseable. Persistence lives entirely in the shell (`<rack-app>`); the core stays
-pure (ADR-0001), and the Bar reaches the core only as a function argument.
+written on every change. It defaults to 20 kg (`DEFAULT_BAR_KG`) when absent, unparseable,
+or not one of the offered Bars -- the read is validated against the same `BAR_OPTIONS`
+set the tiles render (the shell's `isOfferedBar`), so a corrupt or legacy key can never
+strand the lifter on a Bar no tile matches. The chosen-Bar event path is validated the
+same way. Persistence lives entirely in the shell (`<rack-app>`); the core stays pure
+(ADR-0001), and the Bar reaches the core only as a function argument.
 
 This generalizes the persistence pattern ADR-0006 sketched for the unit preference:
 each independent piece of lifter configuration gets its own `rackbar.*` key, owned by

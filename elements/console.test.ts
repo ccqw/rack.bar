@@ -237,6 +237,33 @@ describe('<rack-console> (Bar selection flows into the solver, RBAR-15)', () => 
     // The empty-field anchor (what the steppers move from) follows the Bar.
     expect(entryAnchorText(el)).toBe('15');
   });
+
+  it('clears a showing over-target option when the Bar changes, re-offering it fresh', () => {
+    // The intersection of two state machines: an over-target opt-in is on screen, then
+    // the Bar changes. The re-decode must drop back to the new Bar's at-or-under primary
+    // (showingOver reset) and re-offer the round-up, not leave the stale over loadout.
+    const el = mountConsole();
+    type(el, '100.5');
+    over(el).click(); // showing over (101) on the 20 kg Bar
+    expect(total(el)).toContain('101');
+    el.barKg = 15; // re-decode 100.5 against the 15 kg Bar
+    expect(total(el)).toContain('100'); // back on the at-or-under primary
+    expect(delta(el).textContent!.toLowerCase()).toContain('under');
+    const opt = over(el);
+    expect(opt.hidden).toBe(false);
+    expect(opt.textContent!.toLowerCase()).toContain('round up'); // fresh, not "back to"
+  });
+
+  it('re-reads the Total but keeps a hand-built loadout when the Bar changes in Encode', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 25); // 20 + 2 x 50 = 120
+    expect(total(el)).toContain('120');
+    el.barKg = 15; // the carried loadout stays; only the Total re-reads: 15 + 2 x 50
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '25']);
+    expect(total(el)).toContain('115');
+  });
 });
 
 describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {

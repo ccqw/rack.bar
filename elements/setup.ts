@@ -11,8 +11,18 @@ import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 
 // The Bar weights offered, heaviest-first (men's / women's / technique). A fixed enum
 // of competition bars; the lb subtitle is a display convenience for a lifter who reads
-// in pounds (the value the bar is stamped with in a US gym).
-const BAR_OPTIONS: readonly number[] = [20, 15, 5];
+// in pounds (the value the bar is stamped with in a US gym). Exported as the single
+// source of truth for "a valid Bar", so the shell (<rack-app>) validates a chosen or
+// persisted Bar against the same set the tiles render (ADR-0007).
+export const BAR_OPTIONS = [20, 15, 5] as const;
+
+/** A weight the lifter can actually pick: one of the offered Bars. */
+export type BarKg = (typeof BAR_OPTIONS)[number];
+
+/** True when `kg` is one of the offered Bars -- the guard both boundaries share. */
+export function isOfferedBar(kg: number): kg is BarKg {
+  return (BAR_OPTIONS as readonly number[]).includes(kg);
+}
 
 // kg -> whole lb for the tile subtitle. The exact factor matches the design handoff's
 // engine (engine.js `LB`), so the labels won't drift when the pounds slice (RBAR-17)
