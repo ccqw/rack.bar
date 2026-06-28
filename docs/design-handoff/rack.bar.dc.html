@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;}
+  *{box-sizing:border-box;}
+  @keyframes numRoll{from{opacity:0;transform:translateY(.32em);}to{opacity:1;transform:translateY(0);}}
+  @keyframes discIn{from{opacity:0;transform:translateX(-12px) scaleX(.6);}to{opacity:1;transform:none;}}
+  @keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.97);}to{opacity:1;transform:none;}}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  @keyframes sheetIn{from{opacity:0;transform:translateY(100%);}to{opacity:1;transform:translateY(0);}}
+  @keyframes popIn{from{opacity:0;transform:translateY(-6px) scale(.97);}to{opacity:1;transform:none;}}
+  .disc{transform-origin:left center;}
+  ::-webkit-scrollbar{width:0;height:0;}
+  /* tactile polish: smooth state changes + native-feeling press feedback on every tappable control */
+  button{transition:transform .09s ease, background-color .16s ease, border-color .16s ease, color .16s ease, opacity .16s ease;-webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation;}
+  button:active{transform:scale(.955);}
+</style>
+</helmet>
+<!--
+  ============================================================================
+   rack.bar — DESIGN SYSTEM token legend (for this inline-styled markup)
+  ----------------------------------------------------------------------------
+   DC inline styles can't read the JS `T` token object, so the values below
+   are repeated as literals in this template. They map 1:1 to the tokens in
+   the logic class (and to CSS custom properties on the live site). When you
+   re-theme, change BOTH the `T` block in the <script> AND these literals.
+   Full visual reference: "Design system.dc.html".
+
+     ACCENT        #f5c518  --rb-accent          ON-ACCENT  #0d0e10  --rb-accent-ink
+     SURFACES      #0d0e10  --rb-surface         (app bg)
+                   #101216  --rb-surface-sunken  (keypad sheet)
+                   #15171a  --rb-surface-raised  (inset controls)
+                   #16191d  --rb-surface-overlay (sheets/modals)
+                   #1b1f24  --rb-surface-active  (selected row)
+                   #272b30  --rb-surface-selected(active segment/pill)
+     BORDERS       #20242a  --rb-border          #23272c --rb-border-strong
+                   #2a2f35  --rb-border-muted    #3a4047 --rb-border-active
+                   #1b1e22  --rb-divider
+     TEXT          #f4f4f5  --rb-text-primary    #aab0b7 --rb-text-secondary
+                   #9aa1a9  --rb-text-muted      #8b929a --rb-text-dim
+                   #41464c  --rb-text-disabled
+     SEMANTIC      #e0263a  --rb-danger          #4caf6a --rb-success
+     SHELL (light) #e7e5df  page bg   #15181c page ink   #9b958b page faint
+     TYPE          Hanken Grotesk (--rb-sans)    JetBrains Mono (--rb-mono)
+     RADII         999px pill · 14px card · 13px sheet-control · 11px tile
+     PLATES        domain colour code (PAL): red blue yellow green white / iron
+  ============================================================================
+-->
+<div style="min-width:100%;min-height:100vh;box-sizing:border-box;padding:48px;background:#e7e5df;display:flex;flex-direction:column;align-items:center;gap:18px;font-family:'Hanken Grotesk',sans-serif;">
+
+  <div style="font:700 11px 'JetBrains Mono',monospace;letter-spacing:.18em;text-transform:uppercase;color:#9b958b;">Barbell loading calculator</div>
+
+  <div style="width:384px;padding:13px;background:#111316;border-radius:60px;box-shadow:0 40px 70px -26px rgba(0,0,0,.55),inset 0 0 0 2px #2a2d31;">
+    <div data-screen-label="rack.bar" style="position:relative;height:788px;background:#0d0e10;border-radius:47px;overflow:hidden;">
+      <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:110px;height:31px;background:#000;border-radius:16px;z-index:6;"></div>
+      <div style="position:absolute;top:0;left:0;right:0;height:52px;display:flex;align-items:center;justify-content:space-between;padding:19px 32px 0;z-index:5;font:600 14px 'Hanken Grotesk';color:#f4f4f5;">
+        <span>9:41</span>
+        <span style="display:flex;align-items:center;gap:7px;">
+          <span style="display:flex;gap:2px;align-items:flex-end;height:11px;"><i style="width:3px;height:5px;background:#f4f4f5;border-radius:1px;display:block;"></i><i style="width:3px;height:7px;background:#f4f4f5;border-radius:1px;display:block;"></i><i style="width:3px;height:9px;background:#f4f4f5;border-radius:1px;display:block;"></i><i style="width:3px;height:11px;background:#f4f4f5;border-radius:1px;display:block;"></i></span>
+          <span style="width:24px;height:12px;border:1.5px solid #f4f4f5;border-radius:3px;padding:1.5px;display:flex;"><i style="flex:1;background:#f4f4f5;border-radius:1px;display:block;"></i></span>
+        </span>
+      </div>
+
+      <div style="position:absolute;inset:0;padding:54px 22px 74px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;position:relative;">
+          <div style="display:flex;align-items:center;gap:9px;">
+            <div style="font:800 20px 'Hanken Grotesk';letter-spacing:-.025em;color:#f4f4f5;">rack<span style="color:#f5c518;">.</span>bar</div>
+            <button onClick="{{ a.toggleHelp }}" aria-label="How it works" style="{{ a.helpBtnStyle }}"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="display:block;"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.5"></circle><circle cx="8" cy="5.1" r=".95" fill="currentColor"></circle><path d="M8 7.3v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+          </div>
+          <button onClick="{{ a.toggleCfg }}" style="display:flex;align-items:center;gap:7px;background:#15171a;border:1px solid #20242a;border-radius:999px;padding:8px 14px;cursor:pointer;font:600 11px 'JetBrains Mono';letter-spacing:.04em;color:#aab0b7;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex:none;"><line x1="2.5" y1="5" x2="13.5" y2="5" stroke="#f5c518" stroke-width="1.6" stroke-linecap="round"></line><line x1="2.5" y1="11" x2="13.5" y2="11" stroke="#f5c518" stroke-width="1.6" stroke-linecap="round"></line><circle cx="10" cy="5" r="2.3" fill="#15171a" stroke="#f5c518" stroke-width="1.6"></circle><circle cx="6" cy="11" r="2.3" fill="#15171a" stroke="#f5c518" stroke-width="1.6"></circle></svg>{{ a.setupLabel }} <span style="{{ a.caretStyle }}"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="display:block;"><path d="M3.5 6L8 10.5 12.5 6" stroke="#aab0b7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></span></button>
+          <sc-if value="{{ a.helpOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;top:100%;left:0;margin-top:9px;z-index:8;width:248px;padding:13px 14px;background:#16191d;border:1px solid #262b31;border-radius:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,.7);display:flex;flex-direction:column;gap:9px;transform-origin:top left;animation:popIn .16s cubic-bezier(.2,.85,.25,1);">
+              <div style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">How it works</div>
+              <div style="display:flex;gap:8px;align-items:baseline;"><span style="flex:none;font:700 11px 'JetBrains Mono';color:#f5c518;">1</span><span style="font:500 12px 'Hanken Grotesk';color:#c2c7cd;line-height:1.4;"><strong style="color:#f4f4f5;font-weight:700;">Enter weight</strong> — type a target and we rack the plates per side.</span></div>
+              <div style="display:flex;gap:8px;align-items:baseline;"><span style="flex:none;font:700 11px 'JetBrains Mono';color:#f5c518;">2</span><span style="font:500 12px 'Hanken Grotesk';color:#c2c7cd;line-height:1.4;"><strong style="color:#f4f4f5;font-weight:700;">Add plates</strong> — tap a plate to load a pair, tap a loaded plate to remove it.</span></div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="display:flex;padding:4px;background:#15171a;border:1px solid #20242a;border-radius:999px;">
+          <button onClick="{{ a.decode }}" style="{{ a.weightBtnStyle }}">Enter weight</button>
+          <button onClick="{{ a.encode }}" style="{{ a.platesBtnStyle }}">Add plates</button>
+        </div>
+
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;height:204px;flex-shrink:0;justify-content:center;padding:4px 0;">
+          <button onClick="{{ a.openFs }}" aria-label="View full screen" style="position:absolute;top:0;right:0;z-index:2;width:30px;height:30px;display:flex;align-items:center;justify-content:center;padding:0;border-radius:9px;background:#15171a;border:1px solid #20242a;cursor:pointer;color:#8b929a;" style-hover="color:#f4f4f5;border-color:#2b3036;">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="display:block;"><path d="M2 6V2.5H5.5M14 6V2.5H10.5M2 10V13.5H5.5M14 10V13.5H10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </button>
+          <div style="align-self:flex-start;font:600 11px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">{{ a.perSideLabel }}</div>
+          <div style="display:flex;align-items:center;justify-content:center;">
+            <div style="flex:none;width:52px;height:9px;border-radius:4px 0 0 4px;background:#4e545b;"></div>
+            <div style="flex:none;width:11px;height:34px;border-radius:3px;background:#8b9199;"></div>
+            <sc-if value="{{ a.barEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:none;width:34px;height:120px;margin-left:5px;border:1.5px dashed #2f343a;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#3f454c;font:600 20px 'JetBrains Mono';">+</div>
+            </sc-if>
+            <sc-for list="{{ a.discs }}" as="disc" hint-placeholder-count="3">
+              <button onClick="{{ disc.remove }}" class="disc" style="{{ disc.style }}">
+                <sc-if value="{{ disc.showLabel }}" hint-placeholder-val="{{ true }}">
+                  <span style="{{ disc.labelStyle }}">{{ disc.label }}</span>
+                </sc-if>
+              </button>
+            </sc-for>
+            <div style="flex:none;width:8px;height:20px;border-radius:2px;background:#5c636b;margin-left:3px;"></div>
+            <div style="flex:none;width:13px;height:11px;border-radius:1px 5px 5px 1px;background:#4e545b;"></div>
+          </div>
+        </div>
+
+        <sc-if value="{{ a.isEncode }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Total</span><span style="display:flex;padding:2px;background:#15171a;border:1px solid #20242a;border-radius:999px;"><button onClick="{{ a.kg }}" style="{{ a.kgBtnStyle }}">kg</button><button onClick="{{ a.lb }}" style="{{ a.lbBtnStyle }}">lb</button></span></div>
+            <div style="font-family:'Hanken Grotesk';font-weight:800;font-size:54px;line-height:1;color:#f4f4f5;letter-spacing:-.025em;font-feature-settings:'tnum';white-space:nowrap;"><span style="display:inline-block;">{{ a.totalPrimary }}</span><span style="font-size:21px;color:#8b929a;font-weight:600;"> {{ a.unitLabel }}</span></div>
+            <div style="margin-top:6px;font:500 13px 'Hanken Grotesk';color:#8b929a;">{{ a.totalSecondary }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ a.isDecode }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <span style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Total</span>
+              <span style="display:flex;padding:2px;background:#15171a;border:1px solid #20242a;border-radius:999px;"><button onClick="{{ a.kg }}" style="{{ a.kgBtnStyle }}">kg</button><button onClick="{{ a.lb }}" style="{{ a.lbBtnStyle }}">lb</button></span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+              <span style="font:800 54px 'Hanken Grotesk';letter-spacing:-.025em;color:#f4f4f5;font-feature-settings:'tnum';line-height:1;white-space:nowrap;display:inline-flex;align-items:baseline;justify-content:center;">{{ a.onBarMain }}<span style="font-size:21px;color:#8b929a;font-weight:600;"> {{ a.onBarUnit }}</span></span>
+              <div style="display:flex;align-items:center;gap:9px;">
+                <span style="font:500 13px 'Hanken Grotesk';color:#8b929a;">{{ a.onBarSec }}</span>
+                <sc-if value="{{ a.statusShow }}" hint-placeholder-val="{{ true }}"><span style="{{ a.statusPillStyle }}"><span style="{{ a.statusDotStyle }}"></span>{{ a.statusLabel }}</span></sc-if>
+              </div>
+              <div style="height:36px;margin-top:2px;display:flex;align-items:center;justify-content:center;">
+                <sc-if value="{{ a.overShow }}" hint-placeholder-val="{{ false }}"><button onClick="{{ a.over }}" style="background:transparent;border:1px solid #2a2f35;border-radius:999px;padding:8px 15px;color:#f5c518;font:600 12px 'Hanken Grotesk';cursor:pointer;">{{ a.overText }}</button></sc-if>
+                <sc-if value="{{ a.capShow }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:6px;font:600 10px 'JetBrains Mono';letter-spacing:.1em;text-transform:uppercase;color:#f5c518;"><span style="width:5px;height:5px;border-radius:999px;background:#f5c518;display:inline-block;"></span>Bar at capacity</span></sc-if>
+              </div>
+            </div>
+
+            <div style="margin-top:15px;padding-top:15px;border-top:1px solid #1b1e22;">
+              <div style="margin-bottom:9px;"><span style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Target</span></div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <button onClick="{{ a.dec }}" style="flex:none;width:44px;height:44px;border-radius:999px;border:1px solid #20242a;background:transparent;color:#f4f4f5;font:600 22px 'JetBrains Mono';cursor:pointer;line-height:1;">−</button>
+                <button onClick="{{ a.tapValue }}" style="flex:1;min-width:0;background:transparent;border:none;border-bottom:2px solid #20242a;padding:3px 0;cursor:pointer;font-family:'Hanken Grotesk';font-weight:700;font-size:30px;line-height:1.2;text-align:center;color:#cfd3d8;font-feature-settings:'tnum';"><span style="{{ a.entryNumStyle }}">{{ a.entryShown }}</span><span style="font-size:15px;color:#8b929a;font-weight:600;"> {{ a.unitLabel }}</span></button>
+                <button onClick="{{ a.inc }}" style="flex:none;width:44px;height:44px;border-radius:999px;border:1px solid #20242a;background:transparent;color:#f4f4f5;font:600 22px 'JetBrains Mono';cursor:pointer;line-height:1;">+</button>
+              </div>
+              <sc-if value="{{ a.hasRecents }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:9px;margin-top:12px;">
+                  <span style="flex:none;font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Recent</span>
+                  <div style="position:relative;flex:1;min-width:0;">
+                    <div ref="{{ a.recScrollRef }}" onScroll="{{ a.onRecScroll }}" style="display:flex;gap:6px;overflow-x:auto;padding:1px 0;">
+                      <sc-for list="{{ a.chips }}" as="c" hint-placeholder-count="4">
+                        <button onClick="{{ c.apply }}" style="{{ c.style }}">{{ c.label }}</button>
+                      </sc-for>
+                    </div>
+                    <sc-if value="{{ a.recOvL }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ a.recNudgeL }}" aria-label="Scroll left" style="position:absolute;top:0;bottom:0;left:0;width:42px;display:flex;align-items:center;justify-content:flex-start;padding-left:3px;border:none;background:linear-gradient(90deg,#0d0e10 34%,rgba(13,14,16,0));cursor:pointer;">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 3L7 8l4.5 5M7 3L2.5 8 7 13" stroke="#aab0b7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                      </button>
+                    </sc-if>
+                    <sc-if value="{{ a.recOvR }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ a.recNudgeR }}" aria-label="Scroll right" style="position:absolute;top:0;bottom:0;right:0;width:42px;display:flex;align-items:center;justify-content:flex-end;padding-right:3px;border:none;background:linear-gradient(90deg,rgba(13,14,16,0),#0d0e10 66%);cursor:pointer;">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4.5 3L9 8l-4.5 5M9 3l4.5 5L9 13" stroke="#aab0b7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                      </button>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ a.isEncode }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="height:60px;margin-bottom:9px;display:flex;flex-direction:column;justify-content:center;">
+            <sc-if value="{{ a.hasLoaded }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+                <span style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">On the bar</span>
+                <button onClick="{{ a.clearBar }}" style="display:flex;align-items:center;gap:5px;background:#15171a;border:1px solid #20242a;border-radius:999px;padding:5px 11px;color:#9aa1a9;font:600 10px 'JetBrains Mono';letter-spacing:.12em;text-transform:uppercase;cursor:pointer;" style-hover="color:#e0263a;border-color:#3a2326;"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" style="display:block;"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>Clear</button>
+              </div>
+              <div style="position:relative;margin-bottom:9px;">
+                <div ref="{{ a.chipScrollRef }}" onScroll="{{ a.onChipScroll }}" style="display:flex;gap:6px;overflow-x:auto;padding:2px;">
+                  <sc-for list="{{ a.loadedGroups }}" as="g" hint-placeholder-count="3">
+                    <button onClick="{{ g.remove }}" style="{{ g.style }}"><span>{{ g.weight }}</span><sc-if value="{{ g.multi }}" hint-placeholder-val="{{ false }}"><span style="{{ g.cStyle }}">×{{ g.count }}</span></sc-if></button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ a.chipOvL }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ a.chipNudgeL }}" aria-label="Scroll left" style="position:absolute;top:0;bottom:0;left:0;width:42px;display:flex;align-items:center;justify-content:flex-start;padding-left:3px;border:none;background:linear-gradient(90deg,#0d0e10 34%,rgba(13,14,16,0));cursor:pointer;">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11.5 3L7 8l4.5 5M7 3L2.5 8 7 13" stroke="#aab0b7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                  </button>
+                </sc-if>
+                <sc-if value="{{ a.chipOvR }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ a.chipNudgeR }}" aria-label="Scroll right" style="position:absolute;top:0;bottom:0;right:0;width:42px;display:flex;align-items:center;justify-content:flex-end;padding-right:3px;border:none;background:linear-gradient(90deg,rgba(13,14,16,0),#0d0e10 66%);cursor:pointer;">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4.5 3L9 8l-4.5 5M9 3l4.5 5L9 13" stroke="#aab0b7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                  </button>
+                </sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{ a.barEmpty }}" hint-placeholder-val="{{ true }}">
+              <div style="text-align:center;"><span style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Tap to add a pair</span></div>
+            </sc-if>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <span style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Add</span>
+              <sc-if value="{{ a.sleeveFull }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:5px;font:600 10px 'JetBrains Mono';letter-spacing:.1em;text-transform:uppercase;color:#f5c518;"><span style="width:5px;height:5px;border-radius:999px;background:#f5c518;display:inline-block;"></span>Sleeve full</span></sc-if>
+            </div>
+            <div style="{{ a.paletteGridStyle }}">
+              <sc-for list="{{ a.palette }}" as="pk" hint-placeholder-count="5">
+                <button onClick="{{ pk.add }}" style="{{ pk.style }}">{{ pk.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="margin-top:auto;height:2px;"></div>
+
+      </div>
+
+      <div style="position:absolute;left:0;right:0;bottom:0;z-index:4;display:flex;justify-content:center;padding:18px 22px 22px;background:linear-gradient(180deg,rgba(13,14,16,0),#0d0e10 42%);pointer-events:none;">
+        <button onClick="{{ a.openCard }}" style="pointer-events:auto;display:flex;align-items:center;gap:7px;background:#15171a;border:1px solid #20242a;border-radius:999px;padding:9px 17px;color:#8b929a;font:600 12px 'Hanken Grotesk';cursor:pointer;"><svg width="13" height="15" viewBox="0 0 16 18" fill="none" style="display:block;margin-top:-1px;"><path d="M8 1.5V11" stroke="#8b929a" stroke-width="1.6" stroke-linecap="round"/><path d="M4.75 4.75L8 1.5L11.25 4.75" stroke="#8b929a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 6.75H4.25C3.14543 6.75 2.25 7.64543 2.25 8.75V14.5C2.25 15.6046 3.14543 16.5 4.25 16.5H11.75C12.8546 16.5 13.75 15.6046 13.75 14.5V8.75C13.75 7.64543 12.8546 6.75 11.75 6.75H11" stroke="#8b929a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> Share loading</button>
+      </div>
+
+      <sc-if value="{{ a.keypadOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:0;right:0;bottom:0;z-index:7;background:#101216;border-top:1px solid #20242a;border-radius:24px 24px 0 0;padding:16px 16px 16px;box-shadow:0 -18px 44px -18px rgba(0,0,0,.7);animation:sheetIn .2s ease-out;">
+          <div style="text-align:center;margin-bottom:15px;">
+            <div style="font-family:'Hanken Grotesk';font-weight:800;font-size:46px;line-height:1;letter-spacing:-.02em;color:#f4f4f5;font-feature-settings:'tnum';"><span style="{{ a.entryNumStyle }}">{{ a.entryShown }}</span><span style="font-size:18px;color:#8b929a;font-weight:700;"> {{ a.unitLabel }}</span></div>
+            <div style="margin-top:6px;display:flex;flex-direction:column;align-items:center;gap:3px;">
+              <sc-if value="{{ a.secShown }}" hint-placeholder-val="{{ true }}"><div style="font:500 13px 'Hanken Grotesk';color:#8b929a;">{{ a.entrySecondary }}</div></sc-if>
+              <sc-if value="{{ a.deltaShow }}" hint-placeholder-val="{{ false }}"><div style="font:600 11px 'Hanken Grotesk';color:#f5c518;">{{ a.deltaText }}</div></sc-if>
+              <sc-if value="{{ a.exactShow }}" hint-placeholder-val="{{ true }}"><div style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">✓ exact</div></sc-if>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+            <sc-for list="{{ a.keypadKeys }}" as="k" hint-placeholder-count="6">
+              <button onClick="{{ k.press }}" style="min-height:44px;border:1px solid #20242a;border-radius:13px;background:#15171a;color:#f4f4f5;font:600 20px 'JetBrains Mono';cursor:pointer;">{{ k.label }}</button>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button onClick="{{ a.clearPress }}" style="flex:1;min-height:42px;border:1px solid #20242a;border-radius:13px;background:transparent;color:#8b929a;font:600 13px 'Hanken Grotesk';cursor:pointer;">Clear</button>
+            <button onClick="{{ a.tapValue }}" style="flex:1;min-height:42px;border:none;border-radius:13px;background:#f5c518;color:#0d0e10;font:700 14px 'Hanken Grotesk';cursor:pointer;">Done</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ a.cfgOpen }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ a.closeCfg }}" style="position:absolute;inset:0;z-index:9;background:rgba(5,6,7,.55);display:flex;align-items:flex-end;animation:fadeIn .16s ease-out;">
+          <div onClick="{{ a.stop }}" style="width:100%;background:#16191d;border-top:1px solid #23272c;border-radius:24px 24px 0 0;padding:18px 20px 26px;box-shadow:0 -20px 50px -20px rgba(0,0,0,.7);animation:sheetIn .26s cubic-bezier(.2,.85,.25,1);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+              <span style="font:800 17px 'Hanken Grotesk';letter-spacing:-.01em;color:#f4f4f5;">Setup</span>
+              <button onClick="{{ a.closeCfg }}" style="border:none;border-radius:999px;background:#f5c518;color:#0d0e10;font:700 12px 'Hanken Grotesk';padding:7px 17px;cursor:pointer;">Done</button>
+            </div>
+            <div style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;margin-bottom:9px;">Bar</div>
+            <div style="display:flex;gap:8px;margin-bottom:20px;">
+              <sc-for list="{{ a.barOptions }}" as="b" hint-placeholder-count="3">
+                <button onClick="{{ b.set }}" style="{{ b.style }}"><span style="{{ b.kgStyle }}">{{ b.kgLabel }}</span><span style="{{ b.lbStyle }}">{{ b.lbLabel }}</span></button>
+              </sc-for>
+            </div>
+            <div style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;margin-bottom:9px;">Collars</div>
+            <div style="display:flex;gap:8px;margin-bottom:20px;">
+              <sc-for list="{{ a.collarOptions }}" as="c" hint-placeholder-count="2">
+                <button onClick="{{ c.set }}" style="{{ c.style }}"><span style="{{ c.kgStyle }}">{{ c.kgLabel }}</span><span style="{{ c.lbStyle }}">{{ c.lbLabel }}</span></button>
+              </sc-for>
+            </div>
+            <div style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;margin-bottom:9px;">Plates</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <sc-for list="{{ a.plateSetOptions }}" as="p" hint-placeholder-count="2">
+                <button onClick="{{ p.set }}" style="{{ p.style }}">
+                  <span style="display:flex;gap:4px;align-items:center;"><sc-for list="{{ p.swatches }}" as="sw" hint-placeholder-count="4"><span style="{{ sw }}"></span></sc-for></span>
+                  <span style="display:flex;flex-direction:column;align-items:flex-start;flex:1;margin-left:12px;"><span style="font:700 14px 'Hanken Grotesk';color:#f4f4f5;">{{ p.label }}</span><span style="font:500 12px 'Hanken Grotesk';color:#8b929a;">{{ p.sub }}</span></span>
+                  <span style="{{ p.checkStyle }}">✓</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ a.cardOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;z-index:8;background:rgba(5,6,7,.72);display:flex;align-items:center;justify-content:center;padding:24px;animation:fadeIn .16s ease-out;">
+          <div style="width:100%;max-width:300px;background:#16191d;border:1px solid #23272c;border-radius:26px;padding:22px;box-shadow:0 30px 60px -20px rgba(0,0,0,.7);animation:cardIn .24s cubic-bezier(.2,.85,.25,1);">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="font:800 16px 'Hanken Grotesk';letter-spacing:-.02em;color:#f4f4f5;">rack<span style="color:#f5c518;">.</span>bar</div>
+              <div style="font:600 11px 'JetBrains Mono';letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Loading card</div>
+            </div>
+            <div style="text-align:center;margin:18px 0 4px;">
+              <div style="font:800 52px 'Hanken Grotesk';letter-spacing:-.03em;color:#f4f4f5;line-height:1;font-feature-settings:'tnum';">{{ a.totalPrimary }}<span style="font-size:18px;color:#8b929a;font-weight:700;"> {{ a.unitLabel }}</span></div>
+              <div style="font:500 13px 'Hanken Grotesk';color:#8b929a;margin-top:4px;">{{ a.totalSecondary }}</div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:16px 0;">
+              <sc-if value="{{ a.cardHasPlates }}" hint-placeholder-val="{{ true }}">
+                <sc-for list="{{ a.cardGroups }}" as="g" hint-placeholder-count="3">
+                  <span style="{{ g.style }}">{{ g.text }}</span>
+                </sc-for>
+              </sc-if>
+              <sc-if value="{{ a.cardBare }}" hint-placeholder-val="{{ false }}">
+                <span style="font:500 13px 'Hanken Grotesk';color:#8b929a;">Bare bar — no plates</span>
+              </sc-if>
+            </div>
+            <div style="text-align:center;font:600 11px 'JetBrains Mono';letter-spacing:.06em;color:#8b929a;margin-bottom:18px;">{{ a.cardConfig }} · per side</div>
+            <div style="display:flex;gap:9px;">
+              <button onClick="{{ a.copyCard }}" style="flex:1;border:none;border-radius:13px;padding:12px 0;background:#f5c518;color:#0d0e10;font:700 13px 'Hanken Grotesk';cursor:pointer;">{{ a.copyLabel }}</button>
+              <button onClick="{{ a.closeCard }}" style="flex:none;border:1px solid #23272c;border-radius:13px;padding:12px 17px;background:transparent;color:#8b929a;font:600 13px 'Hanken Grotesk';cursor:pointer;">Close</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ a.fullscreen }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ a.closeFs }}" style="position:absolute;inset:0;z-index:11;background:radial-gradient(120% 90% at 50% 30%,#16181c,#0a0b0d);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;align-items:center;padding:60px 24px 36px;">
+          <button onClick="{{ a.closeFs }}" aria-label="Exit full screen" style="position:absolute;top:20px;right:20px;z-index:3;width:42px;height:42px;display:flex;align-items:center;justify-content:center;padding:0;border-radius:12px;background:#15171a;border:1px solid #20242a;cursor:pointer;color:#aab0b7;" style-hover="color:#f4f4f5;border-color:#2b3036;">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:block;"><path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </button>
+
+          <div style="flex:none;display:flex;flex-direction:column;align-items:center;text-align:center;">
+            <div style="font:800 19px 'Hanken Grotesk';letter-spacing:-.025em;color:#f4f4f5;">rack<span style="color:#f5c518;">.</span>bar</div>
+            <div style="margin-top:12px;font-family:'Hanken Grotesk';font-weight:800;font-size:58px;line-height:1;letter-spacing:-.03em;color:#f4f4f5;font-feature-settings:'tnum';">{{ a.totalPrimary }}<span style="font-size:22px;color:#8b929a;font-weight:600;"> {{ a.unitLabel }}</span></div>
+            <div style="margin-top:8px;font:500 14px 'Hanken Grotesk';color:#8b929a;">{{ a.totalSecondary }} · per side</div>
+            <div style="margin-top:16px;font:600 11px 'JetBrains Mono';letter-spacing:.12em;text-transform:uppercase;color:#7e858d;">{{ a.fsConfig }}</div>
+          </div>
+
+          <div style="flex:1;min-height:0;align-self:stretch;position:relative;">
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg);transform-origin:center;display:flex;align-items:center;justify-content:center;">
+              <div style="flex:none;width:80px;height:26px;border-radius:8px 0 0 8px;background:linear-gradient(180deg,#5a6068,#454b52);"></div>
+              <div style="flex:none;width:30px;height:96px;border-radius:7px;background:linear-gradient(180deg,#9aa0a8,#7e848c);"></div>
+              <sc-if value="{{ a.fsBarEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="flex:none;width:170px;height:90px;margin-left:14px;border:1.5px dashed #2f343a;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#3f454c;font:600 12px 'JetBrains Mono';letter-spacing:.12em;text-transform:uppercase;"><span style="transform:rotate(-90deg);white-space:nowrap;display:block;">Bare bar</span></div>
+              </sc-if>
+              <sc-for list="{{ a.fsDiscs }}" as="disc" hint-placeholder-count="4">
+                <div style="{{ disc.style }}">
+                  <sc-if value="{{ disc.showLabel }}" hint-placeholder-val="{{ true }}">
+                    <span style="{{ disc.labelStyle }}">{{ disc.label }}</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+              <div style="flex:none;width:16px;height:54px;border-radius:4px;background:#5c636b;margin-left:6px;"></div>
+              <div style="flex:none;width:30px;height:28px;border-radius:3px 12px 12px 3px;background:linear-gradient(180deg,#5a6068,#454b52);"></div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  // ============================================================================
+  //  DESIGN SYSTEM
+  //  ---------------------------------------------------------------------------
+  //  `T` is the single source of truth for the dark UI. Every colour / radius /
+  //  type family used by the JS-built styles below resolves from here, so a
+  //  re-theme is a one-line change that propagates through every view.
+  //
+  //  HANDOFF (live rack.bar site): these map 1:1 to CSS custom properties, e.g.
+  //    --rb-accent:#f5c518;  --rb-surface-raised:#15171a;  --rb-text-muted:#9aa1a9;
+  //  and the s*() builder methods map to component classes (.rb-pill, .rb-tile,
+  //  .rb-status-pill …). The plate palette (PAL) is DOMAIN data (Eleiko colour
+  //  coding), kept separate from UI tokens on purpose.
+  //
+  //  NOTE: the markup template above uses the same literal values inline (DC
+  //  inline-styles can't read JS tokens), so when you change a token here also
+  //  update its twin in the template — the values are documented 1:1 in
+  //  "Design system.dc.html".
+  // ============================================================================
+  T = {
+    // brand
+    accent: '#f5c518', accentInk: '#0d0e10',
+    // surfaces — deepest → most raised
+    surface: '#0d0e10',          // app background
+    surfaceSunken: '#101216',    // keypad sheet
+    surfaceRaised: '#15171a',    // inset controls (segmented track, buttons)
+    surfaceOverlay: '#16191d',   // sheets & modals
+    surfaceActive: '#1b1f24',    // selected list row (plate-set)
+    surfaceSelected: '#272b30',  // active segment / pill fill
+    // borders
+    border: '#20242a',           // default hairline
+    borderStrong: '#23272c',     // modal edge
+    borderMuted: '#2a2f35',      // status-pill / icon-button edge
+    borderActive: '#3a4047',     // selected control edge
+    divider: '#1b1e22',
+    // text tiers (on dark)
+    textPrimary: '#f4f4f5',
+    textSecondary: '#aab0b7',
+    textMuted: '#9aa1a9',
+    textDim: '#8b929a',          // unifies former #8b929a / #8b929a
+    textDisabled: '#41464c',
+    // semantic
+    danger: '#e0263a', success: '#4caf6a',
+    // type families
+    sans: "'Hanken Grotesk', sans-serif",
+    mono: "'JetBrains Mono', monospace",
+    // radii
+    rPill: '999px', rCard: '14px', rTile: '11px',
+  };
+
+  // ---- component style-builders (return inline-style objects) ----------------
+  // Segmented MODE button — Enter weight / Add plates
+  sModeBtn(on) { const T = this.T; return { flex: 1, border: 'none', cursor: 'pointer', padding: '11px 0', borderRadius: T.rPill, font: (on ? '700' : '600') + ' 14px ' + T.sans, background: on ? T.accent : 'transparent', color: on ? T.accentInk : T.textDim }; }
+  // Segmented UNIT button — kg / lb
+  sUnitBtn(on) { const T = this.T; return { border: 'none', cursor: 'pointer', padding: '7px 15px', borderRadius: T.rPill, font: (on ? '700' : '600') + ' 12px ' + T.mono, letterSpacing: '.04em', background: on ? T.surfaceSelected : 'transparent', color: on ? T.textPrimary : T.textDim }; }
+  // Selector TILE — bar / collar options
+  sTile(on) { const T = this.T; return { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid ' + (on ? T.borderActive : T.border), background: on ? T.surfaceSelected : 'transparent', borderRadius: T.rTile, padding: '9px 4px', cursor: 'pointer' }; }
+  // Recent-target CHIP — outline pill
+  sRecentChip(on) { const T = this.T; return { flex: 'none', border: '1px solid ' + (on ? T.borderActive : T.border), background: on ? T.surfaceSelected : 'transparent', color: on ? T.textPrimary : T.textDim, borderRadius: T.rPill, padding: '7px 13px', cursor: 'pointer', font: '600 12px ' + T.mono, letterSpacing: '.04em', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }; }
+  // STATUS pill — Exact / N over / N short
+  sStatusPill() { const T = this.T; return { display: 'inline-flex', alignItems: 'center', gap: '6px', font: '600 10px ' + T.mono, letterSpacing: '.1em', textTransform: 'uppercase', color: T.textSecondary, background: 'transparent', border: '1px solid ' + T.borderMuted, borderRadius: T.rPill, padding: '3px 10px', lineHeight: 1, whiteSpace: 'nowrap' }; }
+  // Colour-coded PLATE fill (discs, chips, palette) — colour → soft top-lit gradient
+  plateColor(cn) { return this.PAL[cn] || '#34383e'; }
+  plateBg(cn) { const c = this.plateColor(cn); return `linear-gradient(180deg, color-mix(in srgb, ${c} 95%, #ffffff), ${c})`; }
+  plateInk(cn) { return (cn === 'white' || cn === 'yellow') ? this.T.accentInk : '#ffffff'; }
+
+  ELEIKO = [
+    { kg: 25, color: 'red', diameterMm: 450, widthMm: 58 },
+    { kg: 20, color: 'blue', diameterMm: 450, widthMm: 50 },
+    { kg: 15, color: 'yellow', diameterMm: 450, widthMm: 39 },
+    { kg: 10, color: 'green', diameterMm: 450, widthMm: 35 },
+    { kg: 5, color: 'white', diameterMm: 228, widthMm: 20 },
+    { kg: 2.5, color: 'red', diameterMm: 207, widthMm: 15 },
+    { kg: 2, color: 'blue', diameterMm: 193, widthMm: 22 },
+    { kg: 1.5, color: 'yellow', diameterMm: 170, widthMm: 20 },
+    { kg: 1, color: 'green', diameterMm: 148, widthMm: 19 },
+    { kg: 0.5, color: 'white', diameterMm: 127, widthMm: 16 },
+  ];
+  EPS = 1e-9;
+  LB = 2.2046226218;
+  GAP = 1.5;
+  BARSTUB = 92;
+  MIN_DISC = 9;
+  AVAIL = 296;
+  MAX_SCALE = 168 / 450;
+  SLEEVE_MM = 415;
+  PAL = { red: '#e0263a', blue: '#2563c9', yellow: '#f5c518', green: '#25a45a', white: '#eef0f2', iron: '#34383e' };
+  IRON = [
+    { kg: 20.41166, label: '45', color: 'iron', diameterMm: 450, widthMm: 50 },
+    { kg: 15.87573, label: '35', color: 'iron', diameterMm: 400, widthMm: 44 },
+    { kg: 11.33981, label: '25', color: 'iron', diameterMm: 330, widthMm: 34 },
+    { kg: 4.53592, label: '10', color: 'iron', diameterMm: 230, widthMm: 24 },
+    { kg: 2.26796, label: '5', color: 'iron', diameterMm: 195, widthMm: 20 },
+    { kg: 1.13398, label: '2.5', color: 'iron', diameterMm: 160, widthMm: 17 },
+  ];
+  KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'];
+  KGPRES = [40, 60, 80, 100, 120, 140, 160, 180, 200, 220];
+  LBPRES = [95, 135, 185, 225, 275, 315, 365, 405];
+  BARS = [{ kg: 20, sub: "Men's" }, { kg: 15, sub: "Women's" }, { kg: 5, sub: 'Tech' }];
+  COLLARS = [{ kg: 0, sub: 'None' }, { kg: 2.5, sub: 'Standard' }];
+
+  state = (() => {
+    const barKg = 20, collarKg = 0;
+    const d = this.decode(142.5, barKg, collarKg, this.ELEIKO);
+    let recents = [];
+    try { recents = JSON.parse(localStorage.getItem('rackbar.recents') || '[]'); } catch (e) {}
+    if (!Array.isArray(recents)) recents = [];
+    return { a: { mode: 'decode', unit: 'kg', draft: '142.5', srcKg: 142.5, pristine: true, side: d.primary.side, decoded: d, showingOver: false, keypad: false, secHidden: false, barKg, collarKg, plateSet: 'comp', cfgOpen: false, cardOpen: false, copied: false, chipOvL: false, chipOvR: false, fullscreen: false, recents } };
+  })();
+
+  // ---- engine (plate-fill core unchanged; bar + collars parameterized) ----
+  sideKg(side) { return side.reduce((s, p) => s + p.kg, 0); }
+  sideWidth(side) { return side.reduce((w, p) => w + p.widthMm, 0); }
+  minPlateWidth(plates) { return Math.min(...plates.map((p) => p.widthMm)); }
+  total(side, barKg, collarKg) { return barKg + 2 * collarKg + 2 * this.sideKg(side); }
+  fillSide(perSide, plates) {
+    plates = plates || this.ELEIKO;
+    let rem = perSide; const out = []; let width = 0;
+    for (const p of plates) { while (rem >= p.kg - this.EPS && width + p.widthMm <= this.SLEEVE_MM + this.EPS) { out.push(p); rem -= p.kg; width += p.widthMm; } }
+    return out;
+  }
+  activePlates(key) { return key === 'training' ? this.IRON : this.ELEIKO; }
+  decode(target, barKg, collarKg, plates) {
+    plates = plates || this.ELEIKO;
+    if (!Number.isFinite(target)) return { primary: { side: [], total: barKg + 2 * collarKg, delta: 0 } };
+    const perHalf = Math.max(0, (target - barKg - 2 * collarKg) / 2);
+    const side = this.fillSide(perHalf, plates);
+    const total = this.total(side, barKg, collarKg);
+    const primary = { side, total, delta: total - target };
+    if (primary.delta < -this.EPS) {
+      const step = Math.min(...plates.map((p) => p.kg));
+      const overSide = this.fillSide(this.sideKg(side) + step, plates);
+      const overTotal = this.total(overSide, barKg, collarKg);
+      return { primary, over: { side: overSide, total: overTotal, delta: overTotal - target } };
+    }
+    return { primary };
+  }
+  addPlate(side, plate) { return [...side, plate].sort((a, b) => b.kg - a.kg); }
+  removeAt(side, i) { return [...side.slice(0, i), ...side.slice(i + 1)]; }
+  groupSide(side) {
+    const m = [];
+    side.forEach((p) => { const last = m[m.length - 1]; if (last && Math.abs(last.kg - p.kg) < 1e-9) last.count++; else m.push({ kg: p.kg, color: p.color, label: p.label, count: 1 }); });
+    return m;
+  }
+
+  // ---- unit helpers ----
+  toLbWhole(kg) { return Math.round(kg * this.LB); }
+  draftToKg(draft, unit) {
+    if (draft == null) return null;
+    const s = String(draft).trim();
+    if (s === '') return null;
+    const n = Number(s);
+    if (Number.isNaN(n)) return null;
+    return unit === 'lb' ? n / this.LB : n;
+  }
+  kgSec(kg) { return this.fmt(Number(kg.toFixed(1))) + ' kg'; }
+  lbSec(kg) { return this.toLbWhole(kg) + ' lb'; }
+  stepFor(unit) { return unit === 'lb' ? 5 : 1; }
+
+  // ---- helpers ----
+  plateLabel(kg) { return kg < 1 ? String(kg).replace(/^0/, '') : String(kg); }
+  fmt(kg) { return String(Number(kg.toFixed(2))); }
+  fitScale(side) {
+    if (!side.length) return this.MAX_SCALE;
+    const avail = this.AVAIL - this.BARSTUB - this.GAP * side.length;
+    const rowAt = (s) => side.reduce((px, p) => px + Math.max(p.widthMm * s, this.MIN_DISC), 0);
+    if (rowAt(this.MAX_SCALE) <= avail) return this.MAX_SCALE;
+    let lo = 0, hi = this.MAX_SCALE;
+    for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (rowAt(m) <= avail) lo = m; else hi = m; }
+    return lo;
+  }
+
+  // ---- fullscreen (landscape) bar layout: same plates, much larger ----
+  fsLayout(side) {
+    const AVAIL = 360;       // px of room along the (now vertical) bar axis — fits portrait height
+    const GAP = 2;
+    const MIN_DISC = 17;
+    const MAX_SCALE = 280 / 450; // tallest plate ~280px — fills the short (horizontal) axis
+    if (!side.length) return { dims: [], scale: MAX_SCALE };
+    const availPx = AVAIL - GAP * side.length;
+    const rowAt = (s) => side.reduce((px, p) => px + Math.max(p.widthMm * s, MIN_DISC), 0);
+    let scale = MAX_SCALE;
+    if (rowAt(MAX_SCALE) > availPx) {
+      let lo = 0, hi = MAX_SCALE;
+      for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (rowAt(m) <= availPx) lo = m; else hi = m; }
+      scale = lo;
+    }
+    let dims = side.map((p) => ({ w: Math.max(MIN_DISC, p.widthMm * scale), h: p.diameterMm * scale }));
+    const sumW = dims.reduce((acc, d) => acc + d.w, 0);
+    if (sumW > availPx && sumW > 0) { const k = availPx / sumW; dims = dims.map((d) => ({ w: d.w * k, h: d.h * k })); }
+    return { dims, scale };
+  }
+
+  // ---- mutations ----
+  upd(f, patch) { this.setState((s) => ({ [f]: { ...s[f], ...patch } })); }
+  setMode(f, mode) {
+    const fr = this.state[f];
+    if (fr.mode === mode) return;
+    const patch = { mode, decoded: null, showingOver: false, keypad: false };
+    if (mode === 'decode') {
+      const kg = fr.side.length > 0 ? this.total(fr.side, fr.barKg, fr.collarKg) : null;
+      patch.draft = kg === null ? '' : (fr.unit === 'lb' ? String(this.toLbWhole(kg)) : String(kg));
+      patch.srcKg = kg;
+      patch.pristine = true;
+      patch.decoded = kg === null ? null : this.decode(kg, fr.barKg, fr.collarKg, this.activePlates(fr.plateSet));
+      patch.side = patch.decoded ? patch.decoded.primary.side : fr.side;
+    }
+    this.upd(f, patch);
+  }
+  setUnit(f, unit) {
+    const fr = this.state[f];
+    if (fr.unit === unit) return;
+    const kg = fr.srcKg;
+    const draft = kg == null ? '' : (unit === 'lb' ? String(this.toLbWhole(kg)) : String(Number(kg.toFixed(2))));
+    this.upd(f, { unit, draft, pristine: true });
+    if (fr.mode === 'decode') this.decodeTo(f, kg);
+  }
+  decodeTo(f, targetKg) {
+    const fr = this.state[f];
+    const decoded = targetKg === null ? null : this.decode(targetKg, fr.barKg, fr.collarKg, this.activePlates(fr.plateSet));
+    this.upd(f, { showingOver: false, decoded, side: decoded ? decoded.primary.side : [] });
+  }
+  step(f) {
+    const fr = this.state[f];
+    return (dir) => {
+      const unit = fr.unit;
+      const stepSize = this.stepFor(unit);
+      const anchor = unit === 'lb' ? this.toLbWhole(fr.barKg) : fr.barKg;
+      const cur = fr.draft === '' ? anchor : Number(fr.draft);
+      const base = Number.isNaN(cur) ? anchor : cur;
+      const q = base / stepSize;
+      const onGrid = Math.abs(q - Math.round(q)) < 1e-9;
+      let next;
+      if (dir > 0) next = (onGrid ? Math.round(q) + 1 : Math.ceil(q - 1e-9)) * stepSize;
+      else next = (onGrid ? Math.round(q) - 1 : Math.floor(q + 1e-9)) * stepSize;
+      next = Math.max(0, Number(next.toFixed(2)));
+      this.upd(f, { draft: String(next), pristine: false, srcKg: this.draftToKg(String(next), unit) });
+      this.decodeTo(f, this.draftToKg(String(next), unit));
+    };
+  }
+  press(f, k) {
+    const fr = this.state[f];
+    const fresh = fr.pristine;
+    let d = fr.draft;
+    if (k === 'clear') d = '';
+    else if (k === 'del') d = fresh ? '' : d.slice(0, -1);
+    else if (k === '.') { if (fresh) d = ''; if (!d.includes('.')) d += d === '' ? '0.' : '.'; }
+    else { const base = fresh ? '' : d; d = base === '0' ? k : base + k; }
+    this.upd(f, { draft: d, pristine: false, srcKg: this.draftToKg(d, fr.unit) });
+    this.decodeTo(f, this.draftToKg(d, fr.unit));
+  }
+  toggleKeypad(f) {
+    const fr = this.state[f];
+    const open = !fr.keypad;
+    if (!open) { const kg = fr.srcKg; if (kg != null) this.pushRecent(f, kg); }
+    this.upd(f, { keypad: open, pristine: open ? true : fr.pristine });
+  }
+  toggleSec(f) { this.upd(f, { secHidden: !this.state[f].secHidden }); }
+  addKey(f, plate) { const fr = this.state[f]; if (fr.mode !== 'encode') return; if (this.sideWidth(fr.side) + plate.widthMm > this.SLEEVE_MM + this.EPS) return; this.upd(f, { side: this.addPlate(fr.side, plate) }); }
+  removeDisc(f, i) { const fr = this.state[f]; if (fr.mode !== 'encode') return; this.upd(f, { side: this.removeAt(fr.side, i) }); }
+  removeOnePlate(f, kg) { const fr = this.state[f]; if (fr.mode !== 'encode') return; let idx = -1; for (let j = fr.side.length - 1; j >= 0; j--) { if (Math.abs(fr.side[j].kg - kg) < 1e-9) { idx = j; break; } } if (idx >= 0) this.upd(f, { side: this.removeAt(fr.side, idx) }); }
+  toggleOver(f) {
+    const fr = this.state[f];
+    if (!fr.decoded) return;
+    const showingOver = !fr.showingOver;
+    const { primary, over } = fr.decoded;
+    const side = (showingOver && over ? over : primary).side;
+    this.upd(f, { showingOver, side });
+  }
+
+  // ---- bar / collar / config ----
+  setBar(f, barKg) {
+    const fr = this.state[f];
+    if (fr.barKg === barKg) return;
+    const patch = { barKg };
+    if (fr.mode === 'decode') {
+      const target = fr.srcKg;
+      const decoded = target == null ? null : this.decode(target, barKg, fr.collarKg, this.activePlates(fr.plateSet));
+      patch.decoded = decoded; patch.showingOver = false; patch.side = decoded ? decoded.primary.side : [];
+    }
+    this.upd(f, patch);
+  }
+  setCollar(f, collarKg) {
+    const fr = this.state[f];
+    if (fr.collarKg === collarKg) return;
+    const patch = { collarKg };
+    if (fr.mode === 'decode') {
+      const target = fr.srcKg;
+      const decoded = target == null ? null : this.decode(target, fr.barKg, collarKg, this.activePlates(fr.plateSet));
+      patch.decoded = decoded; patch.showingOver = false; patch.side = decoded ? decoded.primary.side : [];
+    }
+    this.upd(f, patch);
+  }
+  toggleCollars(f) {
+    const fr = this.state[f];
+    const collarKg = fr.collarKg ? 0 : 2.5;
+    const patch = { collarKg };
+    if (fr.mode === 'decode') {
+      const target = fr.srcKg;
+      const decoded = target == null ? null : this.decode(target, fr.barKg, collarKg, this.activePlates(fr.plateSet));
+      patch.decoded = decoded; patch.showingOver = false; patch.side = decoded ? decoded.primary.side : [];
+    }
+    this.upd(f, patch);
+  }
+  toggleCfg(f) { this.upd(f, { cfgOpen: !this.state[f].cfgOpen }); }
+  setPlateSet(f, key) {
+    const fr = this.state[f];
+    if (fr.plateSet === key) return;
+    const unit = key === 'training' ? 'lb' : 'kg';
+    const targetKg = fr.srcKg;
+    const plates = this.activePlates(key);
+    const patch = { plateSet: key, unit, pristine: true, srcKg: targetKg };
+    patch.draft = targetKg == null ? '' : (unit === 'lb' ? String(this.toLbWhole(targetKg)) : String(Number(targetKg.toFixed(2))));
+    if (fr.mode === 'decode') {
+      const decoded = targetKg == null ? null : this.decode(targetKg, fr.barKg, fr.collarKg, plates);
+      patch.decoded = decoded; patch.showingOver = false; patch.side = decoded ? decoded.primary.side : [];
+    } else {
+      patch.side = [];
+    }
+    this.upd(f, patch);
+  }
+
+  // ---- chips / recents ----
+  applyTarget(f, kg) {
+    const fr = this.state[f];
+    const draft = fr.unit === 'lb' ? String(this.toLbWhole(kg)) : String(Number(kg.toFixed(2)));
+    const decoded = this.decode(kg, fr.barKg, fr.collarKg, this.activePlates(fr.plateSet));
+    this.upd(f, { draft, pristine: false, decoded, showingOver: false, side: decoded.primary.side, srcKg: kg });
+    this.pushRecent(f, kg);
+  }
+  pushRecent(f, kg) {
+    if (!Number.isFinite(kg)) return;
+    const cur = this.state[f].recents || [];
+    const r = cur.filter((v) => Math.abs(v - kg) > 1e-6);
+    r.unshift(Number(kg.toFixed(2)));
+    const recents = r.slice(0, 6);
+    this.upd(f, { recents });
+    try { localStorage.setItem('rackbar.recents', JSON.stringify(recents)); } catch (e) {}
+  }
+
+  // ---- view model ----
+  vm(f) {
+    const fr = this.state[f];
+    const pal = this.PAL;
+    const inkDark = '#0d0e10';
+    const ink = (c) => (c === 'white' || c === 'yellow') ? inkDark : '#ffffff';
+    const isEnc = fr.mode === 'encode';
+    const unit = fr.unit;
+    const isLb = unit === 'lb';
+    const unitUp = unit.toUpperCase();
+    const otherUnitUp = (isLb ? 'kg' : 'lb').toUpperCase();
+    const side = fr.side;
+    const collarsOn = fr.collarKg > 0;
+    const training = fr.plateSet === 'training';
+    const activeSet = training ? this.IRON : this.ELEIKO;
+    const setColor = (cn) => this.plateColor(cn);
+    const chipBg = (cn) => this.plateBg(cn);
+    const setInk = (cn) => this.plateInk(cn);
+    const setName = training ? 'Training' : 'Competition';
+    const totalKgVal = this.total(side, fr.barKg, fr.collarKg);
+    let scale = this.fitScale(side);
+    const discShadow = 'inset 0 0 0 1px rgba(255,255,255,.1), 0 2px 6px rgba(0,0,0,.25)';
+    // overflow guard: even within the sleeve cap, a wall of thin plates can exceed the
+    // render width — shrink the whole row proportionally so discs never collide.
+    let dims = side.map((p) => ({ w: Math.max(this.MIN_DISC, p.widthMm * scale), h: p.diameterMm * scale }));
+    const availPx = this.AVAIL - this.BARSTUB - this.GAP * side.length;
+    const sumW = dims.reduce((acc, d) => acc + d.w, 0);
+    if (sumW > availPx && sumW > 0) { const k = availPx / sumW; dims = dims.map((d) => ({ w: d.w * k, h: d.h * k })); }
+
+    const discs = side.map((p, i) => {
+      const w = dims[i].w, h = dims[i].h;
+      const text = p.label || this.plateLabel(p.kg);
+      // vertical engraved: numeral rotates to run up the face, using the disc's tall dimension.
+      const ink = setInk(p.color);
+      const fontPx = w >= 16 ? 11 : (w >= 11 ? 9 : 8);
+      // vertical text only needs the disc as wide as the glyph is tall, and tall enough to seat the digits
+      const showLabel = w >= fontPx - 1 && h >= text.length * fontPx * 0.6 + 4;
+      const engrave = ink === '#ffffff' ? '0 1px 1px rgba(0,0,0,.4)' : '0 1px 0 rgba(255,255,255,.3)';
+      return {
+        style: { display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', padding: 0, border: 'none', width: w + 'px', height: h + 'px', marginLeft: i === 0 ? 0 : '1.5px', borderRadius: '4px', background: chipBg(p.color), boxShadow: discShadow, cursor: isEnc ? 'pointer' : 'default', overflow: 'hidden' },
+        labelStyle: { fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: fontPx + 'px', lineHeight: 1, color: ink, transform: 'rotate(-90deg)', whiteSpace: 'nowrap', letterSpacing: '.04em', textShadow: engrave },
+        showLabel, label: text,
+        remove: isEnc ? (() => this.removeDisc(f, i)) : (() => {}),
+      };
+    });
+
+    const fsL = this.fsLayout(side);
+    const fsDiscs = side.map((p, i) => {
+      const w = fsL.dims[i].w, h = fsL.dims[i].h;
+      const text = p.label || this.plateLabel(p.kg);
+      const ink = setInk(p.color);
+      const fontPx = w >= 30 ? 19 : (w >= 20 ? 15 : 12);
+      const showLabel = w >= fontPx - 1 && h >= text.length * fontPx * 0.6 + 8;
+      const engrave = ink === '#ffffff' ? '0 1px 2px rgba(0,0,0,.45)' : '0 1px 0 rgba(255,255,255,.3)';
+      return {
+        style: { display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: w + 'px', height: h + 'px', marginLeft: i === 0 ? 0 : '2px', borderRadius: '7px', background: chipBg(p.color), boxShadow: 'inset 0 0 0 1.5px rgba(255,255,255,.1), 0 5px 16px rgba(0,0,0,.34)', overflow: 'hidden' },
+        labelStyle: { fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: fontPx + 'px', lineHeight: 1, color: ink, transform: 'rotate(-90deg)', whiteSpace: 'nowrap', letterSpacing: '.04em', textShadow: engrave },
+        showLabel, label: text,
+      };
+    });
+
+    const onBtn = this.sModeBtn(true);
+    const offBtn = this.sModeBtn(false);
+    const unitOn = this.sUnitBtn(true);
+    const unitOff = this.sUnitBtn(false);
+
+    const totalPrimary = isLb ? String(this.toLbWhole(totalKgVal)) : this.fmt(totalKgVal);
+    const totalSecondary = isLb ? this.kgSec(totalKgVal) : this.lbSec(totalKgVal);
+
+    const entryEmpty = fr.draft === '';
+    const entryShown = entryEmpty ? (isLb ? String(this.toLbWhole(fr.barKg)) : String(fr.barKg)) : fr.draft;
+    const shownKg = entryEmpty ? this.draftToKg(entryShown, unit) : fr.srcKg;
+    const entrySecondary = shownKg == null ? '' : (isLb ? this.kgSec(shownKg) : this.lbSec(shownKg));
+    const targetKg = entryEmpty ? null : fr.srcKg;
+    const entryColor = entryEmpty ? this.T.textDim : this.T.textPrimary;
+
+    // notes — compare what's actually loadable against the typed target
+    let deltaShow = false, deltaText = '', exactShow = false, overShow = false, overText = '';
+    let resultShow = false, onBarMain = '', onBarUnit = unit, onBarSec = '', deltaLabel = '', deltaPillStyle = {}, targetContext = '', capShow = false;
+    if (fr.mode === 'decode' && entryEmpty) {
+      // no plates / no target typed — a bare bar is a valid lift; total = the bar itself (+ collars)
+      const bareKg = this.total([], fr.barKg, fr.collarKg);
+      onBarMain = isLb ? String(this.toLbWhole(bareKg)) : this.fmt(bareKg);
+      onBarSec = isLb ? this.kgSec(bareKg) : this.lbSec(bareKg);
+    } else if (fr.mode === 'decode' && fr.decoded && targetKg != null) {
+      const { primary, over } = fr.decoded;
+      const shown = (fr.showingOver && over) ? over : primary;
+      const capLimited = this.sideWidth(shown.side) + this.minPlateWidth(activeSet) > this.SLEEVE_MM + this.EPS;
+      const toPrim = (kg) => isLb ? this.toLbWhole(kg) : kg;
+      const readTarget = toPrim(targetKg);
+      const readTotal = toPrim(shown.total);
+      const diff = readTotal - readTarget;
+      const achieved = isLb ? String(this.toLbWhole(shown.total)) : this.fmt(shown.total);
+      onBarMain = achieved;
+      onBarSec = isLb ? this.kgSec(shown.total) : this.lbSec(shown.total);
+      targetContext = (isLb ? String(this.toLbWhole(targetKg)) : this.fmt(targetKg)) + ' ' + unit;
+      if (diff === 0) {
+        exactShow = true;
+      } else {
+        resultShow = true;
+        const mag = this.fmt(Math.abs(diff));
+        if (diff > 0) {
+          deltaLabel = `${mag} ${unit} over`;
+          deltaPillStyle = { font: '700 11px ' + this.T.sans, color: this.T.accentInk, background: this.T.accent, borderRadius: this.T.rPill, padding: '2px 9px', lineHeight: 1.5, whiteSpace: 'nowrap' };
+        } else {
+          deltaLabel = `${mag} ${unit} short`;
+          deltaPillStyle = { font: '700 11px ' + this.T.sans, color: this.T.textSecondary, background: 'transparent', border: '1px solid ' + this.T.borderActive, borderRadius: this.T.rPill, padding: '1px 9px', lineHeight: 1.5, whiteSpace: 'nowrap' };
+          if (capLimited) capShow = true;
+        }
+        // compact one-liner kept for the typing keypad sheet
+        deltaShow = true;
+        deltaText = `On the bar: ${achieved} ${unit} · ${mag} ${diff > 0 ? 'over' : 'under'}`;
+      }
+      if (over) {
+        const overPrim = toPrim(over.total);
+        const primPrim = toPrim(primary.total);
+        if (overPrim !== primPrim) {
+          overShow = true;
+          const overTotalP = isLb ? String(this.toLbWhole(over.total)) : this.fmt(over.total);
+          const primTotalP = isLb ? String(this.toLbWhole(primary.total)) : this.fmt(primary.total);
+          overText = fr.showingOver ? `Use ${primTotalP} ${unit}` : `Round up → ${overTotalP} ${unit}`;
+        }
+      }
+    }
+    const showEntrySec = !resultShow;
+    const statusShow = exactShow || resultShow;
+    const statusLabel = exactShow ? 'Exact' : deltaLabel;
+    const statusDotColor = exactShow ? this.T.success : this.T.accent;
+    const statusPillStyle = this.sStatusPill();
+    const statusDotStyle = { width: '5px', height: '5px', borderRadius: '999px', background: statusDotColor, display: 'inline-block', flex: 'none' };
+
+    const paletteHint = '· ' + (training ? 'lb' : 'kg') + ' plates';
+    const paletteGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(' + (training ? 3 : 5) + ', 1fr)', gap: '7px', justifyContent: 'center' };
+    const curWidth = this.sideWidth(side);
+    const palette = activeSet.map((p) => {
+      const fits = curWidth + p.widthMm <= this.SLEEVE_MM + this.EPS;
+      return {
+        label: p.label || String(p.kg),
+        add: fits ? (() => this.addKey(f, p)) : (() => {}),
+        style: { width: '100%', height: '44px', padding: 0, border: 'none', borderRadius: '12px', background: chipBg(p.color), color: setInk(p.color), font: '700 15px "Hanken Grotesk", sans-serif', cursor: fits ? 'pointer' : 'not-allowed', opacity: fits ? 1 : 0.3, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.1), 0 1px 3px rgba(0,0,0,.2)' },
+      };
+    });
+    const sleeveFull = isEnc && side.length > 0 && !activeSet.some((p) => curWidth + p.widthMm <= this.SLEEVE_MM + this.EPS);
+
+    const keypadKeys = this.KEYPAD.map((k) => ({ label: k === 'del' ? '⌫' : k, press: () => this.press(f, k) }));
+
+    const loadedGroups = this.groupSide(side).map((g) => ({
+      weight: g.label || this.plateLabel(g.kg),
+      count: g.count,
+      multi: g.count > 1,
+      remove: () => this.removeOnePlate(f, g.kg),
+      style: { display: 'inline-flex', alignItems: 'center', gap: '4px', flex: 'none', height: '30px', padding: '0 13px', border: 'none', borderRadius: '999px', background: chipBg(g.color), color: setInk(g.color), font: '700 13px "Hanken Grotesk", sans-serif', cursor: 'pointer', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.12), 0 1px 2px rgba(0,0,0,.2)', whiteSpace: 'nowrap' },
+      cStyle: { font: '700 11px "JetBrains Mono", monospace', opacity: 0.55 },
+    }));
+
+    // target chips: the user's recent targets only (arbitrary presets removed — they were filler nobody recognized)
+    const chipStyle = (active) => this.sRecentChip(active);
+    const chips = (fr.recents || []).map((kg) => {
+      const label = isLb ? String(this.toLbWhole(kg)) : this.fmt(kg);
+      const active = targetKg != null && Math.abs(targetKg - kg) < 0.05;
+      return { label, apply: () => this.applyTarget(f, kg), style: chipStyle(active) };
+    });
+    const hasRecents = chips.length > 0;
+
+    // bar selector options
+    const barOptions = this.BARS.map((b) => {
+      const on = fr.barKg === b.kg;
+      const accent = on ? this.T.textPrimary : this.T.textDim;
+      return {
+        kgLabel: b.kg + ' kg',
+        lbLabel: this.toLbWhole(b.kg) + ' lb',
+        kgStyle: { font: '700 14px "Hanken Grotesk", sans-serif', color: accent, lineHeight: 1 },
+        lbStyle: { font: '600 11px "JetBrains Mono", monospace', letterSpacing: '.04em', color: on ? this.T.textMuted : this.T.textDim, lineHeight: 1, marginTop: '3px' },
+        set: () => this.setBar(f, b.kg),
+        style: this.sTile(on),
+      };
+    });
+
+    // collar selector options
+    const collarOptions = this.COLLARS.map((c) => {
+      const on = fr.collarKg === c.kg;
+      const accent = on ? this.T.textPrimary : this.T.textDim;
+      const isNone = c.kg === 0;
+      return {
+        kgLabel: c.sub,
+        lbLabel: isNone ? 'bare sleeve' : (c.kg + ' kg / ' + this.toLbWhole(c.kg) + ' lb'),
+        kgStyle: { font: '700 14px "Hanken Grotesk", sans-serif', color: accent, lineHeight: 1 },
+        lbStyle: { font: '600 11px "JetBrains Mono", monospace', letterSpacing: '.04em', color: on ? this.T.textMuted : this.T.textDim, lineHeight: 1, marginTop: '3px' },
+        set: () => this.setCollar(f, c.kg),
+        style: this.sTile(on),
+      };
+    });
+
+    // share card
+    const groups = this.groupSide(side);
+    const cardGroups = groups.map((g) => ({
+      text: `${g.count}× ${g.label || this.plateLabel(g.kg)}`,
+      style: { display: 'inline-flex', alignItems: 'center', padding: '6px 12px', borderRadius: '999px', background: setColor(g.color), color: setInk(g.color), font: '700 12px "Hanken Grotesk", sans-serif', boxShadow: 'inset 0 0 0 1.5px rgba(255,255,255,.14)' },
+    }));
+    const cardConfig = `${fr.barKg} kg / ${this.toLbWhole(fr.barKg)} lb bar · ${setName}`;
+    const PLATESETS = [
+      { key: 'comp', label: 'Competition', sub: 'Eleiko · color-coded · kg', cols: ['#e0263a', '#2563c9', '#f5c518', '#25a45a'] },
+      { key: 'training', label: 'Training', sub: 'Plain black iron · lb', cols: ['#3a3f45', '#2c3036', '#3a3f45', '#2c3036'] },
+    ];
+    const plateSetOptions = PLATESETS.map((s) => {
+      const on = fr.plateSet === s.key;
+      return {
+        label: s.label, sub: s.sub,
+        set: () => this.setPlateSet(f, s.key),
+        swatches: s.cols.map((c) => ({ width: '14px', height: '14px', borderRadius: '4px', background: c, display: 'block', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.14)' })),
+        style: { display: 'flex', alignItems: 'center', width: '100%', border: '1px solid ' + (on ? this.T.borderActive : this.T.border), background: on ? this.T.surfaceActive : 'transparent', borderRadius: this.T.rCard, padding: '11px 13px', cursor: 'pointer' },
+        checkStyle: { font: '700 15px ' + this.T.sans, color: this.T.accent, opacity: on ? 1 : 0 },
+      };
+    });
+    const copyText = `rack.bar — ${totalPrimary} ${unit}\nPer side: ${groups.length ? groups.map((g) => `${g.count}×${g.label || this.plateLabel(g.kg)}`).join('  ') : 'bare bar'}\n${cardConfig}`;
+
+    return {
+      isDecode: fr.mode === 'decode', isEncode: isEnc,
+      unitUp, otherUnitUp, unitLabel: unit,
+      barCaption: cardConfig,
+      setupLabel: `${fr.barKg} kg bar · ${training ? 'Training' : 'Comp'}`,
+      caretStyle: { display: 'inline-flex', alignItems: 'center', marginLeft: '1px', transition: 'transform .15s', transform: fr.cfgOpen ? 'rotate(180deg)' : 'none' },
+      cfgOpen: fr.cfgOpen, barOptions, collarOptions, plateSetOptions,
+      helpOpen: fr.helpOpen,
+      helpBtnStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', padding: 0, borderRadius: this.T.rPill, background: fr.helpOpen ? 'rgba(245,197,24,.14)' : this.T.surfaceActive, border: '1px solid ' + (fr.helpOpen ? this.T.accent : this.T.borderMuted), cursor: 'pointer', color: fr.helpOpen ? this.T.accent : this.T.textSecondary },
+      collarsOn,
+      collarToggleStyle: { width: '44px', height: '26px', borderRadius: this.T.rPill, border: 'none', cursor: 'pointer', padding: '3px', display: 'flex', alignItems: 'center', justifyContent: collarsOn ? 'flex-end' : 'flex-start', background: collarsOn ? this.T.accent : this.T.surfaceSelected },
+      collarKnobStyle: { width: '20px', height: '20px', borderRadius: '999px', background: '#fff', display: 'block', boxShadow: '0 1px 2px rgba(0,0,0,.4)' },
+      weightBtnStyle: fr.mode === 'decode' ? onBtn : offBtn,
+      platesBtnStyle: isEnc ? onBtn : offBtn,
+      kgBtnStyle: isLb ? unitOff : unitOn,
+      lbBtnStyle: isLb ? unitOn : unitOff,
+      discs, perSideLabel: side.length ? 'per side' : (isEnc ? 'Tap a plate to load' : 'Enter a weight'),
+      fsDiscs, fullscreen: fr.fullscreen, fsBarEmpty: side.length === 0,
+      fsConfig: `${setName} · ${fr.barKg} kg bar` + (collarsOn ? ` · ${fr.collarKg} kg collars` : ''),
+      barEmpty: side.length === 0,
+      totalPrimary, totalSecondary,
+      secShown: !fr.secHidden, secHidden: fr.secHidden,
+      deltaShow, deltaText, exactShow, overShow, overText, sleeveFull, capShow,
+      resultShow, onBarMain, onBarUnit, onBarSec, deltaLabel, deltaPillStyle, showEntrySec, targetContext,
+      statusShow, statusLabel, statusPillStyle, statusDotStyle,
+      entryShown, entrySecondary,
+      entryNumStyle: { display: 'inline-block', animation: 'numRoll .26s ease-out', color: entryColor },
+      keypadOpen: fr.keypad, keypadKeys, palette, paletteHint, paletteGridStyle, chips, hasRecents, loadedGroups, hasLoaded: side.length > 0,
+      chipOvL: fr.chipOvL, chipOvR: fr.chipOvR,
+      chipScrollRef: this.setChipScrollEl, onChipScroll: this.measureChipOverflow,
+      chipNudgeL: () => this.nudgeChips(-1), chipNudgeR: () => this.nudgeChips(1),
+      recOvL: fr.recOvL, recOvR: fr.recOvR,
+      recScrollRef: this.setRecScrollEl, onRecScroll: this.measureRecOverflow,
+      recNudgeL: () => this.nudgeRec(-1), recNudgeR: () => this.nudgeRec(1),
+      clearDisabled: side.length === 0,
+      showClear: isEnc && side.length > 0,
+      clearBarStyle: { width: '100%', marginTop: '14px', minHeight: '44px', border: '1px solid ' + this.T.border, borderRadius: '13px', background: 'transparent', color: side.length === 0 ? this.T.textDisabled : this.T.textDim, font: '600 13px ' + this.T.sans, cursor: side.length === 0 ? 'default' : 'pointer' },
+      cardOpen: fr.cardOpen, cardGroups, cardHasPlates: side.length > 0, cardBare: side.length === 0,
+      cardConfig, copyLabel: fr.copied ? 'Copied ✓' : 'Copy summary',
+      openCard: () => { this.pushRecent(f, totalKgVal); this.upd(f, { cardOpen: true }); },
+      copyCard: () => { try { navigator.clipboard.writeText(copyText); } catch (e) {} this.upd(f, { copied: true }); clearTimeout(this._ct); this._ct = setTimeout(() => this.upd(f, { copied: false }), 1600); },
+    };
+  }
+
+  // ---- loaded-chip overflow affordance ----
+  setChipScrollEl = (el) => {
+    if (!el) { if (this._chipRO) { this._chipRO.disconnect(); this._chipRO = null; } this.chipEl = null; return; }
+    this.chipEl = el;
+    if (this._chipRO) this._chipRO.disconnect();
+    this._chipRO = new ResizeObserver(() => this.measureChipOverflow());
+    this._chipRO.observe(el);
+    requestAnimationFrame(() => this.measureChipOverflow());
+  };
+  measureChipOverflow = () => {
+    const el = this.chipEl;
+    if (!el) return;
+    const ovL = el.scrollLeft > 1;
+    const ovR = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    const a = this.state.a;
+    if (ovL !== a.chipOvL || ovR !== a.chipOvR) this.upd('a', { chipOvL: ovL, chipOvR: ovR });
+  };
+  nudgeChips = (dir) => { const el = this.chipEl; if (!el) return; el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.6), behavior: 'smooth' }); };
+
+  // ---- recent-chip overflow affordance ----
+  setRecScrollEl = (el) => {
+    if (!el) { if (this._recRO) { this._recRO.disconnect(); this._recRO = null; } this.recEl = null; return; }
+    this.recEl = el;
+    if (this._recRO) this._recRO.disconnect();
+    this._recRO = new ResizeObserver(() => this.measureRecOverflow());
+    this._recRO.observe(el);
+    requestAnimationFrame(() => this.measureRecOverflow());
+  };
+  measureRecOverflow = () => {
+    const el = this.recEl;
+    if (!el) return;
+    const ovL = el.scrollLeft > 1;
+    const ovR = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+    const a = this.state.a;
+    if (ovL !== a.recOvL || ovR !== a.recOvR) this.upd('a', { recOvL: ovL, recOvR: ovR });
+  };
+  nudgeRec = (dir) => { const el = this.recEl; if (!el) return; el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.6), behavior: 'smooth' }); };
+  componentDidUpdate() { this.measureChipOverflow(); this.measureRecOverflow(); }
+
+  mk(f) {
+    const stepper = this.step(f);
+    return {
+      ...this.vm(f),
+      decode: () => this.setMode(f, 'decode'),
+      encode: () => this.setMode(f, 'encode'),
+      kg: () => this.setUnit(f, 'kg'),
+      lb: () => this.setUnit(f, 'lb'),
+      inc: () => stepper(1),
+      dec: () => stepper(-1),
+      tapValue: () => this.toggleKeypad(f),
+      toggleSec: () => this.toggleSec(f),
+      over: () => this.toggleOver(f),
+      clearPress: () => this.press(f, 'clear'),
+      clearBar: () => { if (this.state[f].mode === 'encode') this.upd(f, { side: [] }); },
+      toggleCfg: () => this.toggleCfg(f),
+      toggleHelp: () => this.upd(f, { helpOpen: !this.state[f].helpOpen }),
+      toggleCollars: () => this.toggleCollars(f),
+      closeCfg: () => this.upd(f, { cfgOpen: false }),
+      stop: (e) => { if (e && e.stopPropagation) e.stopPropagation(); },
+      closeCard: () => this.upd(f, { cardOpen: false, copied: false }),
+      openFs: () => this.upd(f, { fullscreen: true }),
+      closeFs: () => this.upd(f, { fullscreen: false }),
+    };
+  }
+
+  renderVals() { return { a: this.mk('a') }; }
+}
+</script>
+</body>
+</html>

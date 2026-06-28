@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>html,body{margin:0;} *{box-sizing:border-box;}</style>
+</helmet>
+
+<!-- ── Title ─────────────────────────────────────────────── -->
+<div style="position:absolute;left:0px;top:0px;width:900px;">
+  <div style="font:800 27px 'Hanken Grotesk',sans-serif;letter-spacing:-.025em;color:#15181c;">rack<span style="color:#caa406;">.</span>bar — design system</div>
+  <div style="margin-top:9px;font:500 14px 'Hanken Grotesk',sans-serif;color:#565c63;line-height:1.6;max-width:720px;">One source of truth for the dark UI. Every token below maps 1:1 to the <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#15181c;">T</span> object in the app's logic class and to a <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#15181c;">--rb-*</span> CSS custom property on the live site. Builder methods (<span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#15181c;">sModeBtn</span>, <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#15181c;">sTile</span>, <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#15181c;">sStatusPill</span> …) compose tokens into the components shown here. Change a token once, it propagates everywhere.</div>
+</div>
+
+<!-- ── 01 Colour tokens ──────────────────────────────────── -->
+<div style="position:absolute;left:0px;top:160px;width:560px;">
+  <div data-drags-parent="1" style="font:600 11px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#3c4147;margin-bottom:11px;">01 — Colour tokens</div>
+  <div style="background:#101316;border:1px solid #20242a;border-radius:20px;padding:20px 22px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+    <sc-for list="{{ colorRows }}" as="r" hint-placeholder-count="20">
+      <sc-if value="{{ r.header }}" hint-placeholder-val="{{ false }}">
+        <div style="margin:15px 0 7px;font:700 10px 'JetBrains Mono',monospace;letter-spacing:.18em;text-transform:uppercase;color:#5d646c;">{{ r.title }}</div>
+      </sc-if>
+      <sc-if value="{{ r.token }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:13px;padding:4px 0;">
+          <span style="{{ r.sw }}"></span>
+          <span style="flex:1;min-width:0;font:600 12.5px 'JetBrains Mono',monospace;color:#eef0f2;">{{ r.name }}</span>
+          <span style="width:60px;font:500 11.5px 'JetBrains Mono',monospace;color:#8b929a;">{{ r.hex }}</span>
+          <span style="width:158px;font:500 11.5px 'JetBrains Mono',monospace;color:#5d646c;text-align:right;">{{ r.css }}</span>
+        </div>
+      </sc-if>
+    </sc-for>
+  </div>
+</div>
+
+<!-- ── 02 Type scale ─────────────────────────────────────── -->
+<div style="position:absolute;left:640px;top:160px;width:580px;">
+  <div data-drags-parent="1" style="font:600 11px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#3c4147;margin-bottom:11px;">02 — Type scale</div>
+  <div style="background:#101316;border:1px solid #20242a;border-radius:20px;padding:8px 22px 4px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+    <sc-for list="{{ typeRows }}" as="r" hint-placeholder-count="5">
+      <div style="display:flex;align-items:baseline;gap:20px;padding:15px 0;border-bottom:1px solid #1b1e22;">
+        <div style="flex:none;width:200px;overflow:hidden;"><span style="{{ r.style }}">{{ r.sample }}</span></div>
+        <div style="flex:1;font:500 12px 'Hanken Grotesk',sans-serif;color:#8b929a;line-height:1.45;">{{ r.spec }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- Surfaces & elevation -->
+  <div data-drags-parent="1" style="font:600 11px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#3c4147;margin:30px 0 11px;">03 — Surfaces &amp; radii</div>
+  <div style="background:#101316;border:1px solid #20242a;border-radius:20px;padding:22px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+    <div style="display:flex;align-items:flex-end;gap:0;border-radius:14px;overflow:hidden;border:1px solid #20242a;">
+      <div style="flex:1;height:86px;background:#0d0e10;display:flex;align-items:flex-end;padding:8px;font:500 10px 'JetBrains Mono',monospace;color:#6b727a;">surface</div>
+      <div style="flex:1;height:86px;background:#101216;display:flex;align-items:flex-end;padding:8px;font:500 10px 'JetBrains Mono',monospace;color:#6b727a;">sunken</div>
+      <div style="flex:1;height:86px;background:#15171a;display:flex;align-items:flex-end;padding:8px;font:500 10px 'JetBrains Mono',monospace;color:#8b929a;">raised</div>
+      <div style="flex:1;height:86px;background:#16191d;display:flex;align-items:flex-end;padding:8px;font:500 10px 'JetBrains Mono',monospace;color:#8b929a;">overlay</div>
+      <div style="flex:1;height:86px;background:#1b1f24;display:flex;align-items:flex-end;padding:8px;font:500 10px 'JetBrains Mono',monospace;color:#9aa1a9;">active</div>
+      <div style="flex:1;height:86px;background:#272b30;display:flex;align-items:flex-end;padding:8px;font:500 10px 'JetBrains Mono',monospace;color:#aab0b7;">selected</div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:18px;align-items:center;">
+      <div style="width:64px;height:46px;border:1px solid #2a2f35;border-radius:999px;display:flex;align-items:center;justify-content:center;font:500 9px 'JetBrains Mono',monospace;color:#8b929a;">999</div>
+      <div style="width:64px;height:46px;border:1px solid #2a2f35;border-radius:14px;display:flex;align-items:center;justify-content:center;font:500 9px 'JetBrains Mono',monospace;color:#8b929a;">14</div>
+      <div style="width:64px;height:46px;border:1px solid #2a2f35;border-radius:13px;display:flex;align-items:center;justify-content:center;font:500 9px 'JetBrains Mono',monospace;color:#8b929a;">13</div>
+      <div style="width:64px;height:46px;border:1px solid #2a2f35;border-radius:11px;display:flex;align-items:center;justify-content:center;font:500 9px 'JetBrains Mono',monospace;color:#8b929a;">11</div>
+      <div style="flex:1;font:500 11.5px 'Hanken Grotesk',sans-serif;color:#8b929a;line-height:1.45;">Radii — pill / card / sheet-control / tile</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 04 Components ─────────────────────────────────────── -->
+<div style="position:absolute;left:0px;top:1180px;width:1220px;">
+  <div data-drags-parent="1" style="font:600 11px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#3c4147;margin-bottom:11px;">04 — Component library</div>
+  <div style="background:#101316;border:1px solid #20242a;border-radius:20px;padding:26px 28px;box-shadow:0 1px 3px rgba(0,0,0,.1);display:flex;flex-wrap:wrap;gap:34px 44px;">
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Segmented · mode <span style="color:#5d646c;">sModeBtn</span></div>
+      <div style="display:flex;padding:4px;background:#15171a;border:1px solid #20242a;border-radius:999px;width:296px;">
+        <div style="flex:1;text-align:center;padding:11px 0;border-radius:999px;font:700 14px 'Hanken Grotesk',sans-serif;background:#f5c518;color:#0d0e10;">Enter weight</div>
+        <div style="flex:1;text-align:center;padding:11px 0;border-radius:999px;font:600 14px 'Hanken Grotesk',sans-serif;background:transparent;color:#8b929a;">Add plates</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Segmented · unit <span style="color:#5d646c;">sUnitBtn</span></div>
+      <div style="display:inline-flex;padding:2px;background:#15171a;border:1px solid #20242a;border-radius:999px;width:max-content;">
+        <div style="padding:7px 16px;border-radius:999px;font:700 12px 'JetBrains Mono',monospace;letter-spacing:.04em;background:#272b30;color:#f4f4f5;">kg</div>
+        <div style="padding:7px 16px;border-radius:999px;font:600 12px 'JetBrains Mono',monospace;letter-spacing:.04em;background:transparent;color:#8b929a;">lb</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Selector tile <span style="color:#5d646c;">sTile</span></div>
+      <div style="display:flex;gap:8px;width:280px;">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;border:1px solid #3a4047;background:#272b30;border-radius:11px;padding:9px 4px;"><span style="font:700 14px 'Hanken Grotesk',sans-serif;color:#f4f4f5;">20 kg</span><span style="font:600 11px 'JetBrains Mono',monospace;color:#9aa0a7;margin-top:3px;">44 lb</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;border:1px solid #20242a;background:transparent;border-radius:11px;padding:9px 4px;"><span style="font:700 14px 'Hanken Grotesk',sans-serif;color:#8b929a;">15 kg</span><span style="font:600 11px 'JetBrains Mono',monospace;color:#8b929a;margin-top:3px;">33 lb</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;border:1px solid #20242a;background:transparent;border-radius:11px;padding:9px 4px;"><span style="font:700 14px 'Hanken Grotesk',sans-serif;color:#8b929a;">5 kg</span><span style="font:600 11px 'JetBrains Mono',monospace;color:#8b929a;margin-top:3px;">11 lb</span></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Recent chip <span style="color:#5d646c;">sRecentChip</span></div>
+      <div style="display:flex;gap:7px;">
+        <div style="border:1px solid #3a4047;background:#272b30;color:#f4f4f5;border-radius:999px;padding:7px 13px;font:600 12px 'JetBrains Mono',monospace;letter-spacing:.04em;">142.5</div>
+        <div style="border:1px solid #20242a;background:transparent;color:#8b929a;border-radius:999px;padding:7px 13px;font:600 12px 'JetBrains Mono',monospace;letter-spacing:.04em;">100</div>
+        <div style="border:1px solid #20242a;background:transparent;color:#8b929a;border-radius:999px;padding:7px 13px;font:600 12px 'JetBrains Mono',monospace;letter-spacing:.04em;">60</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Status pill <span style="color:#5d646c;">sStatusPill</span></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span style="display:inline-flex;align-items:center;gap:6px;font:600 10px 'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#aab0b7;border:1px solid #2a2f35;border-radius:999px;padding:3px 10px;"><span style="width:5px;height:5px;border-radius:999px;background:#4caf6a;display:inline-block;"></span>Exact</span>
+        <span style="font:700 11px 'Hanken Grotesk',sans-serif;color:#0d0e10;background:#f5c518;border-radius:999px;padding:2px 9px;">2.5 over</span>
+        <span style="font:700 11px 'Hanken Grotesk',sans-serif;color:#aab0b7;background:transparent;border:1px solid #3a4047;border-radius:999px;padding:1px 9px;">5 short</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Loaded chip <span style="color:#5d646c;">plateBg · plateInk</span></div>
+      <div style="display:flex;gap:6px;">
+        <div style="display:inline-flex;align-items:center;gap:4px;height:30px;padding:0 13px;border-radius:999px;background:linear-gradient(180deg,color-mix(in srgb,#e0263a 95%,#fff),#e0263a);color:#fff;font:700 13px 'Hanken Grotesk',sans-serif;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);">25<span style="font:700 11px 'JetBrains Mono',monospace;opacity:.55;">×2</span></div>
+        <div style="display:inline-flex;align-items:center;height:30px;padding:0 13px;border-radius:999px;background:linear-gradient(180deg,color-mix(in srgb,#2563c9 95%,#fff),#2563c9);color:#fff;font:700 13px 'Hanken Grotesk',sans-serif;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);">20</div>
+        <div style="display:inline-flex;align-items:center;height:30px;padding:0 13px;border-radius:999px;background:linear-gradient(180deg,color-mix(in srgb,#f5c518 95%,#fff),#f5c518);color:#0d0e10;font:700 13px 'Hanken Grotesk',sans-serif;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);">15</div>
+        <div style="display:inline-flex;align-items:center;height:30px;padding:0 13px;border-radius:999px;background:linear-gradient(180deg,color-mix(in srgb,#25a45a 95%,#fff),#25a45a);color:#fff;font:700 13px 'Hanken Grotesk',sans-serif;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);">10</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Icon button</div>
+      <div style="display:flex;gap:8px;">
+        <div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:#15171a;border:1px solid #20242a;color:#8b929a;">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6V2.5H5.5M14 6V2.5H10.5M2 10V13.5H5.5M14 10V13.5H10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </div>
+        <div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:999px;background:rgba(245,197,24,.14);border:1px solid #f5c518;color:#f5c518;">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.5"></circle><circle cx="8" cy="5.1" r=".95" fill="currentColor"></circle><path d="M8 7.3v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div style="font:600 10px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#9aa1a9;">Action button</div>
+      <div style="display:flex;gap:9px;">
+        <div style="border-radius:13px;padding:12px 20px;background:#f5c518;color:#0d0e10;font:700 13px 'Hanken Grotesk',sans-serif;">Copy summary</div>
+        <div style="border:1px solid #23272c;border-radius:13px;padding:12px 18px;background:transparent;color:#8b929a;font:600 13px 'Hanken Grotesk',sans-serif;">Close</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── 05 Plate palette (domain) ─────────────────────────── -->
+<div style="position:absolute;left:0px;top:1560px;width:1220px;">
+  <div data-drags-parent="1" style="font:600 11px 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#3c4147;margin-bottom:11px;">05 — Plate palette <span style="color:#9aa1a9;">· domain data, not UI tokens</span></div>
+  <div style="background:#101316;border:1px solid #20242a;border-radius:20px;padding:24px 26px;box-shadow:0 1px 3px rgba(0,0,0,.1);display:flex;gap:14px;flex-wrap:wrap;">
+    <sc-for list="{{ plateRows }}" as="p" hint-placeholder-count="6">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:9px;width:128px;">
+        <div style="{{ p.chip }}">{{ p.label }}</div>
+        <div style="text-align:center;"><div style="font:600 12px 'Hanken Grotesk',sans-serif;color:#eef0f2;">{{ p.name }}</div><div style="font:500 11px 'JetBrains Mono',monospace;color:#8b929a;margin-top:1px;">{{ p.hex }}</div></div>
+      </div>
+    </sc-for>
+  </div>
+  <div style="margin-top:11px;font:500 12px 'Hanken Grotesk',sans-serif;color:#565c63;max-width:760px;line-height:1.5;">Eleiko competition colour-coding plus the plain-iron training set. Ink (white / dark) is chosen for contrast by <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#15181c;">plateInk()</span>; the soft top-lit gradient by <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#15181c;">plateBg()</span>.</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const sw = (v) => ({ width: '36px', height: '24px', borderRadius: '6px', background: v, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.12)', flex: 'none' });
+    const H = (title) => ({ header: true, token: false, title });
+    const C = (name, hex, css) => ({ header: false, token: true, name, hex, css, sw: sw(hex) });
+    const colorRows = [
+      H('Brand'),
+      C('accent', '#f5c518', '--rb-accent'),
+      C('accentInk', '#0d0e10', '--rb-accent-ink'),
+      H('Surfaces'),
+      C('surface', '#0d0e10', '--rb-surface'),
+      C('surfaceSunken', '#101216', '--rb-surface-sunken'),
+      C('surfaceRaised', '#15171a', '--rb-surface-raised'),
+      C('surfaceOverlay', '#16191d', '--rb-surface-overlay'),
+      C('surfaceActive', '#1b1f24', '--rb-surface-active'),
+      C('surfaceSelected', '#272b30', '--rb-surface-selected'),
+      H('Borders'),
+      C('border', '#20242a', '--rb-border'),
+      C('borderStrong', '#23272c', '--rb-border-strong'),
+      C('borderMuted', '#2a2f35', '--rb-border-muted'),
+      C('borderActive', '#3a4047', '--rb-border-active'),
+      C('divider', '#1b1e22', '--rb-divider'),
+      H('Text'),
+      C('textPrimary', '#f4f4f5', '--rb-text-primary'),
+      C('textSecondary', '#aab0b7', '--rb-text-secondary'),
+      C('textMuted', '#9aa1a9', '--rb-text-muted'),
+      C('textDim', '#8b929a', '--rb-text-dim'),
+      C('textDisabled', '#41464c', '--rb-text-disabled'),
+      H('Semantic'),
+      C('danger', '#e0263a', '--rb-danger'),
+      C('success', '#4caf6a', '--rb-success'),
+    ];
+
+    const ty = (sample, spec, style) => ({ sample, spec, style });
+    const typeRows = [
+      ty('142.5', 'Display number · Hanken 800 · 54px / −.025em · tnum', { font: "800 54px 'Hanken Grotesk', sans-serif", letterSpacing: '-.025em', color: '#f4f4f5', lineHeight: 1, fontFeatureSettings: "'tnum'" }),
+      ty('On the bar', 'Title · Hanken 800 · 17px', { font: "800 17px 'Hanken Grotesk', sans-serif", letterSpacing: '-.01em', color: '#f4f4f5' }),
+      ty('Round up → 145 kg', 'Body · Hanken 500/600 · 12–14px · text-dim', { font: "500 13px 'Hanken Grotesk', sans-serif", color: '#8b929a' }),
+      ty('PER SIDE', 'Section label · JetBrains 600 · 11px · .14em · uppercase · text-muted', { font: "600 11px 'JetBrains Mono', monospace", letterSpacing: '.14em', textTransform: 'uppercase', color: '#9aa1a9' }),
+      ty('25', 'Plate numeral · JetBrains 800 · 8–11px · engraved', { font: "800 15px 'JetBrains Mono', monospace", color: '#f4f4f5', letterSpacing: '.04em' }),
+    ];
+
+    const plate = (label, name, hex, ink) => ({
+      label, name, hex,
+      chip: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '74px', height: '74px', borderRadius: '12px', background: `linear-gradient(180deg, color-mix(in srgb, ${hex} 95%, #ffffff), ${hex})`, color: ink, font: "800 22px 'Hanken Grotesk', sans-serif", boxShadow: 'inset 0 0 0 1.5px rgba(255,255,255,.12), 0 4px 12px rgba(0,0,0,.3)' },
+    });
+    const plateRows = [
+      plate('25', 'red', '#e0263a', '#ffffff'),
+      plate('20', 'blue', '#2563c9', '#ffffff'),
+      plate('15', 'yellow', '#f5c518', '#0d0e10'),
+      plate('10', 'green', '#25a45a', '#ffffff'),
+      plate('5', 'white', '#eef0f2', '#0d0e10'),
+      plate('45', 'iron', '#34383e', '#ffffff'),
+    ];
+
+    return { colorRows, typeRows, plateRows };
+  }
+}
+</script>
+</body>
+</html>
