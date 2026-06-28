@@ -1,12 +1,15 @@
 // <rack-setup> -- the Setup bottom sheet (RBAR-15, ADR-0007). The host for all rig
-// configuration: RBAR-15 fills its Bar section (three tiles, 20/15/5 kg), and later
-// slices add Collars (RBAR-16) and the plate set (RBAR-17) as further sections.
+// configuration: RBAR-15 fills its Bar section (three tiles, 20/15/5 kg), RBAR-16 adds
+// a Collars section (None / Standard 2.5 kg), and the plate set (RBAR-17) follows as a
+// further section.
 //
 // A controlled, near-stateless shell (ADR-0001): it holds no canonical config of its
-// own. It reflects the current Bar onto the active tile via the `barKg` property and
-// emits `barchange` when a tile is tapped; the app shell (<rack-app>) owns the value,
-// applies it, and feeds it back. open()/close() drive visibility; a scrim tap or the
-// Done button closes and emits `close`. A tap inside the panel does not dismiss.
+// own. It reflects the current Bar and Collar onto their active tiles via the `barKg` /
+// `collarKg` properties and emits `barchange` / `collarchange` when a tile is tapped;
+// the app shell (<rack-app>) owns the values, applies them, and feeds them back -- one
+// event up, one property down per concern (ADR-0007). open()/close() drive visibility;
+// a scrim tap or the Done button closes and emits `close`. A tap inside the panel does
+// not dismiss.
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 
 // The Bar weights offered, heaviest-first (men's / women's / technique). A fixed enum
@@ -24,6 +27,23 @@ export function isOfferedBar(kg: number): kg is BarKg {
   return (BAR_OPTIONS as readonly number[]).includes(kg);
 }
 
+// The Collars offered: None (0 kg) or a Standard competition collar (2.5 kg per Side,
+// CONTEXT.md). The per-Side weight is the value here; the Total adds it twice (ADR-0008,
+// barWithCollars). Exported as the source of truth for "a valid Collar", validated the
+// same way as the Bar at both shell boundaries (ADR-0007). Default is None.
+export const COLLAR_OPTIONS = [0, 2.5] as const;
+
+/** The default Collar: None. The bare Bar with no clamp weight. */
+export const DEFAULT_COLLAR_KG = 0;
+
+/** A Collar the lifter can actually pick: one of the offered Collars. */
+export type CollarKg = (typeof COLLAR_OPTIONS)[number];
+
+/** True when `kg` is one of the offered Collars -- the guard both boundaries share. */
+export function isOfferedCollar(kg: number): kg is CollarKg {
+  return (COLLAR_OPTIONS as readonly number[]).includes(kg);
+}
+
 // kg -> whole lb for the tile subtitle. The exact factor matches the design handoff's
 // engine (engine.js `LB`), so the labels won't drift when the pounds slice (RBAR-17)
 // lands a real conversion in the core; here it is a shell-side display string only.
@@ -35,10 +55,13 @@ function lbWhole(kg: number): number {
 class RackSetup extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private tiles!: NodeListOf<HTMLButtonElement>;
+  private collarTiles!: NodeListOf<HTMLButtonElement>;
 
   // The Bar reflected as the active tile. The app owns the canonical value; this only
   // mirrors it. Defaults to the 20 kg Bar (DEFAULT_BAR_KG).
   private _barKg = DEFAULT_BAR_KG;
+  // The Collar reflected as the active tile, mirrored the same way. Defaults to None.
+  private _collarKg = DEFAULT_COLLAR_KG;
 
   set barKg(kg: number) {
     this._barKg = kg;
@@ -46,6 +69,14 @@ class RackSetup extends HTMLElement {
   }
   get barKg(): number {
     return this._barKg;
+  }
+
+  set collarKg(kg: number) {
+    this._collarKg = kg;
+    if (this.collarTiles) this.syncCollarTiles();
+  }
+  get collarKg(): number {
+    return this._collarKg;
   }
 
   /** Show the sheet. */
@@ -67,6 +98,24 @@ class RackSetup extends HTMLElement {
                 aria-label="${kg} kg Bar (${lbWhole(kg)} lb)">
           <span class="kg">${kg}<span class="u">kg</span></span>
           <span class="sub">${lbWhole(kg)} lb</span>
+        </button>`,
+    ).join('');
+
+    // The Collar tiles: None (no weight) or a Standard 2.5 kg-per-Side competition
+    // collar. None shows a plain label; the Standard tile reads its per-Side weight with
+    // a "per side" subtitle (the Total adds it twice -- ADR-0008).
+    const collarTiles = COLLAR_OPTIONS.map((kg) =>
+      kg === 0
+        ? `
+        <button type="button" class="tile" data-collar="0" aria-pressed="false"
+                aria-label="No collars">
+          <span class="kg">None</span>
+        </button>`
+        : `
+        <button type="button" class="tile" data-collar="${kg}" aria-pressed="false"
+                aria-label="Standard ${kg} kg collars, per Side">
+          <span class="kg">${kg}<span class="u">kg</span></span>
+          <span class="sub">per side</span>
         </button>`,
     ).join('');
 
@@ -114,7 +163,10 @@ class RackSetup extends HTMLElement {
           letter-spacing: .12em; text-transform: uppercase; color: var(--rack-muted);
           margin-bottom: 8px;
         }
-        .tiles { display: flex; gap: 8px; }
+        /* Each selector row; the trailing margin separates a section from the next
+           section-label (the last row's margin sits inside the panel's bottom pad). */
+        .tiles { display: flex; gap: 8px; margin-bottom: 18px; }
+        .tiles:last-of-type { margin-bottom: 0; }
         /* A selector tile: kg headline + lb subtitle. Active = a raised, outlined fill;
            inactive = transparent with a hairline. 44px+ tall touch target. */
         .tile {
@@ -145,11 +197,14 @@ class RackSetup extends HTMLElement {
           </div>
           <span class="section-label">Bar</span>
           <div class="tiles">${tiles}</div>
+          <span class="section-label">Collars</span>
+          <div class="tiles">${collarTiles}</div>
         </div>
       </div>
     `;
 
     this.tiles = this.root.querySelectorAll<HTMLButtonElement>('[data-bar]');
+    this.collarTiles = this.root.querySelectorAll<HTMLButtonElement>('[data-collar]');
 
     // A scrim tap dismisses; a tap inside the panel must not (it would bubble to the
     // scrim otherwise), so the panel stops it.
@@ -161,8 +216,12 @@ class RackSetup extends HTMLElement {
     this.tiles.forEach((t) =>
       t.addEventListener('click', () => this.choose(Number(t.dataset.bar))),
     );
+    this.collarTiles.forEach((t) =>
+      t.addEventListener('click', () => this.chooseCollar(Number(t.dataset.collar))),
+    );
 
     this.syncTiles();
+    this.syncCollarTiles();
   }
 
   // A tile tap names the chosen Bar to the shell; the shell owns the value and sets
@@ -177,10 +236,32 @@ class RackSetup extends HTMLElement {
     );
   }
 
+  // A Collar tile tap names the chosen Collar to the shell -- same one-event-up contract
+  // as the Bar (ADR-0007); the shell owns the value and feeds `collarKg` back.
+  private chooseCollar(kg: number): void {
+    this.dispatchEvent(
+      new CustomEvent<{ collarKg: number }>('collarchange', {
+        detail: { collarKg: kg },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   // Mark the tile matching the current Bar as pressed; the rest released.
   private syncTiles(): void {
     this.tiles.forEach((t) =>
       t.setAttribute('aria-pressed', String(Number(t.dataset.bar) === this._barKg)),
+    );
+  }
+
+  // Mark the tile matching the current Collar as pressed; the rest released.
+  private syncCollarTiles(): void {
+    this.collarTiles.forEach((t) =>
+      t.setAttribute(
+        'aria-pressed',
+        String(Number(t.dataset.collar) === this._collarKg),
+      ),
     );
   }
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import './console.ts';
 
-type Console = HTMLElement & { barKg: number };
+type Console = HTMLElement & { barKg: number; collarKg: number };
 
 function mountConsole(): Console {
   const el = document.createElement('rack-console') as Console;
@@ -408,5 +408,56 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
       modeBtn(el, 'decode').click();
       expect(entryValue(el)).toBe('');
     });
+  });
+});
+
+describe('<rack-console> (Collars fold into the baseline, RBAR-16, ADR-0008)', () => {
+  it('shifts the bare-rig Total by both collars', () => {
+    const el = mountConsole();
+    el.collarKg = 2.5;
+    expect(discs(el).length).toBe(0);
+    expect(total(el)).toContain('25'); // 20 kg Bar + 2 x 2.5 kg collar, no Plates
+  });
+
+  it('decodes a Target against the collar baseline (Bar + 2 x collar)', () => {
+    const el = mountConsole();
+    el.collarKg = 2.5; // baseline 25
+    type(el, '95'); // (95 - 25) / 2 = 35 per Side -> 25 + 10
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '10']);
+    expect(total(el)).toContain('95');
+  });
+
+  it('re-decodes the standing Target when the Collar changes', () => {
+    const el = mountConsole();
+    type(el, '100'); // 20 kg Bar, no collar -> 25 + 15
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+    el.collarKg = 2.5; // baseline 25 -> (100 - 25) / 2 = 37.5 -> 25 + 10 + 2.5
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '10', '2.5']);
+    expect(total(el)).toContain('100'); // still hits the Target, different Plates
+  });
+
+  it('encodes a hand-built Side Load against the collar baseline', () => {
+    const el = mountConsole();
+    el.collarKg = 2.5;
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    expect(total(el)).toContain('75'); // 25 baseline + 2 x 25
+  });
+
+  it('moves the Target entry anchor to the collar baseline', () => {
+    const el = mountConsole();
+    el.collarKg = 2.5;
+    // The empty-field anchor (what the steppers move from) is the bare-rig weight.
+    expect(entryAnchorText(el)).toBe('25');
+  });
+
+  it('stacks the Collar on top of a chosen Bar', () => {
+    const el = mountConsole();
+    el.barKg = 15;
+    el.collarKg = 2.5; // baseline 15 + 5 = 20
+    expect(total(el)).toContain('20');
+    type(el, '90'); // (90 - 20) / 2 = 35 per Side -> 25 + 10
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '10']);
+    expect(total(el)).toContain('90');
   });
 });

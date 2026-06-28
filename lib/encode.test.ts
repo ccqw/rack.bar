@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { encode, addPlate, removePlate } from './encode.ts';
-import { ELEIKO_KG, DEFAULT_BAR_KG } from './plates.ts';
+import { ELEIKO_KG, DEFAULT_BAR_KG, barWithCollars } from './plates.ts';
 import type { Plate } from './plates.ts';
 
 // A Plate from the canonical set, by kg -- so colors match CONTEXT.md.
@@ -24,6 +24,15 @@ describe('encode (a hand-built Side Load -> its Total)', () => {
   it('honors a non-default Bar (the core is parameterized, ADR-0002)', () => {
     expect(encode(side(20, 15, 5), 15)).toBe(95);
     expect(encode([], 15)).toBe(15);
+  });
+
+  it('reads against a collar baseline: Bar + 2 x collar + 2 x Side Load (ADR-0008)', () => {
+    // A Standard 2.5 kg collar folds into the effective Bar (barWithCollars). The
+    // Encode total reads the same parameter the Bar already feeds, so the collar
+    // adds 5 kg on a 20 kg Bar.
+    const collared = barWithCollars(20, 2.5); // 25
+    expect(encode([], collared)).toBe(25); // bare rig: Bar + both collars, no Plates
+    expect(encode(side(20, 15, 5), collared)).toBe(105); // 25 + 2 x 40
   });
 });
 

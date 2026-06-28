@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { ELEIKO_KG, DEFAULT_BAR_KG, sideLoadKg, totalKg } from './plates.ts';
+import {
+  ELEIKO_KG,
+  DEFAULT_BAR_KG,
+  sideLoadKg,
+  totalKg,
+  barWithCollars,
+} from './plates.ts';
 import type { Plate } from './plates.ts';
 
 describe('the Eleiko plate set', () => {
@@ -75,5 +81,26 @@ describe('totals', () => {
     const side: Plate[] = [ELEIKO_KG[1], ELEIKO_KG[2], ELEIKO_KG[4]]; // 20, 15, 5
     expect(sideLoadKg(side)).toBe(40);
     expect(totalKg(side)).toBe(100);
+  });
+});
+
+describe('barWithCollars (the effective Bar baseline, ADR-0008)', () => {
+  it('is the bare Bar when no collar is chosen (None)', () => {
+    expect(barWithCollars(20, 0)).toBe(20);
+    expect(barWithCollars(15, 0)).toBe(15);
+  });
+
+  it('adds a collar to each Side: Bar + 2 x collar', () => {
+    // A Standard 2.5 kg collar on each Side adds 5 kg to the bare-rig baseline.
+    expect(barWithCollars(20, 2.5)).toBe(25);
+    expect(barWithCollars(15, 2.5)).toBe(20);
+    expect(barWithCollars(5, 2.5)).toBe(10);
+  });
+
+  it('feeds the parameterized Total: Total = Bar + 2 x collar + 2 x Side Load', () => {
+    // The baseline is exactly what totalKg loads from, so a collared Total is the
+    // bare-rig baseline plus the Plate weight on both Sides.
+    const side: Plate[] = [ELEIKO_KG[1], ELEIKO_KG[2]]; // 20 + 15 = 35 per Side
+    expect(totalKg(side, barWithCollars(20, 2.5))).toBe(25 + 70); // 95
   });
 });

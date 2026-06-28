@@ -3,6 +3,7 @@ import './setup.ts';
 
 type Setup = HTMLElement & {
   barKg: number;
+  collarKg: number;
   open(): void;
   close(): void;
 };
@@ -15,6 +16,18 @@ function mountSetup(): { el: Setup; root: ShadowRoot } {
 
 function tile(root: ShadowRoot, kg: number): HTMLButtonElement {
   return root.querySelector<HTMLButtonElement>(`[data-bar="${kg}"]`)!;
+}
+
+function collarTile(root: ShadowRoot, kg: number): HTMLButtonElement {
+  return root.querySelector<HTMLButtonElement>(`[data-collar="${kg}"]`)!;
+}
+
+function collarchangeSpy(el: HTMLElement): ReturnType<typeof vi.fn> {
+  const seen = vi.fn();
+  el.addEventListener('collarchange', (e) =>
+    seen((e as CustomEvent<{ collarKg: number }>).detail.collarKg),
+  );
+  return seen;
 }
 
 function barchangeSpy(el: HTMLElement): ReturnType<typeof vi.fn> {
@@ -92,5 +105,37 @@ describe('<rack-setup> (the Setup bottom sheet, RBAR-15)', () => {
     el.open();
     root.querySelector<HTMLButtonElement>('[data-done]')!.click();
     expect(el.hidden).toBe(true);
+  });
+});
+
+describe('<rack-setup> Collars section (RBAR-16, ADR-0008)', () => {
+  it('renders two Collar tiles: None (0) and Standard 2.5 kg', () => {
+    const { root } = mountSetup();
+    expect(collarTile(root, 0)).toBeTruthy();
+    expect(collarTile(root, 2.5)).toBeTruthy();
+    expect(collarTile(root, 0).textContent).toContain('None');
+    expect(collarTile(root, 2.5).textContent).toContain('2.5');
+  });
+
+  it('defaults to None as the active Collar selection', () => {
+    const { root } = mountSetup();
+    expect(collarTile(root, 0).getAttribute('aria-pressed')).toBe('true');
+    expect(collarTile(root, 2.5).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('reflects a set collarKg onto the active tile', () => {
+    const { el, root } = mountSetup();
+    el.collarKg = 2.5;
+    expect(collarTile(root, 2.5).getAttribute('aria-pressed')).toBe('true');
+    expect(collarTile(root, 0).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('emits collarchange with the chosen Collar when a tile is tapped', () => {
+    const { el, root } = mountSetup();
+    const seen = collarchangeSpy(el);
+    collarTile(root, 2.5).click();
+    expect(seen).toHaveBeenLastCalledWith(2.5);
+    collarTile(root, 0).click();
+    expect(seen).toHaveBeenLastCalledWith(0);
   });
 });

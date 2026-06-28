@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './app.ts';
 
-type WithBar = HTMLElement & { barKg: number };
+type WithBar = HTMLElement & { barKg: number; collarKg: number };
 
 function mountApp(): { el: HTMLElement; root: ShadowRoot } {
   const el = document.createElement('rack-app');
@@ -12,7 +12,9 @@ function mountApp(): { el: HTMLElement; root: ShadowRoot } {
 function pill(root: ShadowRoot): HTMLButtonElement {
   return root.querySelector<HTMLButtonElement>('[data-setup-pill]')!;
 }
-function setup(root: ShadowRoot): HTMLElement & { barKg: number; hidden: boolean } {
+function setup(
+  root: ShadowRoot,
+): HTMLElement & { barKg: number; collarKg: number; hidden: boolean } {
   return root.querySelector('rack-setup')!;
 }
 function consoleEl(root: ShadowRoot): WithBar {
@@ -24,6 +26,18 @@ function chooseBar(root: ShadowRoot, kg: number): void {
     .shadowRoot!.querySelector<HTMLButtonElement>(`[data-bar="${kg}"]`)!
     .click();
 }
+// Tap a Collar tile through the real sheet DOM (RBAR-16).
+function chooseCollar(root: ShadowRoot, kg: number): void {
+  setup(root)
+    .shadowRoot!.querySelector<HTMLButtonElement>(`[data-collar="${kg}"]`)!
+    .click();
+}
+// The Collars whose tile currently reads as the active selection.
+function pressedCollars(root: ShadowRoot): number[] {
+  return [...setup(root).shadowRoot!.querySelectorAll<HTMLElement>('[data-collar]')]
+    .filter((t) => t.getAttribute('aria-pressed') === 'true')
+    .map((t) => Number(t.dataset.collar));
+}
 // The Bars whose tile currently reads as the active selection.
 function pressedBars(root: ShadowRoot): number[] {
   return [...setup(root).shadowRoot!.querySelectorAll<HTMLElement>('[data-bar]')]
@@ -32,6 +46,7 @@ function pressedBars(root: ShadowRoot): number[] {
 }
 
 const KEY = 'rackbar.barKg';
+const COLLAR_KEY = 'rackbar.collarKg';
 
 describe('<rack-app> (app shell + Setup wiring, RBAR-15)', () => {
   beforeEach(() => localStorage.clear());
@@ -142,5 +157,68 @@ describe('<rack-app> (app shell + Setup wiring, RBAR-15)', () => {
     expect(pill(root).getAttribute('aria-expanded')).toBe('true');
     setup(root).shadowRoot!.querySelector<HTMLButtonElement>('[data-done]')!.click();
     expect(pill(root).getAttribute('aria-expanded')).toBe('false');
+  });
+});
+
+describe('<rack-app> Collars wiring (RBAR-16, ADR-0008)', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('defaults to None (0 kg) collars, threaded to the console and sheet', () => {
+    const { root } = mountApp();
+    expect(consoleEl(root).collarKg).toBe(0);
+    expect(setup(root).collarKg).toBe(0);
+  });
+
+  it('choosing a Collar threads it to the console and persists it', () => {
+    const { root } = mountApp();
+    pill(root).click();
+    chooseCollar(root, 2.5);
+    expect(consoleEl(root).collarKg).toBe(2.5);
+    expect(localStorage.getItem(COLLAR_KEY)).toBe('2.5');
+  });
+
+  it('restores the persisted Collar on init (console and active tile)', () => {
+    localStorage.setItem(COLLAR_KEY, '2.5');
+    const { root } = mountApp();
+    expect(consoleEl(root).collarKg).toBe(2.5);
+    expect(setup(root).collarKg).toBe(2.5);
+    expect(pressedCollars(root)).toEqual([2.5]);
+  });
+
+  it('falls back to None when the persisted Collar is off-menu', () => {
+    // A hand-edited or legacy key carrying an unoffered collar must not strand the
+    // rig on a Collar no tile matches -- it falls back to the default None.
+    for (const offMenu of ['5', 'not-a-number']) {
+      localStorage.setItem(COLLAR_KEY, offMenu);
+      const { root } = mountApp();
+      expect(consoleEl(root).collarKg).toBe(0);
+      expect(pressedCollars(root)).toEqual([0]);
+    }
+  });
+
+  it('ignores an off-menu collarchange payload, keeping None and not persisting', () => {
+    const { root } = mountApp();
+    setup(root).dispatchEvent(
+      new CustomEvent('collarchange', {
+        detail: { collarKg: 5 },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    expect(consoleEl(root).collarKg).toBe(0);
+    expect(pressedCollars(root)).toEqual([0]);
+    expect(localStorage.getItem(COLLAR_KEY)).toBeNull();
+  });
+
+  it('keeps the Bar and Collar choices independent', () => {
+    const { root } = mountApp();
+    pill(root).click();
+    chooseBar(root, 15);
+    chooseCollar(root, 2.5);
+    expect(consoleEl(root).barKg).toBe(15);
+    expect(consoleEl(root).collarKg).toBe(2.5);
+    expect(localStorage.getItem(KEY)).toBe('15');
+    expect(localStorage.getItem(COLLAR_KEY)).toBe('2.5');
   });
 });
