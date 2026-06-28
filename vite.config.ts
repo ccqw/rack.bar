@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, configDefaults } from 'vitest/config';
 
 // rack.bar is a static multi-page app (ADR-0001): each page is its own
 // hand-authored document. v1 ships a single entry (the calculator); the deferred
@@ -22,5 +22,9 @@ export default defineConfig({
     // Web Component shells get real DOM tests; the pure core in lib/ needs no
     // DOM but happy-dom is harmless there.
     environment: 'happy-dom',
+    // docs/design-handoff/ is the authoritative Claude Design reference package
+    // (RBAR-10 output), not part of the app -- its bundled engine.test.js is the
+    // prototype's own contract file and must not run in our suite.
+    exclude: [...configDefaults.exclude, 'docs/**'],
   },
 });

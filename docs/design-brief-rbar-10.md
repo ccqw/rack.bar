@@ -1,5 +1,10 @@
 # rack.bar - Claude Design handoff (RBAR-10)
 
+> **Status (2026-06-28):** the design session is complete. Its authoritative output
+> lives at `docs/design-handoff/` and is now the source of truth for v1 scope and
+> look-and-feel (ROADMAP.md reconciled to it). This brief stays as the framing that
+> set the session up. The new feature surface it produced is filed as RBAR-15..21.
+
 A standing brief for the look-and-feel + interaction-feel pass on the working
 prototype, run with Claude Design (Anthropic's in-browser design-in-code tool,
 Opus). Claude Design points directly at this repo and reads the code itself, so

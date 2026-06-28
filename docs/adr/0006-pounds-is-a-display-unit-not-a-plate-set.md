@@ -50,3 +50,23 @@ The trade is that the core's notion of exactness (kg `delta == 0`) and the shell
 notion (displayed numbers match) diverge once a conversion is in play. The core stays
 the source of truth for _what_ the loadout is; the shell decides _whether the miss is
 worth showing_. That split is intentional and lives entirely in the shell (ADR-0001).
+
+## 2026-06-28 -- amended: pounds also becomes a real plate set (RBAR-17)
+
+The authoritative Claude Design handoff (`docs/design-handoff/`) pulled the parked
+"Pounds plate set" forward into v1. So the boundary this ADR drew -- "pounds is a
+display unit, _not_ a plate set, and the lb plate set remains parked" -- no longer
+holds as a v1 line. Both ship:
+
+- This ADR's converting display + entry layer (kg canonical, RBAR-14) stays exactly
+  as decided. It serves the lifter who _thinks_ in pounds on a kg/Eleiko bar.
+- A real plain-iron lb Inventory + lb bar, chosen via a plate-set switch, ships
+  alongside it (RBAR-17), for the lifter on a US iron rack. With the Training set
+  chosen the solver runs natively in lb.
+
+What this relaxes: kilograms is no longer the _sole_ canonical Unit -- each plate set
+now carries its own native Unit and Inventory. A follow-up ADR (written in RBAR-17)
+will record that model and how the plate-set switch reconciles with the kg|lb display
+toggle (design intent: choosing a set forces its Unit). Until that ADR lands, the
+decision recorded above governs the **Competition (kg/Eleiko) path only** and is not
+superseded for it.

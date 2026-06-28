@@ -9,8 +9,15 @@ plates back into a total. A future game mode will quiz this same skill.
 ## Language
 
 **Bar**:
-The barbell being loaded; contributes its own fixed weight to the total.
+The barbell being loaded; contributes its own weight to the Total. The lifter
+selects the Bar (20 / 15 / 5 kg); it defaults to 20 kg.
 _Avoid_: barbell, rod.
+
+**Collar**:
+A clamp on the Side that secures the Plates. Competition collars weigh 2.5 kg each
+and count toward the Total like the Bar; lighter clips weigh effectively nothing.
+Optional -- the lifter chooses None or a Standard collar.
+_Avoid_: clamp, clip (when the 2.5 kg competition collar is meant).
 
 **Plate**:
 A weight disc loaded onto the Bar. Always added in symmetric **pairs** — one per
@@ -51,11 +58,20 @@ The Plates available to draw from when decoding a Target. Defaults to an unlimit
 standard Eleiko set; will later support finite pair-counts for a home gym.
 _Avoid_: stock, supply.
 
+**Plate set**:
+The family of Plates (with its matching Bar and native Unit) the lifter is loading:
+the **Competition** set (Eleiko, color-coded, kilograms) or the **Training** set
+(plain iron, pounds). Choosing a set fixes the Inventory and the native Unit.
+Defaults to Competition / kg.
+_Avoid_: plate type, kit.
+
 **Unit**:
 A system of weight measure the lifter reads and enters weights in: **kilograms**
-(kg) or **pounds** (lb). A Unit is how a weight is _shown_, not a different weight —
-Plates are always named by their kilogram weight and color (the v1 Eleiko set is
-metric); pounds is a conversion applied to entry and the readouts only.
+(kg) or **pounds** (lb). A Unit is how a weight is _shown_, not a different weight.
+On the **Competition** Plate set the Plates are always named by their kilogram
+weight and color (the Eleiko set is metric), and pounds is a conversion applied to
+entry and the readouts only (ADR-0006). The **Training** Plate set is natively
+pounds -- see Plate set and ADR-0006's 2026-06-28 amendment.
 _Avoid_: measurement, system.
 
 **Primary unit**:
