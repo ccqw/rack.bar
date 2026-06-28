@@ -160,8 +160,13 @@ class RackEntry extends HTMLElement {
     this.keypad = this.root.querySelector('[data-keypad]')!;
 
     this.valueEl.addEventListener('click', () => {
-      this.keypad.hidden = !this.keypad.hidden;
+      const wasOpen = !this.keypad.hidden;
+      this.keypad.hidden = wasOpen;
       this.valueEl.setAttribute('aria-expanded', String(!this.keypad.hidden));
+      // Closing the keypad commits the Target: the console pushes it onto the Recent
+      // row (RBAR-20, ADR-0009). Fire only on the open->closed edge so opening the pad
+      // never commits; opening the pad never does.
+      if (wasOpen) this.emitKeypadClose();
     });
     this.root
       .querySelector('[data-step="inc"]')!
@@ -235,6 +240,19 @@ class RackEntry extends HTMLElement {
   private emit(): void {
     this.dispatchEvent(
       new CustomEvent<{ target: number | null }>('target', {
+        detail: { target: this.currentTarget() },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  // Announce that the keypad just closed on the Target currently shown -- the console's
+  // cue to remember it (RBAR-20). Distinct from `target` (which fires on every keystroke):
+  // this is the deliberate commit, so only it feeds Recents, not every mid-entry digit.
+  private emitKeypadClose(): void {
+    this.dispatchEvent(
+      new CustomEvent<{ target: number | null }>('keypadclose', {
         detail: { target: this.currentTarget() },
         bubbles: true,
         composed: true,

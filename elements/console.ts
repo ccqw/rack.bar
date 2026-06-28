@@ -10,10 +10,13 @@
 import './entry.ts';
 import './palette.ts';
 import './sleeve.ts';
+import './recents.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, barWithCollars } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
+import { readPersisted, writePersisted } from './persist.ts';
+import { parseRecents, pushRecent } from '../lib/recents.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded } from '../lib/decode.ts';
 
@@ -25,17 +28,27 @@ type Entry = HTMLElement & {
   display(value: number | null): void;
   barKg: number;
 };
+type Recents = HTMLElement & { targets: readonly number[] };
 type Mode = 'decode' | 'encode';
+
+// The Recent Targets history persists shell-side under its own key (ADR-0007/0009),
+// canonically in kg (ADR-0006); the row renders it in By-Weight mode.
+const RECENTS_KEY = 'rackbar.recents';
 
 class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private entry!: Entry;
+  private recentsRow!: Recents;
   private palette!: HTMLElement;
   private sleeve!: Sleeve;
   private total!: HTMLElement;
   private delta!: HTMLElement;
   private over!: HTMLButtonElement;
   private modeButtons!: NodeListOf<HTMLButtonElement>;
+
+  // The lifter's recent Targets, most-recent-first (kg). Loaded from storage on connect,
+  // pushed on a Target commit (keypad close) and on a chip re-apply, persisted on change.
+  private recents: number[] = [];
 
   // The single shared Side Load (ADR-0005): what the sleeve draws and what the Total
   // reads, in both modes. Decode derives it; Encode edits it; a mode switch keeps it.
@@ -158,6 +171,9 @@ class RackConsole extends HTMLElement {
           <button type="button" data-mode="encode" aria-pressed="false">By Plates</button>
         </div>
         <rack-entry></rack-entry>
+        <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
+             (RBAR-20). Hidden until the lifter has committed a Target. -->
+        <rack-recents hidden></rack-recents>
         <rack-palette hidden></rack-palette>
         <rack-sleeve></rack-sleeve>
         <div class="readout">
@@ -169,6 +185,7 @@ class RackConsole extends HTMLElement {
       </div>
     `;
     this.entry = this.root.querySelector('rack-entry') as Entry;
+    this.recentsRow = this.root.querySelector('rack-recents') as Recents;
     this.palette = this.root.querySelector('rack-palette')!;
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
     this.total = this.root.querySelector('[data-total]')!;
@@ -180,6 +197,21 @@ class RackConsole extends HTMLElement {
     this.entry.addEventListener('target', (e) => {
       if (this.mode !== 'decode') return;
       this.decodeTo((e as CustomEvent<{ target: number | null }>).detail.target);
+    });
+    // A Target commit (the keypad closing) is remembered in the Recent row (RBAR-20).
+    // Distinct from `target`, which fires on every keystroke -- only the commit is kept,
+    // so mid-entry digits never litter the history. A null Target (empty field) is a
+    // no-op (rememberTarget guards it).
+    this.entry.addEventListener('keypadclose', (e) =>
+      this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    // A recent chip tap re-applies that Target: seed the field, decode it, and move it
+    // back to the front of the history (a re-use is a fresh commit).
+    this.recentsRow.addEventListener('recentapply', (e) => {
+      const { target } = (e as CustomEvent<{ target: number }>).detail;
+      this.entry.display(target);
+      this.decodeTo(target);
+      this.rememberTarget(target);
     });
     // Encode: palette taps add, sleeve disc taps remove -- both pure transforms.
     this.palette.addEventListener('addplate', (e) => {
@@ -210,8 +242,22 @@ class RackConsole extends HTMLElement {
       }),
     );
 
+    this.recents = parseRecents(readPersisted(RECENTS_KEY)); // restore prior Targets
+    this.recentsRow.targets = this.recents;
     this.entry.barKg = this.baselineKg(); // anchor the entry to the bare-rig baseline
     this.render(); // initial state: Decode, a bare rig, no Target typed yet
+  }
+
+  // Remember a committed Target in the Recent row: dedupe + cap via the pure core
+  // (lib/recents), feed the row, and persist (best-effort, ADR-0009). A null or
+  // non-loadable Target is ignored (pushRecent guards finite/positive), so an empty-field
+  // close never litters the history. Stored canonically in kg (ADR-0006).
+  private rememberTarget(target: number | null): void {
+    if (target === null) return;
+    this.recents = pushRecent(this.recents, target);
+    this.recentsRow.targets = this.recents;
+    this.render(); // keep the row's mode visibility in sync
+    writePersisted(RECENTS_KEY, JSON.stringify(this.recents));
   }
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
@@ -245,6 +291,9 @@ class RackConsole extends HTMLElement {
     this.sleeve.interactive = this.mode === 'encode';
     this.total.textContent = `${encode(this.side, this.baselineKg())} kg`;
     this.entry.hidden = this.mode !== 'decode';
+    // The Recent row is a By-Weight (Decode) affordance: shown only there, and only once
+    // there is something to show (the row also self-hides when empty -- ADR-0009).
+    this.recentsRow.hidden = this.mode !== 'decode' || this.recents.length === 0;
     this.palette.hidden = this.mode !== 'encode';
     this.modeButtons.forEach((b) =>
       b.setAttribute('aria-pressed', String(b.dataset.mode === this.mode)),
