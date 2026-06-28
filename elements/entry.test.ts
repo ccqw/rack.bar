@@ -2,7 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 import './entry.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 
-type Entry = HTMLElement & { display(value: number | null): void };
+type Entry = HTMLElement & {
+  display(value: number | null): void;
+  barKg: number;
+};
 
 function mountEntry(): { el: Entry; root: ShadowRoot } {
   const el = document.createElement('rack-entry') as Entry;
@@ -156,6 +159,43 @@ describe('<rack-entry>', () => {
     expect(keypad.hidden).toBe(true);
     tap(root, '[data-value]');
     expect(keypad.hidden).toBe(false);
+  });
+
+  it('anchors the empty-field default and the steppers at the chosen Bar, not just 20', () => {
+    // RBAR-15: the Bar is now a lifter choice. The entry seeds its pristine default
+    // to the Bar weight and steps from it (you load a bar UP from its own weight), so
+    // a 15 kg Bar must show 15 as the anchor and step from 15 -- not the 20 kg default.
+    const { el, root } = mountEntry();
+    el.barKg = 15;
+    const value = root.querySelector<HTMLElement>('[data-value]')!;
+    expect(value.textContent).toBe('15');
+    expect(value.classList.contains('empty')).toBe(false); // a real seeded value
+    const seen = targetSpy(el);
+    tap(root, '[data-step="inc"]');
+    expect(seen).toHaveBeenLastCalledWith(16);
+  });
+
+  it('falls an emptied field back to the chosen Bar anchor (muted), not 20', () => {
+    const { el, root } = mountEntry();
+    el.barKg = 5;
+    const seen = targetSpy(el);
+    key(root, 'del'); // clear the pristine seed -> empty field
+    expect(seen).toHaveBeenLastCalledWith(null);
+    const value = root.querySelector<HTMLElement>('[data-value]')!;
+    expect(value.textContent).toBe('5'); // the muted anchor follows the Bar
+    expect(value.classList.contains('empty')).toBe(true);
+    tap(root, '[data-step="inc"]'); // steps up from the 5 kg Bar
+    expect(seen).toHaveBeenLastCalledWith(6);
+  });
+
+  it('does not stomp a real typed value when the Bar changes', () => {
+    // A live Bar change must only move the anchor, never overwrite a Target the
+    // lifter has already typed.
+    const { el, root } = mountEntry();
+    ['1', '0', '0'].forEach((k) => key(root, k)); // typed 100
+    el.barKg = 15;
+    const value = root.querySelector<HTMLElement>('[data-value]')!;
+    expect(value.textContent).toBe('100');
   });
 
   it('display() seeds or clears the shown value WITHOUT emitting a target event', () => {

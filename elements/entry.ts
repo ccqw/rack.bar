@@ -36,6 +36,29 @@ class RackEntry extends HTMLElement {
   private valueEl!: HTMLButtonElement;
   private keypad!: HTMLElement;
 
+  // The Bar weight the field anchors to (RBAR-15, ADR-0002/0007). The lifter loads a
+  // bar UP from its own weight, so the seeded default, the empty-field placeholder, and
+  // the stepper origin are all the Bar weight, not zero. Defaults to the 20 kg Bar; the
+  // app shell sets this when the lifter picks another Bar in Setup. See the setter for
+  // how a change moves an untouched anchor without stomping a typed Target.
+  private _barKg = DEFAULT_BAR_KG;
+
+  /**
+   * The Bar weight to anchor on. Moving the Bar re-seeds the anchor only when the field
+   * still holds the untouched seeded default (so picking a 15 kg Bar shows 15, not 20);
+   * a Target the lifter has typed -- or an emptied field, which already falls back to
+   * the live Bar via renderValue -- is left alone. Silent: never emits a target.
+   */
+  set barKg(kg: number) {
+    const seededDefault = this.pristine && this.draft === String(this._barKg);
+    this._barKg = kg;
+    if (seededDefault) this.draft = String(kg);
+    if (this.valueEl) this.renderValue(); // no-op before connect; connectedCallback renders
+  }
+  get barKg(): number {
+    return this._barKg;
+  }
+
   // The single source of truth: the raw text the lifter has entered. '' = nothing yet,
   // which falls back to the Bar weight as the anchor.
   private draft = '';
@@ -152,7 +175,7 @@ class RackEntry extends HTMLElement {
 
     // Start at the Bar weight: a real, steppable starting point, silent (no target
     // event -- the console already renders the bare Bar). Pristine, so typing replaces it.
-    this.draft = String(DEFAULT_BAR_KG);
+    this.draft = String(this._barKg);
     this.pristine = true;
     this.renderValue();
   }
@@ -183,8 +206,8 @@ class RackEntry extends HTMLElement {
   // add the delta, clamp at 0 (Target is never negative), and round off float fuzz.
   private step(delta: number): void {
     this.pristine = false;
-    const current = this.draft === '' ? DEFAULT_BAR_KG : Number(this.draft);
-    const base = Number.isNaN(current) ? DEFAULT_BAR_KG : current;
+    const current = this.draft === '' ? this._barKg : Number(this.draft);
+    const base = Number.isNaN(current) ? this._barKg : current;
     const next = Math.max(0, Number((base + delta).toFixed(2)));
     this.draft = String(next);
     this.renderValue();
@@ -202,7 +225,7 @@ class RackEntry extends HTMLElement {
   // a real value shows solid.
   private renderValue(): void {
     const empty = this.draft === '';
-    const shown = empty ? String(DEFAULT_BAR_KG) : this.draft;
+    const shown = empty ? String(this._barKg) : this.draft;
     this.valueEl.textContent = shown;
     this.valueEl.classList.toggle('empty', empty);
     // Announce the live value (aria-labelledby would override the text and hide it).

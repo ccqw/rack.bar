@@ -15,6 +15,16 @@
   --rack-line: #23272b;
   --rack-radius: 14px;
 
+  /* Raised surfaces for overlays (the Setup sheet and later modals), an active
+     control fill, a stronger border for a selected control, and the dim backdrop
+     behind a sheet (RBAR-15, ADR-0007). Folded from the Claude Design handoff. */
+  --rack-overlay: #16191d;       /* bottom sheets / modals */
+  --rack-selected: #2a2f35;      /* a selected tile / control */
+  --rack-line-strong: #3a4047;   /* border on a selected control */
+  --rack-scrim: rgba(5, 6, 7, 0.55);
+  --rack-radius-sheet: 24px;     /* a bottom sheet's top corners */
+  --rack-radius-tile: 11px;      /* a selector tile */
+
   /* Plate colors — domain palette (CONTEXT.md), the IWF/Eleiko scheme. Lifters
      name a plate by its color, so these are semantic, not decorative. The metal
      change plates mirror their 10x bumper's color (25<->2.5 red, etc.). */

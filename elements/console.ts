@@ -20,7 +20,10 @@ type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
   interactive: boolean;
 };
-type Entry = HTMLElement & { display(value: number | null): void };
+type Entry = HTMLElement & {
+  display(value: number | null): void;
+  barKg: number;
+};
 type Mode = 'decode' | 'encode';
 
 class RackConsole extends HTMLElement {
@@ -37,11 +40,37 @@ class RackConsole extends HTMLElement {
   // reads, in both modes. Decode derives it; Encode edits it; a mode switch keeps it.
   private side: readonly Plate[] = [];
   private mode: Mode = 'decode';
+  // The chosen Bar, threaded into the parameterized core (ADR-0002/0007). Defaults to
+  // the 20 kg Bar; the app shell sets it from Setup. See the setter for the re-decode.
+  private _barKg = DEFAULT_BAR_KG;
   // Decode-only: the current decode() result and whether the over-target opt-in is on
   // screen. `showingOver` only ever flips on a click, never on a new Target, so Decode
   // never auto-puts the lifter over Target (ADR-0003). Both reset on a mode switch.
   private decoded: Decoded | null = null;
   private showingOver = false;
+
+  /**
+   * The Bar the solver loads up from (RBAR-15). Setting it threads the new Bar into
+   * every Total and -- when a live Decode result is on screen -- re-decodes the standing
+   * Target so the Side Load is rebuilt for the new Bar (a 100 kg Target needs different
+   * Plates on a 15 kg Bar). A carried, hand-built loadout (no live decode) is left as-is;
+   * only its Total re-reads. The entry's anchor follows too, so the steppers move from
+   * the chosen Bar. The original Target is re-derived from the decode result
+   * (`target = total - delta`), so no separate copy of it can drift.
+   */
+  set barKg(kg: number) {
+    this._barKg = kg;
+    if (!this.entry) return; // pre-connect; connectedCallback renders with _barKg
+    this.entry.barKg = kg;
+    if (this.mode === 'decode' && this.decoded) {
+      this.decodeTo(this.decoded.primary.total - this.decoded.primary.delta);
+    } else {
+      this.render();
+    }
+  }
+  get barKg(): number {
+    return this._barKg;
+  }
 
   connectedCallback(): void {
     this.root.innerHTML = `
@@ -152,6 +181,7 @@ class RackConsole extends HTMLElement {
       }),
     );
 
+    this.entry.barKg = this._barKg; // anchor the entry to the Bar (default or pre-connect set)
     this.render(); // initial state: Decode, a bare Bar, no Target typed yet
   }
 
@@ -160,7 +190,7 @@ class RackConsole extends HTMLElement {
   // (empty field) clears to the bare Bar.
   private decodeTo(target: number | null): void {
     this.showingOver = false;
-    this.decoded = target === null ? null : decode(target);
+    this.decoded = target === null ? null : decode(target, this._barKg);
     this.side = this.decoded ? this.decoded.primary.side : [];
     this.render();
   }
@@ -176,7 +206,7 @@ class RackConsole extends HTMLElement {
     this.decoded = null;
     this.showingOver = false;
     if (mode === 'decode') {
-      this.entry.display(this.side.length > 0 ? encode(this.side) : null);
+      this.entry.display(this.side.length > 0 ? encode(this.side, this._barKg) : null);
     }
     this.render();
   }
@@ -184,7 +214,7 @@ class RackConsole extends HTMLElement {
   private render(): void {
     this.sleeve.sideLoad = this.side;
     this.sleeve.interactive = this.mode === 'encode';
-    this.total.textContent = `${encode(this.side)} kg`;
+    this.total.textContent = `${encode(this.side, this._barKg)} kg`;
     this.entry.hidden = this.mode !== 'decode';
     this.palette.hidden = this.mode !== 'encode';
     this.modeButtons.forEach((b) =>
@@ -201,7 +231,7 @@ class RackConsole extends HTMLElement {
       this.setOver(over ?? null, primary.total);
     } else {
       this.setDelta(null, false);
-      this.setOver(null, encode(this.side));
+      this.setOver(null, encode(this.side, this._barKg));
     }
   }
 
@@ -220,7 +250,7 @@ class RackConsole extends HTMLElement {
     } else {
       this.delta.textContent = isOver
         ? `${fmtKg(delta)} kg over target`
-        : `below the ${DEFAULT_BAR_KG} kg Bar`;
+        : `below the ${this._barKg} kg Bar`;
     }
   }
 
