@@ -20,21 +20,16 @@
       padding: env(safe-area-inset-top) env(safe-area-inset-right)
                env(safe-area-inset-bottom) env(safe-area-inset-left);
     }
-    /* The app owns the whole viewport — a single touch-first surface, no prose. */
-    main {
-      flex: 1;
-      display: flex; align-items: center; justify-content: center;
-      padding: 4vh 5vw 6vh;
-    }
+    /* No horizontal scroll at a phone width: the app is a single column. */
+    body { overflow-x: hidden; }
   </style>
 </head>
 <body>
-  <!-- The calculator console: Decode a Target into a Side Load, or Encode a
-       tapped-on Side Load into its Total -- one toggle, shared state (RBAR-7). -->
-  <main>
-    <rack-console></rack-console>
-  </main>
+  <!-- The app shell (RBAR-15, ADR-0007): the header (wordmark + Setup pill), the
+       calculator console, and the Setup sheet that hosts rig configuration. The shell
+       owns the chosen Bar and threads it into the parameterized core (ADR-0002). -->
+  <rack-app></rack-app>
 
-  <script type="module" src="./elements/console.ts"></script>
+  <script type="module" src="./elements/app.ts"></script>
 </body>
 </html>

@@ -22,6 +22,9 @@ export default defineConfig({
     // Web Component shells get real DOM tests; the pure core in lib/ needs no
     // DOM but happy-dom is harmless there.
     environment: 'happy-dom',
+    // happy-dom under Node does not provide localStorage; this installs a small
+    // in-memory Storage so shell-side persistence (ADR-0007) is testable.
+    setupFiles: ['./vitest.setup.ts'],
     // docs/design-handoff/ is the authoritative Claude Design reference package
     // (RBAR-10 output), not part of the app -- its bundled engine.test.js is the
     // prototype's own contract file and must not run in our suite.

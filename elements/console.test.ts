@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import './console.ts';
 
-function mountConsole(): HTMLElement {
-  const el = document.createElement('rack-console');
+type Console = HTMLElement & { barKg: number };
+
+function mountConsole(): Console {
+  const el = document.createElement('rack-console') as Console;
   document.body.append(el);
   return el;
+}
+
+// The raw text in the Target field, anchor included (entryValue hides the muted
+// anchor; this test needs to read it to prove it follows the Bar).
+function entryAnchorText(el: HTMLElement): string {
+  return (
+    entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value]')!.textContent ??
+    ''
+  );
 }
 
 // Type a Target through the entry's on-screen keypad (RBAR-8) -- the real input path.
@@ -171,6 +182,60 @@ describe('<rack-console> (Decode: at-or-under + delta)', () => {
       expect(opt.textContent!.toLowerCase()).toContain('round up'); // not the "back to" label
       expect(opt.textContent).toContain('143');
     });
+  });
+});
+
+describe('<rack-console> (Bar selection flows into the solver, RBAR-15)', () => {
+  it('reflects a chosen Bar in the bare-Bar Total', () => {
+    const el = mountConsole();
+    el.barKg = 15;
+    expect(discs(el).length).toBe(0);
+    expect(total(el)).toContain('15'); // bare 15 kg Bar, not the 20 kg default
+  });
+
+  it('decodes a Target against the chosen Bar (not the 20 kg default)', () => {
+    const el = mountConsole();
+    el.barKg = 15;
+    type(el, '65'); // (65 - 15) / 2 = 25 per Side -> a single 25
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25']);
+    expect(total(el)).toContain('65');
+  });
+
+  it('encodes a hand-built Side Load against the chosen Bar', () => {
+    const el = mountConsole();
+    el.barKg = 15;
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    expect(total(el)).toContain('65'); // 15 + 2 x 25
+  });
+
+  it('re-decodes the standing Target when the Bar changes', () => {
+    // Changing the Bar with a Target on screen recomputes the Side Load: the same
+    // 100 kg Target needs different Plates on a lighter Bar.
+    const el = mountConsole();
+    type(el, '100'); // 20 kg Bar -> 25 + 15
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+    el.barKg = 15; // (100 - 15) / 2 = 42.5 -> 25 + 15 + 2.5
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15', '2.5']);
+    expect(total(el)).toContain('100'); // still hits the Target, just more Plates
+  });
+
+  it('names the chosen Bar in the sub-Bar floor note', () => {
+    const el = mountConsole();
+    el.barKg = 5;
+    type(el, '3'); // below the 5 kg Bar -> floored at the bare Bar
+    expect(total(el)).toContain('5');
+    const note = delta(el);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain('5');
+    expect(note.textContent!.toLowerCase()).toContain('bar');
+  });
+
+  it('moves the Target entry anchor to the chosen Bar', () => {
+    const el = mountConsole();
+    el.barKg = 15;
+    // The empty-field anchor (what the steppers move from) follows the Bar.
+    expect(entryAnchorText(el)).toBe('15');
   });
 });
 
