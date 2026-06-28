@@ -525,6 +525,14 @@ describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
     expect(recentLabels(el)).toEqual([100]);
   });
 
+  it('does not remember the default on an idle keypad peek (open then close, no typing)', () => {
+    const el = mountConsole();
+    valueBtn(el).click(); // open on the pristine 20 kg default
+    valueBtn(el).click(); // close without typing
+    expect(recentsEl(el).hidden).toBe(true);
+    expect(recentLabels(el)).toEqual([]);
+  });
+
   it('does not remember an empty field on keypad close (null Target)', () => {
     const el = mountConsole();
     valueBtn(el).click(); // open

@@ -16,7 +16,7 @@ import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, barWithCollars } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
-import { parseRecents, pushRecent } from '../lib/recents.ts';
+import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded } from '../lib/decode.ts';
 
@@ -48,7 +48,9 @@ class RackConsole extends HTMLElement {
 
   // The lifter's recent Targets, most-recent-first (kg). Loaded from storage on connect,
   // pushed on a Target commit (keypad close) and on a chip re-apply, persisted on change.
-  private recents: number[] = [];
+  // Readonly: only ever reassigned to a fresh list from pushRecent/parseRecents, never
+  // mutated in place -- which is what keeps the dedupe/cap/order invariants intact.
+  private recents: readonly number[] = [];
 
   // The single shared Side Load (ADR-0005): what the sleeve draws and what the Total
   // reads, in both modes. Decode derives it; Encode edits it; a mode switch keeps it.
@@ -253,7 +255,9 @@ class RackConsole extends HTMLElement {
   // non-loadable Target is ignored (pushRecent guards finite/positive), so an empty-field
   // close never litters the history. Stored canonically in kg (ADR-0006).
   private rememberTarget(target: number | null): void {
-    if (target === null) return;
+    // Skip a null (empty-field / pristine close) or non-loadable Target up front: pushRecent
+    // would no-op on it anyway, and bailing here avoids a pointless re-render + storage write.
+    if (target === null || !isRememberable(target)) return;
     this.recents = pushRecent(this.recents, target);
     this.recentsRow.targets = this.recents;
     this.render(); // keep the row's mode visibility in sync

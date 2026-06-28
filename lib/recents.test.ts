@@ -46,6 +46,14 @@ describe('pushRecent', () => {
     pushRecent(original, 120);
     expect(original).toEqual([100, 80]);
   });
+
+  it('normalizes a Target to two decimals (stored == displayed == dedupe key)', () => {
+    expect(pushRecent([], 60.123)).toEqual([60.12]);
+    // An incoming Target that rounds onto a held (already-normalized) one dedupes to a
+    // single chip rather than a second look-alike -- every entry passes through here, so
+    // the list is always normalized and the dedupe key matches the displayed value.
+    expect(pushRecent([60.12], 60.124)).toEqual([60.12]);
+  });
 });
 
 describe('parseRecents', () => {

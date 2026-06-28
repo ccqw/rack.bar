@@ -1,7 +1,7 @@
 # Recent Targets persist shell-side, owned by the console
 
 RBAR-20 adds a **Recent** row: the lifter's recent Targets as tappable chips in
-By-Weight (Decode) mode, so a working weight is one tap away. The history is
+By-Weight (Decode) mode, so a recent Target is one tap away. The history is
 deduped, most-recent-first, capped at 6, and persisted across reloads. Two
 questions this ADR settles: **who owns the history**, and **how thin does this
 slice ship** given the unit layer and the share card are not built yet.

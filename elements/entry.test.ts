@@ -215,6 +215,33 @@ describe('<rack-entry>', () => {
     expect(seen).toHaveBeenLastCalledWith(100);
   });
 
+  it('keypadclose carries null on an idle peek of the untouched default (pristine)', () => {
+    // Opening then closing the keypad without typing must not commit the seeded Bar
+    // weight -- it is a value the lifter never chose, so it would litter Recents.
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    tap(root, '[data-value]'); // open on the pristine default
+    tap(root, '[data-value]'); // close without typing
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
+  it('keypadclose carries null when the field still holds a display()-seeded value', () => {
+    // A value seeded via display() (a re-applied chip, a mode-switch carry) is pristine
+    // too: an idle peek-and-close must not re-commit it.
+    const { el, root } = mountEntry();
+    el.display(120);
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-value]'); // close, untouched
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
   it('keypadclose carries a null Target when the field is empty on close', () => {
     const { el, root } = mountEntry();
     const seen = vi.fn();
