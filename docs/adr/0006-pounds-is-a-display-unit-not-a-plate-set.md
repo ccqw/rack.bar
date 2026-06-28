@@ -58,8 +58,10 @@ The authoritative Claude Design handoff (`docs/design-handoff/`) pulled the park
 display unit, _not_ a plate set, and the lb plate set remains parked" -- no longer
 holds as a v1 line. Both ship:
 
-- This ADR's converting display + entry layer (kg canonical, RBAR-14) stays exactly
+- This ADR's converting display + entry layer (kg canonical) stays exactly
   as decided. It serves the lifter who _thinks_ in pounds on a kg/Eleiko bar.
+  (Originally ticketed as RBAR-14; folded into RBAR-17 on 2026-06-28 so all pounds
+  work -- this display layer plus the real plate set below -- ships in one slice.)
 - A real plain-iron lb Inventory + lb bar, chosen via a plate-set switch, ships
   alongside it (RBAR-17), for the lifter on a US iron rack. With the Training set
   chosen the solver runs natively in lb.

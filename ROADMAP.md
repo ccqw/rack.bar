@@ -12,12 +12,12 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 ## v1 (calculator)
 
 - Eleiko kilogram plate set, color scheme -- the competition Plates are kg.
-- **Pounds** ships as two distinct layers, both in v1:
+- **Pounds** ships as two distinct layers, both in v1 (both built under RBAR-17):
   - A kg/lb display + entry switch over the kg set -- a Primary unit with a
-    Secondary readout alongside (RBAR-14, ADR-0006). Display only; no lb plates.
+    Secondary readout alongside (ADR-0006). Display only; no lb plates.
   - A real **pounds plate set** -- a plain-iron lb Inventory + lb bar, chosen via a
     plate-set switch, so the shown Plates match a US gym's rack and the solver runs
-    natively in lb (RBAR-17). Pulled forward from Later by the design pass.
+    natively in lb. Pulled forward from Later by the design pass.
 - **Bar selection** -- 20 / 15 / 5 kg, chosen in the Setup sheet (RBAR-15). The Bar
   is already a first-class solver input (ADR-0002); this surfaces the UI.
 - **Collars** -- optional competition collars (None / 2.5 kg per Side) that count

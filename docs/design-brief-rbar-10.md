@@ -91,12 +91,12 @@ something sharper.
   tap-to-type keypad -- make the primary number feel like the hero.
 - The Decode/Encode toggle: right now it is functional; give it a real treatment.
 
-## Unit conversion (kg / lb) -- new chrome to design (RBAR-14)
+## Unit conversion (kg / lb) -- new chrome to design (now built under RBAR-17)
 
-rack.bar now needs a pounds option, tracked as RBAR-14 and co-designed in this
-pass. It is a **display + entry layer only** -- the plates on screen are ALWAYS the
-kg Eleiko set (colors/sizing unchanged). Pounds is just how the numbers are read and
-typed. Full spec:
+rack.bar now needs a pounds option, co-designed in this pass (originally tracked as
+RBAR-14, folded into RBAR-17 on 2026-06-28). It is a **display + entry layer only**
+-- the plates on screen are ALWAYS the kg Eleiko set (colors/sizing unchanged).
+Pounds is just how the numbers are read and typed. Full spec:
 `docs/adr/0006-pounds-is-a-display-unit-not-a-plate-set.md` and the Unit / Primary
 unit / Secondary unit terms in `CONTEXT.md`.
 
