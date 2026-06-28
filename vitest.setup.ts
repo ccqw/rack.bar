@@ -31,13 +31,15 @@ class MemoryStorage {
 
 // Install a brand-new MemoryStorage as `localStorage`, overriding whatever the runtime
 // supplied. `configurable: true` lets the next install replace it again. We override even
-// when a localStorage already exists (happy-dom's) because a test that mocks a Storage
-// method with `vi.spyOn(localStorage, 'setItem')` (the blocked-read / quota-write cases)
-// installs a spy that `vi.restoreAllMocks()` does NOT reliably remove from happy-dom's
-// proxy Storage on Node 22 -- the spy then leaked into the next describe block and threw
-// the prior test's DOMException (green on Node 26 locally, red on CI). Swapping in a fresh
-// plain object before every test guarantees no spy can survive: the spied object is
-// discarded wholesale, not restored.
+// when a localStorage already exists, and we do it at module load (before any test) so the
+// object a test spies on is always this plain MemoryStorage. The reason we don't simply
+// trust the framework's spy restore: a test that mocks a Storage method with
+// `vi.spyOn(localStorage, 'setItem')` (the blocked-read / quota-write cases) installs a spy
+// that `vi.restoreAllMocks()` did NOT reliably remove across runtimes -- originally seen on
+// happy-dom's proxy Storage under Node 22, where the spy leaked into the next describe block
+// and threw the prior test's DOMException (green on Node 26 locally, red on CI). Swapping in
+// a fresh object before every test sidesteps restore entirely: the spied object is discarded
+// wholesale, so no spy can survive into the next test.
 function installFreshStorage(): void {
   const ls = new MemoryStorage();
   const targets: object[] = [globalThis];

@@ -460,4 +460,30 @@ describe('<rack-console> (Collars fold into the baseline, RBAR-16, ADR-0008)', (
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '10']);
     expect(total(el)).toContain('90');
   });
+
+  it('names the Bar + Collars baseline in the sub-baseline floor note', () => {
+    // A Target below the bare rig (Bar + 2 x collar) floors at the baseline. With a
+    // collar fitted the note must name that baseline, not the bare Bar (ADR-0008).
+    const el = mountConsole();
+    el.collarKg = 2.5; // baseline 25 on the default 20 kg Bar
+    type(el, '22'); // below the 25 kg floor
+    expect(total(el)).toContain('25');
+    const note = delta(el);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain('25'); // the collared baseline, not 20
+    expect(note.textContent!.toLowerCase()).toContain('collars');
+  });
+
+  it('re-reads the Total but keeps a hand-built loadout when the Collar changes in Encode', () => {
+    // The Encode analogue of the Bar-change test: fitting a collar over a standing
+    // hand-built Side Load preserves the Plates and only re-reads the Total.
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 25); // 20 kg Bar + 2 x 50 = 120
+    expect(total(el)).toContain('120');
+    el.collarKg = 2.5; // baseline 25; the loadout stays, Total re-reads: 25 + 2 x 50 = 125
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '25']);
+    expect(total(el)).toContain('125');
+  });
 });

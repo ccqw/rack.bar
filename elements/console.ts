@@ -284,7 +284,7 @@ class RackConsole extends HTMLElement {
       // truthful about what the lifter can't go under (ADR-0008).
       this.delta.textContent =
         this._collarKg > 0
-          ? `below the bar + collars (${fmtKg(this.baselineKg())} kg)`
+          ? `below the Bar + Collars (${fmtKg(this.baselineKg())} kg)`
           : `below the ${this._barKg} kg Bar`;
     }
   }

@@ -33,7 +33,9 @@ export function isOfferedBar(kg: number): kg is BarKg {
 // same way as the Bar at both shell boundaries (ADR-0007). Default is None.
 export const COLLAR_OPTIONS = [0, 2.5] as const;
 
-/** The default Collar: None. The bare Bar with no clamp weight. */
+/** The default Collar: None. The bare Bar with no clamp weight. (Left as a bare literal to
+ * mirror DEFAULT_BAR_KG, which can't be CollarKg-typed without the core importing the
+ * shell -- ADR-0001; the offered-set guard runs at the shell boundary instead.) */
 export const DEFAULT_COLLAR_KG = 0;
 
 /** A Collar the lifter can actually pick: one of the offered Collars. */
