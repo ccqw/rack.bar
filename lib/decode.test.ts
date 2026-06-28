@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { decode } from './decode.ts';
-import { ELEIKO_KG, totalKg } from './plates.ts';
+import { ELEIKO_KG, totalKg, barWithCollars } from './plates.ts';
 
 describe('decode (at-or-under loading core, ADR-0003)', () => {
   it('decodes an exact Target into the canonical fewest-Plate Side Load, biggest-first', () => {
@@ -212,5 +212,39 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
       expect(primary.total).toBe(20);
       expect(primary.delta).toBe(-80);
     });
+  });
+});
+
+describe('decode against a collar baseline (ADR-0008)', () => {
+  // A Standard 2.5 kg collar folds into the effective Bar (barWithCollars): the
+  // solver loads from Bar + 2 x collar, so the grid and floor shift up by 5 kg on
+  // a 20 kg Bar, and the loader is otherwise unchanged (greedy, biggest-first).
+  const collared = barWithCollars(20, 2.5); // 25
+
+  it('decodes an exact collared Target into the fewest Plates', () => {
+    // 95 = 25 baseline + 70 -> 35 per Side -> 25 + 10. Total = 25 + 2 x 35.
+    const { primary } = decode(95, collared);
+    expect(primary.side.map((p) => p.kg)).toEqual([25, 10]);
+    expect(primary.total).toBe(95);
+    expect(primary.total).toBe(totalKg(primary.side, collared));
+    expect(primary.delta).toBe(0);
+  });
+
+  it('floors at the bare rig (Bar + 2 x collar) for a sub-baseline Target', () => {
+    // 22 is below the 25 kg collared baseline -> empty Side, floored at the rig.
+    const { primary } = decode(22, collared);
+    expect(primary.side).toEqual([]);
+    expect(primary.total).toBe(25);
+    expect(primary.delta).toBe(3); // positive: the Target is below the floor
+  });
+
+  it('offers the over-target round-up measured from the collared baseline', () => {
+    // 100.5 off the grid: primary lands at 100 (25 baseline + 75), over steps to 101.
+    const { primary, over } = decode(100.5, collared);
+    expect(primary.total).toBe(100);
+    expect(primary.delta).toBe(-0.5);
+    expect(over?.total).toBe(101);
+    expect(over?.delta).toBe(0.5);
+    expect(over?.total).toBe(totalKg(over!.side, collared));
   });
 });

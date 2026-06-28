@@ -60,3 +60,16 @@ export function totalKg(
 ): number {
   return barKg + 2 * sideLoadKg(sideLoad);
 }
+
+/**
+ * The effective Bar baseline the solver loads from when a Collar is fitted
+ * (ADR-0008): `Bar + 2 x Collar`. A Collar is weight on the Bar before any Plate
+ * -- one per Side, like the Bar itself -- so it folds into the parameterized Bar
+ * input ADR-0002 already provides rather than a separate solver argument. Feeding
+ * this to `decode`/`encode`/`totalKg` yields the full `Bar + 2 x Collar + 2 x Side
+ * Load` Total with the greedy loader unchanged. `collarKg` of 0 (None) is the bare
+ * Bar.
+ */
+export function barWithCollars(barKg: number, collarKg: number): number {
+  return barKg + 2 * collarKg;
+}

@@ -1,26 +1,34 @@
 // <rack-app> -- the app shell and composition root (RBAR-15, ADR-0007). It owns the
-// rig configuration (the Bar for now; collars and the plate set later) and feeds it
-// down: it renders the header (wordmark + a Setup pill), the <rack-console> calculator,
-// and the <rack-setup> sheet, and wires the three together.
+// rig configuration (the Bar and the Collars; the plate set later) and feeds it down:
+// it renders the header (wordmark + a Setup pill), the <rack-console> calculator, and
+// the <rack-setup> sheet, and wires the three together.
 //
-//   pill tap            -> open the Setup sheet
-//   sheet `barchange`   -> adopt the Bar: persist it, push it to the console, relabel
-//                          the pill, reflect the active tile
-//   sheet `close`       -> drop the pill's open state
+//   pill tap             -> open the Setup sheet
+//   sheet `barchange`    -> adopt the Bar: persist it, push it to the console, relabel
+//                           the pill, reflect the active tile
+//   sheet `collarchange` -> adopt the Collar: persist it, push it to the console, reflect
+//                           the active tile (RBAR-16, ADR-0008)
+//   sheet `close`        -> drop the pill's open state
 //
-// The chosen Bar persists shell-side in localStorage (ADR-0007); the core stays pure
-// and only ever sees the Bar as a function argument (ADR-0001/0002).
+// Each config concern persists shell-side under its own localStorage key (ADR-0007);
+// the core stays pure and only ever sees these as function arguments (ADR-0001/0002).
 import './console.ts';
 import './setup.ts';
-import { isOfferedBar } from './setup.ts';
+import { isOfferedBar, isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 
-type Console = HTMLElement & { barKg: number };
-type Setup = HTMLElement & { barKg: number; open(): void; close(): void };
+type Console = HTMLElement & { barKg: number; collarKg: number };
+type Setup = HTMLElement & {
+  barKg: number;
+  collarKg: number;
+  open(): void;
+  close(): void;
+};
 
-// The one persisted config key this slice introduces (ADR-0007). One key per concern;
-// the unit preference and recents will join it as their slices land.
+// One persisted config key per concern (ADR-0007); the unit preference and recents will
+// join these as their slices land.
 const STORAGE_KEY = 'rackbar.barKg';
+const COLLAR_STORAGE_KEY = 'rackbar.collarKg';
 
 class RackApp extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -30,9 +38,11 @@ class RackApp extends HTMLElement {
   private pillLabel!: HTMLElement;
 
   private barKg = DEFAULT_BAR_KG;
+  private collarKg = DEFAULT_COLLAR_KG;
 
   connectedCallback(): void {
     this.barKg = this.loadBar();
+    this.collarKg = this.loadCollar();
     // Children are defined before this runs (imports at top + rack-app's own define is
     // last), so assigning innerHTML upgrades <rack-console>/<rack-setup> synchronously
     // and their connectedCallbacks finish here -- which is why the barKg seeding below
@@ -87,9 +97,11 @@ class RackApp extends HTMLElement {
     this.pill = this.root.querySelector('[data-setup-pill]')!;
     this.pillLabel = this.root.querySelector('[data-pill-label]')!;
 
-    // Seed every surface from the (possibly persisted) Bar.
+    // Seed every surface from the (possibly persisted) Bar and Collar.
     this.console.barKg = this.barKg;
+    this.console.collarKg = this.collarKg;
     this.setup.barKg = this.barKg;
+    this.setup.collarKg = this.collarKg;
     this.relabel();
 
     this.pill.addEventListener('click', () => {
@@ -98,6 +110,9 @@ class RackApp extends HTMLElement {
     });
     this.setup.addEventListener('barchange', (e) =>
       this.adopt((e as CustomEvent<{ barKg: number }>).detail.barKg),
+    );
+    this.setup.addEventListener('collarchange', (e) =>
+      this.adoptCollar((e as CustomEvent<{ collarKg: number }>).detail.collarKg),
     );
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
@@ -116,6 +131,18 @@ class RackApp extends HTMLElement {
     this.console.barKg = kg;
     this.setup.barKg = kg;
     this.relabel();
+  }
+
+  // Adopt a Collar chosen in Setup: same shape as adopt() (ADR-0007/0008). An off-menu
+  // value is an invariant breach (a rogue or forward-compat event), not a value to
+  // persist and feed the core -- ignore it rather than stranding the rig on a Collar no
+  // tile matches. The sheet stays open so the lifter sees the choice land.
+  private adoptCollar(kg: number): void {
+    if (!isOfferedCollar(kg)) return;
+    this.collarKg = kg;
+    this.saveCollar(kg);
+    this.console.collarKg = kg;
+    this.setup.collarKg = kg;
   }
 
   private relabel(): void {
@@ -143,6 +170,30 @@ class RackApp extends HTMLElement {
   private saveBar(kg: number): void {
     try {
       localStorage.setItem(STORAGE_KEY, String(kg));
+    } catch {
+      /* persistence is best-effort; the session keeps working without it. */
+    }
+  }
+
+  // Read the persisted Collar, validated against the offered set exactly like the Bar:
+  // a missing, non-numeric, off-menu, or storage-blocked value falls back to None, so a
+  // corrupt or legacy key can never load a Collar no tile matches.
+  private loadCollar(): number {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(COLLAR_STORAGE_KEY);
+    } catch {
+      return DEFAULT_COLLAR_KG; // storage blocked (private mode); best-effort per ADR-0007.
+    }
+    if (raw === null) return DEFAULT_COLLAR_KG; // nothing persisted yet (first run).
+    const n = Number(raw);
+    return isOfferedCollar(n) ? n : DEFAULT_COLLAR_KG;
+  }
+
+  // Persist the Collar, best-effort -- same swallow-on-failure contract as the Bar.
+  private saveCollar(kg: number): void {
+    try {
+      localStorage.setItem(COLLAR_STORAGE_KEY, String(kg));
     } catch {
       /* persistence is best-effort; the session keeps working without it. */
     }

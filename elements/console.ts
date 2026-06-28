@@ -12,7 +12,8 @@ import './palette.ts';
 import './sleeve.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
-import { DEFAULT_BAR_KG } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, barWithCollars } from '../lib/plates.ts';
+import { DEFAULT_COLLAR_KG } from './setup.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded } from '../lib/decode.ts';
 
@@ -40,9 +41,11 @@ class RackConsole extends HTMLElement {
   // reads, in both modes. Decode derives it; Encode edits it; a mode switch keeps it.
   private side: readonly Plate[] = [];
   private mode: Mode = 'decode';
-  // The chosen Bar, threaded into the parameterized core (ADR-0002/0007). Defaults to
-  // the 20 kg Bar; the app shell sets it from Setup. See the setter for the re-decode.
+  // The chosen Bar and Collar, folded into the effective baseline the parameterized core
+  // loads from (ADR-0002/0007/0008). Defaults: 20 kg Bar, no Collar; the app shell sets
+  // them from Setup. Both setters re-decode a standing Target (see baselineKg/reconfigure).
   private _barKg = DEFAULT_BAR_KG;
+  private _collarKg = DEFAULT_COLLAR_KG;
   // Decode-only: the current decode() result and whether the over-target opt-in is on
   // screen. `showingOver` only ever flips on a click, never on a new Target, so Decode
   // never auto-puts the lifter over Target (ADR-0003). Both reset on a mode switch.
@@ -50,26 +53,52 @@ class RackConsole extends HTMLElement {
   private showingOver = false;
 
   /**
-   * The Bar the solver loads up from (RBAR-15). Setting it threads the new Bar into
-   * every Total and -- when a live Decode result is on screen -- re-decodes the standing
-   * Target so the Side Load is rebuilt for the new Bar (a 100 kg Target needs different
-   * Plates on a 15 kg Bar). A carried, hand-built loadout (no live decode) is left as-is;
-   * only its Total re-reads. The entry's anchor follows too, so the steppers move from
-   * the chosen Bar. The original Target is re-derived from the decode result
-   * (`target = total - delta`), so no separate copy of it can drift.
+   * The Bar the solver loads up from (RBAR-15). Setting it threads the new Bar into the
+   * effective baseline and re-applies it (see `reconfigure`): a live Decode result is
+   * re-decoded so the Side Load is rebuilt (a 100 kg Target needs different Plates on a
+   * 15 kg Bar), a carried hand-built loadout just re-reads its Total.
    */
   set barKg(kg: number) {
     this._barKg = kg;
-    if (!this.entry) return; // pre-connect; connectedCallback renders with _barKg
-    this.entry.barKg = kg;
+    this.reconfigure();
+  }
+  get barKg(): number {
+    return this._barKg;
+  }
+
+  /**
+   * The Collar fitted to each Side (RBAR-16, ADR-0008). It folds into the same effective
+   * baseline the Bar does (`barWithCollars`), so setting it re-applies exactly like the
+   * Bar: a standing Target re-decodes against the new baseline, an empty/hand-built state
+   * just re-reads. Defaults to None.
+   */
+  set collarKg(kg: number) {
+    this._collarKg = kg;
+    this.reconfigure();
+  }
+  get collarKg(): number {
+    return this._collarKg;
+  }
+
+  // The effective Bar baseline the core loads from: Bar + 2 x Collar (ADR-0008). Every
+  // decode/encode/Total in this shell threads this, not the bare Bar, so the Collar rides
+  // the parameter ADR-0002 already provides.
+  private baselineKg(): number {
+    return barWithCollars(this._barKg, this._collarKg);
+  }
+
+  // Re-apply a Bar or Collar change: move the entry's anchor to the new baseline, then
+  // either re-decode the standing Target (rebuilding the Side Load) or, with no live
+  // decode, just re-render so the Total re-reads. The Target is re-derived from the decode
+  // result (`target = total - delta`), so no separate copy of it can drift.
+  private reconfigure(): void {
+    if (!this.entry) return; // pre-connect; connectedCallback renders from the fields
+    this.entry.barKg = this.baselineKg();
     if (this.mode === 'decode' && this.decoded) {
       this.decodeTo(this.decoded.primary.total - this.decoded.primary.delta);
     } else {
       this.render();
     }
-  }
-  get barKg(): number {
-    return this._barKg;
   }
 
   connectedCallback(): void {
@@ -181,8 +210,8 @@ class RackConsole extends HTMLElement {
       }),
     );
 
-    this.entry.barKg = this._barKg; // anchor the entry to the Bar (default or pre-connect set)
-    this.render(); // initial state: Decode, a bare Bar, no Target typed yet
+    this.entry.barKg = this.baselineKg(); // anchor the entry to the bare-rig baseline
+    this.render(); // initial state: Decode, a bare rig, no Target typed yet
   }
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
@@ -190,7 +219,7 @@ class RackConsole extends HTMLElement {
   // (empty field) clears to the bare Bar.
   private decodeTo(target: number | null): void {
     this.showingOver = false;
-    this.decoded = target === null ? null : decode(target, this._barKg);
+    this.decoded = target === null ? null : decode(target, this.baselineKg());
     this.side = this.decoded ? this.decoded.primary.side : [];
     this.render();
   }
@@ -206,7 +235,7 @@ class RackConsole extends HTMLElement {
     this.decoded = null;
     this.showingOver = false;
     if (mode === 'decode') {
-      this.entry.display(this.side.length > 0 ? encode(this.side, this._barKg) : null);
+      this.entry.display(this.side.length > 0 ? encode(this.side, this.baselineKg()) : null);
     }
     this.render();
   }
@@ -214,7 +243,7 @@ class RackConsole extends HTMLElement {
   private render(): void {
     this.sleeve.sideLoad = this.side;
     this.sleeve.interactive = this.mode === 'encode';
-    this.total.textContent = `${encode(this.side, this._barKg)} kg`;
+    this.total.textContent = `${encode(this.side, this.baselineKg())} kg`;
     this.entry.hidden = this.mode !== 'decode';
     this.palette.hidden = this.mode !== 'encode';
     this.modeButtons.forEach((b) =>
@@ -231,7 +260,7 @@ class RackConsole extends HTMLElement {
       this.setOver(over ?? null, primary.total);
     } else {
       this.setDelta(null, false);
-      this.setOver(null, encode(this.side, this._barKg));
+      this.setOver(null, encode(this.side, this.baselineKg()));
     }
   }
 
@@ -247,10 +276,16 @@ class RackConsole extends HTMLElement {
     this.delta.hidden = false;
     if (delta < 0) {
       this.delta.textContent = `${fmtKg(-delta)} kg under target`;
+    } else if (isOver) {
+      this.delta.textContent = `${fmtKg(delta)} kg over target`;
     } else {
-      this.delta.textContent = isOver
-        ? `${fmtKg(delta)} kg over target`
-        : `below the ${this._barKg} kg Bar`;
+      // The positive-delta floor: the Target sits below the bare rig. With collars on
+      // the floor is Bar + 2 x collar, so name that baseline (not the bare Bar) to stay
+      // truthful about what the lifter can't go under (ADR-0008).
+      this.delta.textContent =
+        this._collarKg > 0
+          ? `below the Bar + Collars (${fmtKg(this.baselineKg())} kg)`
+          : `below the ${this._barKg} kg Bar`;
     }
   }
 
