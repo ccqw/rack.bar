@@ -15,6 +15,7 @@
 import './console.ts';
 import './setup.ts';
 import { isOfferedBar, isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
+import { readPersisted, writePersisted } from './persist.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 
 type Console = HTMLElement & { barKg: number; collarKg: number };
@@ -25,8 +26,9 @@ type Setup = HTMLElement & {
   close(): void;
 };
 
-// One persisted config key per concern (ADR-0007); the unit preference and recents will
-// join these as their slices land.
+// One persisted config key per concern (ADR-0007), read/written through the shared
+// best-effort helpers (persist.ts). The unit preference joins these as RBAR-17 lands;
+// recents persists shell-side too but console-owned, under its own key (ADR-0009).
 const STORAGE_KEY = 'rackbar.barKg';
 const COLLAR_STORAGE_KEY = 'rackbar.collarKg';
 
@@ -150,53 +152,34 @@ class RackApp extends HTMLElement {
   }
 
   // Read the persisted Bar. A missing, non-numeric, or off-menu value (including a
-  // blocked localStorage) falls back to the 20 kg default -- never throws. Validating
-  // against the offered set (not just "finite and positive") means a corrupt or legacy
-  // key can't load a Bar that no tile matches.
+  // blocked localStorage, which readPersisted reads as null) falls back to the 20 kg
+  // default. Validating against the offered set (not just "finite and positive") means a
+  // corrupt or legacy key can't load a Bar that no tile matches.
   private loadBar(): number {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(STORAGE_KEY);
-    } catch {
-      return DEFAULT_BAR_KG; // storage blocked (private mode); best-effort per ADR-0007.
-    }
-    if (raw === null) return DEFAULT_BAR_KG; // nothing persisted yet (first run).
+    const raw = readPersisted(STORAGE_KEY);
+    if (raw === null) return DEFAULT_BAR_KG; // absent or storage blocked: the default.
     const n = Number(raw);
     return isOfferedBar(n) ? n : DEFAULT_BAR_KG;
   }
 
-  // Persist the Bar, best-effort. A write can fail (quota, private mode); persistence is
-  // a convenience, not core function, so a failure must not break Setup -- swallow it.
+  // Persist the Bar, best-effort (writePersisted swallows a failed write).
   private saveBar(kg: number): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(kg));
-    } catch {
-      /* persistence is best-effort; the session keeps working without it. */
-    }
+    writePersisted(STORAGE_KEY, String(kg));
   }
 
   // Read the persisted Collar, validated against the offered set exactly like the Bar:
   // a missing, non-numeric, off-menu, or storage-blocked value falls back to None, so a
   // corrupt or legacy key can never load a Collar no tile matches.
   private loadCollar(): number {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(COLLAR_STORAGE_KEY);
-    } catch {
-      return DEFAULT_COLLAR_KG; // storage blocked (private mode); best-effort per ADR-0007.
-    }
-    if (raw === null) return DEFAULT_COLLAR_KG; // nothing persisted yet (first run).
+    const raw = readPersisted(COLLAR_STORAGE_KEY);
+    if (raw === null) return DEFAULT_COLLAR_KG; // absent or storage blocked: None.
     const n = Number(raw);
     return isOfferedCollar(n) ? n : DEFAULT_COLLAR_KG;
   }
 
   // Persist the Collar, best-effort -- same swallow-on-failure contract as the Bar.
   private saveCollar(kg: number): void {
-    try {
-      localStorage.setItem(COLLAR_STORAGE_KEY, String(kg));
-    } catch {
-      /* persistence is best-effort; the session keeps working without it. */
-    }
+    writePersisted(COLLAR_STORAGE_KEY, String(kg));
   }
 }
 

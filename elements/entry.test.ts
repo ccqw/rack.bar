@@ -198,6 +198,62 @@ describe('<rack-entry>', () => {
     expect(value.textContent).toBe('100');
   });
 
+  it('emits keypadclose with the current Target when the keypad closes (commit point)', () => {
+    // Closing the keypad is a Target commit -- the console pushes it onto Recents
+    // (RBAR-20). The event fires only on the open->closed transition, carrying the
+    // Target shown, so opening the pad does not push and closing it does.
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    ['1', '0', '0'].forEach((k) => key(root, k)); // type 100 (keypad still closed)
+    tap(root, '[data-value]'); // open the keypad
+    expect(seen).not.toHaveBeenCalled(); // opening must not commit
+    tap(root, '[data-value]'); // close it
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
+  it('keypadclose carries null on an idle peek of the untouched default (pristine)', () => {
+    // Opening then closing the keypad without typing must not commit the seeded Bar
+    // weight -- it is a value the lifter never chose, so it would litter Recents.
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    tap(root, '[data-value]'); // open on the pristine default
+    tap(root, '[data-value]'); // close without typing
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
+  it('keypadclose carries null when the field still holds a display()-seeded value', () => {
+    // A value seeded via display() (a re-applied chip, a mode-switch carry) is pristine
+    // too: an idle peek-and-close must not re-commit it.
+    const { el, root } = mountEntry();
+    el.display(120);
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-value]'); // close, untouched
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
+  it('keypadclose carries a null Target when the field is empty on close', () => {
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-key="clear"]'); // empty the field
+    tap(root, '[data-value]'); // close
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
   it('display() seeds or clears the shown value WITHOUT emitting a target event', () => {
     // The load-bearing half of the contract (ADR-0005): the console calls display()
     // when switching back to Decode to seed the box with the carried Total, so the

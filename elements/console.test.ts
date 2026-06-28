@@ -487,3 +487,123 @@ describe('<rack-console> (Collars fold into the baseline, RBAR-16, ADR-0008)', (
     expect(total(el)).toContain('125');
   });
 });
+
+// -- Recent Targets (RBAR-20, ADR-0009) --------------------------------------------
+const RECENTS_KEY = 'rackbar.recents';
+
+function recentsEl(el: HTMLElement): HTMLElement & { targets: readonly number[] } {
+  return el.shadowRoot!.querySelector('rack-recents')!;
+}
+function recentChips(el: HTMLElement): HTMLButtonElement[] {
+  return [...recentsEl(el).shadowRoot!.querySelectorAll<HTMLButtonElement>('[data-target]')];
+}
+function recentLabels(el: HTMLElement): number[] {
+  return recentChips(el).map((c) => Number(c.dataset.target));
+}
+// The Target field's value button -- tapping it opens then closes the keypad.
+function valueBtn(el: HTMLElement): HTMLButtonElement {
+  return entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!;
+}
+// Commit a typed Target the way a lifter does: type it, then open and close the keypad
+// (the close is the commit that feeds Recents).
+function commit(el: HTMLElement, value: string): void {
+  type(el, value);
+  valueBtn(el).click(); // open
+  valueBtn(el).click(); // close -> keypadclose
+}
+
+describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
+  it('shows no Recent row before any Target is committed', () => {
+    const el = mountConsole();
+    expect(recentsEl(el).hidden).toBe(true);
+  });
+
+  it('remembers a Target when the keypad closes, rendering it as a chip', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    expect(recentsEl(el).hidden).toBe(false);
+    expect(recentLabels(el)).toEqual([100]);
+  });
+
+  it('does not remember the default on an idle keypad peek (open then close, no typing)', () => {
+    const el = mountConsole();
+    valueBtn(el).click(); // open on the pristine 20 kg default
+    valueBtn(el).click(); // close without typing
+    expect(recentsEl(el).hidden).toBe(true);
+    expect(recentLabels(el)).toEqual([]);
+  });
+
+  it('does not remember an empty field on keypad close (null Target)', () => {
+    const el = mountConsole();
+    valueBtn(el).click(); // open
+    entry(el)
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-key="clear"]')!
+      .click(); // empty the field
+    valueBtn(el).click(); // close on null
+    expect(recentsEl(el).hidden).toBe(true);
+    expect(recentLabels(el)).toEqual([]);
+  });
+
+  it('keeps Recents most-recent-first and deduped across commits', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    commit(el, '80');
+    commit(el, '100'); // re-commit moves it to the front, no duplicate
+    expect(recentLabels(el)).toEqual([100, 80]);
+  });
+
+  it('caps the row at 6, dropping the oldest', () => {
+    const el = mountConsole();
+    ['10', '20', '30', '40', '50', '60', '70'].forEach((v) => commit(el, v));
+    expect(recentLabels(el)).toEqual([70, 60, 50, 40, 30, 20]);
+  });
+
+  it('tapping a chip re-applies it as the Target: decodes it and shows it in the field', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    commit(el, '60'); // field now holds 60
+    recentChips(el).find((c) => c.dataset.target === '100')!.click();
+    expect(entryAnchorText(el)).toBe('100'); // the field shows the re-applied Target
+    expect(total(el)).toContain('100'); // and it is decoded (100 is exactly loadable)
+  });
+
+  it('re-applying a chip moves it back to the front of Recents', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    commit(el, '80');
+    commit(el, '60'); // [60, 80, 100]
+    recentChips(el).find((c) => c.dataset.target === '100')!.click();
+    expect(recentLabels(el)).toEqual([100, 60, 80]);
+  });
+
+  it('persists Recents under rackbar.recents (canonical kg)', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    commit(el, '142.5');
+    expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([142.5, 100]);
+  });
+
+  it('restores persisted Recents on init', () => {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100, 80]));
+    const el = mountConsole();
+    expect(recentsEl(el).hidden).toBe(false);
+    expect(recentLabels(el)).toEqual([120, 100, 80]);
+  });
+
+  it('survives garbage in the persisted key, starting from an empty row', () => {
+    localStorage.setItem(RECENTS_KEY, 'not-json');
+    const el = mountConsole();
+    expect(recentsEl(el).hidden).toBe(true);
+    expect(recentLabels(el)).toEqual([]);
+  });
+
+  it('hides the Recent row in By-Plates (Encode) mode, restores it in By-Weight', () => {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([100]));
+    const el = mountConsole();
+    expect(recentsEl(el).hidden).toBe(false);
+    modeBtn(el, 'encode').click();
+    expect(recentsEl(el).hidden).toBe(true); // recents are a Decode affordance
+    modeBtn(el, 'decode').click();
+    expect(recentsEl(el).hidden).toBe(false);
+  });
+});
