@@ -91,7 +91,7 @@ function tapDisc(el: HTMLElement, index: number): void {
 // custom elements named by tag (rack-entry / rack-recents / rack-palette).
 function blockToken(child: Element): string {
   for (const cls of ['modes', 'viz', 'readout', 'over', 'share']) {
-    if (child.classList.contains(cls)) return cls === 'viz' ? 'viz' : cls;
+    if (child.classList.contains(cls)) return cls;
   }
   return child.tagName.toLowerCase();
 }
