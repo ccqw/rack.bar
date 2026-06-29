@@ -2,11 +2,35 @@
    These custom properties cross the Shadow DOM boundary, so both pages and
    elements read them. Change a value here to restyle the whole site. */
 
+/* The handoff typefaces, self-hosted for an offline-capable GH Pages app (RBAR-23,
+   docs/design-handoff README "Typography"/"Assets"). One variable woff2 per family
+   covers the whole 400..800 weight axis the design uses (54px/800 display down to
+   500 body), so two files replace ten static cuts. latin subset only -- the UI is
+   English + kg/lb numerals. font-display: swap paints the fallback immediately, so
+   there is no FOIT and no layout shift while the woff2 loads. */
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/hanken-grotesk-latin-var.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-var.woff2") format("woff2");
+}
+
 :root {
-  /* Type. System stack for now (no self-hosted font yet); the weight readout
-     wants tabular figures so digits don't jitter as the number changes. */
-  --rack-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --rack-font-num: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Type. Hanken Grotesk for UI text + the big number readouts; JetBrains Mono for
+     section labels, plate numerals, and unit toggles (handoff "Typography"). The
+     system stacks stay as fallbacks behind each. The numeric readouts use
+     --rack-font-num, whose monospace cut is tabular, so digits don't jitter as the
+     number changes. */
+  --rack-font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --rack-font-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Surface — dark so the colored plates carry the screen. */
   --rack-bg: #0f1113;
