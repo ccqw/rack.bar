@@ -98,6 +98,15 @@
      stamped lb label rather than color. Needs light ink on the disc/palette key. */
   --rack-plate-iron: #34383e;    /* 45, 35, 25, 10, 5, 2.5 lb */
 
+  /* Bar chrome greys (RBAR-24, handoff section 3 "Bar visualizer"). The sleeve shaft,
+     collars, and end cap that frame the loaded discs, plus the dashed empty-state box.
+     Not in the handoff --rb-* token list (the prototype inlines them); captured here so
+     the bar renderer styles through tokens (ADR-0001), one source of truth per value. */
+  --rack-sleeve-shaft: #4e545b;   /* the sleeve shaft + the end cap (structural grey) */
+  --rack-sleeve-collar: #8b9199;  /* the bright inner collar face */
+  --rack-sleeve-end: #5c636b;     /* the outer end collar */
+  --rack-sleeve-empty: #2f343a;   /* the dashed empty-state box outline (a bare Bar) */
+
   /* Disc-fill convention (handoff "Plate palette"): a disc is not a flat fill but a
      soft top-lit gradient over its plate hex, with the disc shadow below. The bar
      renderer (RBAR-24) applies it as follows, with --disc set to the plate hex:
