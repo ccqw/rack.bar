@@ -1,11 +1,16 @@
-// <rack-sleeve> -- one loaded Side of the Bar, drawn side-on as colored discs with
-// the heaviest at the collar (CONTEXT.md: a Side Load is the Plates on one Side).
+// <rack-sleeve> -- one loaded Side of the Bar, drawn side-on as a centered barbell
+// (handoff section 3 "Bar visualizer"): a sleeve shaft running toward the bar's center,
+// an inner collar, the loaded discs heaviest-first from the inside out, then an end
+// collar and end cap -- a complete sleeve, not a one-sided strip. The chrome is fixed
+// grey furniture (--rack-sleeve-*); only the discs carry weight. A bare Bar shows a
+// dashed empty box with a + where the discs would load, still framed by the chrome.
 // Each disc is sized from its Plate's REAL dimensions (ADR-0004): height tracks the
 // plate's diameter, width its thickness, so the four 450 mm competition bumpers read
 // as equal-height and differ only in fatness, while the 5 kg and change plates nest
 // down. The whole row scales under one fit-to-width factor so a heavy bar zooms out
-// rather than overflowing. The element stays purely presentational (ADR-0001): given
-// a Side Load it draws it, holding no plate math.
+// rather than overflowing. Discs are filled with the handoff's top-lit gradient over
+// their plate hex and lifted by --rack-shadow-disc. The element stays purely
+// presentational (ADR-0001): given a Side Load it draws it, holding no plate math.
 //
 // In Encode (RBAR-7, ADR-0005) the sleeve is `interactive`: each disc becomes a
 // button that emits `removeplate` with its Plate, so tapping a loaded Plate takes it
@@ -21,8 +26,18 @@ import type { Plate } from '../lib/plates.ts';
 const BUMPER_MM = 450;
 const TARGET_BUMPER_PX = 188; // a touch jumbo so the discs read clearly and the labels breathe
 const MAX_SCALE = TARGET_BUMPER_PX / BUMPER_MM; // px per mm at full zoom
-const GAP_PX = 3;
-const BAR_STUB_PX = 32;
+// Bar chrome (handoff section 3): the fixed-px furniture framing the discs -- a sleeve
+// shaft + inner collar on the loaded end, an end collar + cap on the far end. The chrome
+// doesn't scale with the plates, so fit() reserves its total width. The discs sit flush to
+// the inner collar; DISC_GAP_PX separates adjacent discs, END_GAP_PX sits before the end
+// collar -- so the fixed budget fit() subtracts is the four pieces plus those gaps.
+const SHAFT_PX = 52;
+const COLLAR_INNER_PX = 11;
+const COLLAR_END_PX = 8;
+const CAP_PX = 13;
+const CHROME_PX = SHAFT_PX + COLLAR_INNER_PX + COLLAR_END_PX + CAP_PX;
+const DISC_GAP_PX = 1.5; // between adjacent discs (the first sits flush to the inner collar)
+const END_GAP_PX = 3; // between the last disc (or empty box) and the end collar
 // Floor each disc at one upright digit's width so its kg label still fits ON the plate. A
 // thin change plate stays far narrower than a bumper (so the size cue holds), just wide
 // enough for a digit; its multi-character label (e.g. 2.5) stacks one digit per line
@@ -112,28 +127,58 @@ class RackSleeve extends HTMLElement {
         return `<${tag}${attrs} class="disc" data-kg="${p.kg}" data-color="${p.color}" style="${style}"${aria}><span class="label" aria-hidden="true">${labelHtml}</span></${tag}>`;
       })
       .join('');
+    // The loaded middle: discs heaviest-first, or a dashed empty box on a bare Bar. Either
+    // way the chrome (shaft + collars + cap) frames it, so a bare Bar still reads as a
+    // barbell, not a stub (handoff section 3).
+    const middle =
+      this.plates.length === 0 ? '<span class="empty" aria-hidden="true">+</span>' : discs;
     this.root.innerHTML = `
       <style>
         :host {
           display: flex; align-items: center; justify-content: center;
-          gap: ${GAP_PX}px; min-height: ${TARGET_BUMPER_PX}px;
+          min-height: ${TARGET_BUMPER_PX}px;
         }
-        /* The Bar stub; discs load outward from it, heaviest at the collar. */
-        .bar {
-          flex: none; width: ${BAR_STUB_PX}px; height: 8px;
-          background: var(--rack-muted); border-radius: 2px;
+        /* The sleeve chrome (handoff section 3): a centered shaft running toward the bar's
+           center, an inner collar, then (after the discs) an end collar + cap. Fixed-px grey
+           furniture; the pieces touch so the shaft + collar read as one continuous bar. */
+        .shaft {
+          flex: none; width: ${SHAFT_PX}px; height: 9px;
+          border-radius: 4px 0 0 4px; background: var(--rack-sleeve-shaft);
+        }
+        .collar { flex: none; background: var(--rack-sleeve-collar); }
+        .collar-inner { width: ${COLLAR_INNER_PX}px; height: 34px; border-radius: 3px; }
+        .collar-end {
+          width: ${COLLAR_END_PX}px; height: 20px; border-radius: 2px;
+          margin-left: ${END_GAP_PX}px; background: var(--rack-sleeve-end);
+        }
+        .cap {
+          flex: none; width: ${CAP_PX}px; height: 11px;
+          border-radius: 1px 5px 5px 1px; background: var(--rack-sleeve-shaft);
+        }
+        /* A bare Bar: a dashed outline box with a + where the discs would load. */
+        .empty {
+          flex: none; width: 34px; height: 120px; margin-left: 5px;
+          display: flex; align-items: center; justify-content: center;
+          border: 1.5px dashed var(--rack-sleeve-empty); border-radius: 6px;
+          color: var(--rack-text-disabled);
+          font-family: var(--rack-font-num); font-size: 20px; font-weight: 600;
         }
         /* Real side-on sizing: height from diameter, width from thickness, both under one
            --rack-mm-scale (px per mm), floored at MIN_DISC_PX so a digit still fits. The
-           fallback keeps discs sane before fit() has measured (e.g. a no-layout test). */
+           fallback keeps discs sane before fit() has measured (e.g. a no-layout test). The
+           fill is the handoff's soft top-lit gradient over the plate hex (--disc), lifted by
+           the shared disc shadow; the first disc sits flush to the inner collar, later ones
+           are spaced by DISC_GAP_PX. */
         .disc {
           display: flex; align-items: center; justify-content: center;
           flex: none;
           width: max(${MIN_DISC_PX}px, calc(var(--mm-w) * var(--rack-mm-scale, ${FALLBACK_SCALE}) * 1px));
           height: calc(var(--mm-d) * var(--rack-mm-scale, ${FALLBACK_SCALE}) * 1px);
           border-radius: 4px;
-          background: var(--disc);
+          background: linear-gradient(180deg, color-mix(in srgb, var(--disc) 95%, #fff), var(--disc));
+          box-shadow: var(--rack-shadow-disc);
         }
+        .disc + .disc { margin-left: ${DISC_GAP_PX}px; }
         /* The kg digits, ON the plate. break-all wraps them one-per-line when the disc is
            too narrow for a horizontal number, so 2.5 stacks as 2 / . / 5 -- upright, not
            rotated. Dark ink on the light plates (white, yellow), light ink on the rest. */
@@ -153,7 +198,9 @@ class RackSleeve extends HTMLElement {
         }
         button.disc:focus-visible { outline: 2px solid var(--rack-accent); }
       </style>
-      <div class="bar" aria-hidden="true"></div>${discs}
+      <span class="shaft" aria-hidden="true"></span>
+      <span class="collar collar-inner" aria-hidden="true"></span>${middle}<span class="collar collar-end" aria-hidden="true"></span>
+      <span class="cap" aria-hidden="true"></span>
     `;
     if (this.removable) {
       this.root.querySelectorAll<HTMLElement>('.disc').forEach((disc, i) => {
@@ -173,8 +220,11 @@ class RackSleeve extends HTMLElement {
   private fit(): void {
     const hostWidth = this.clientWidth;
     if (hostWidth <= 0) return; // no layout yet (e.g. a no-layout test) -> CSS fallback stands
-    // The flex row is the bar stub + N discs (N+1 items), so there are N gaps between them.
-    const avail = hostWidth - BAR_STUB_PX - GAP_PX * this.plates.length;
+    // Reserve the fixed chrome (shaft + both collars + cap) plus the gaps the discs add:
+    // END_GAP_PX before the end collar, and DISC_GAP_PX between each adjacent disc pair (the
+    // first disc sits flush to the inner collar, so N discs add N-1 inter-disc gaps).
+    const discGaps = DISC_GAP_PX * Math.max(0, this.plates.length - 1);
+    const avail = hostWidth - CHROME_PX - END_GAP_PX - discGaps;
     const rowWidthAt = (s: number): number =>
       this.plates.reduce((px, p) => px + Math.max(p.widthMm * s, MIN_DISC_PX), 0);
     let scale: number;

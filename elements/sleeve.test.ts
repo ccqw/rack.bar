@@ -45,6 +45,76 @@ describe('<rack-sleeve>', () => {
     expect(el.shadowRoot!.querySelectorAll('.disc').length).toBe(3);
   });
 
+  describe('the barbell chrome (RBAR-24: a centered sleeve, not a one-sided strip)', () => {
+    function has(el: HTMLElement, sel: string): boolean {
+      return el.shadowRoot!.querySelector(sel) !== null;
+    }
+
+    it('frames the loaded discs with a sleeve shaft, inner collar, end collar, and end cap', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25, 15);
+      expect(has(el, '.shaft')).toBe(true);
+      expect(has(el, '.collar-inner')).toBe(true);
+      expect(has(el, '.collar-end')).toBe(true);
+      expect(has(el, '.cap')).toBe(true);
+    });
+
+    it('keeps the full chrome on a bare Bar (the empty state is still a barbell)', () => {
+      const el = mountSleeve();
+      el.sideLoad = [];
+      expect(has(el, '.shaft')).toBe(true);
+      expect(has(el, '.collar-inner')).toBe(true);
+      expect(has(el, '.collar-end')).toBe(true);
+      expect(has(el, '.cap')).toBe(true);
+    });
+
+    it('renders the chrome decoratively (the discs carry the accessible names)', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      for (const sel of ['.shaft', '.collar-inner', '.collar-end', '.cap']) {
+        expect(el.shadowRoot!.querySelector(sel)!.getAttribute('aria-hidden')).toBe('true');
+      }
+    });
+  });
+
+  describe('the empty state (RBAR-24: a dashed box with a +, not a bare stub)', () => {
+    it('draws a dashed empty box with a + and no discs for a bare Bar', () => {
+      const el = mountSleeve();
+      el.sideLoad = [];
+      const box = el.shadowRoot!.querySelector('.empty');
+      expect(box).not.toBeNull();
+      expect(box!.textContent).toContain('+');
+      expect(el.shadowRoot!.querySelectorAll('.disc').length).toBe(0);
+    });
+
+    it('drops the empty box once a Plate is loaded', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      expect(el.shadowRoot!.querySelector('.empty')).toBeNull();
+      expect(el.shadowRoot!.querySelectorAll('.disc').length).toBe(1);
+    });
+  });
+
+  describe('disc treatment (RBAR-24: top-lit gradient + the disc shadow token)', () => {
+    function styleText(el: HTMLElement): string {
+      return el.shadowRoot!.querySelector('style')!.textContent!;
+    }
+
+    it('fills each disc with the documented top-lit gradient over its plate hex', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      expect(styleText(el)).toContain(
+        'linear-gradient(180deg, color-mix(in srgb, var(--disc) 95%, #fff), var(--disc))',
+      );
+    });
+
+    it('lifts each disc with the shared --rack-shadow-disc token', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      expect(styleText(el)).toContain('box-shadow: var(--rack-shadow-disc)');
+    });
+  });
+
   describe('real plate sizing (ADR-0004: side-on, height=diameter, width=thickness)', () => {
     // happy-dom does no layout, so we assert the sizing *inputs* the element hands to
     // CSS -- each disc carries its real mm as custom properties -- not painted pixels.
