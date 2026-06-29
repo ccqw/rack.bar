@@ -891,3 +891,74 @@ describe('<rack-console> (Share card)', () => {
     expect(shareCard(el).hidden).toBe(true);
   });
 });
+
+// The fullscreen rack card (RBAR-18): the console owns it like the share card -- the
+// fullscreen control on the bar visualizer snapshots the current load and blows it up.
+function fsCard(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('rack-fullscreen')!;
+}
+function fsBtn(el: HTMLElement): HTMLButtonElement {
+  return el.shadowRoot!.querySelector<HTMLButtonElement>('[data-fullscreen]')!;
+}
+function fsText(el: HTMLElement, sel: string): string {
+  return fsCard(el).shadowRoot!.querySelector<HTMLElement>(sel)!.textContent!.trim();
+}
+function fsSide(el: HTMLElement): number[] {
+  return [
+    ...fsCard(el)
+      .shadowRoot!.querySelector('rack-sleeve')!
+      .shadowRoot!.querySelectorAll<HTMLElement>('.disc'),
+  ].map((d) => Number(d.dataset.kg));
+}
+describe('<rack-console> (Fullscreen rack card)', () => {
+  it('a fullscreen control opens the immersive view, hidden until then', () => {
+    const el = mountConsole();
+    expect(fsCard(el).hidden).toBe(true);
+    fsBtn(el).click();
+    expect(fsCard(el).hidden).toBe(false);
+  });
+
+  it('blows up the current Decode load: Total and Side Load', () => {
+    const el = mountConsole();
+    type(el, '100'); // 20 Bar + 25 + 15 per side
+    fsBtn(el).click();
+    expect(fsText(el, '[data-total]')).toBe('100 kg');
+    expect(fsSide(el)).toEqual([25, 15]);
+  });
+
+  it('blows up a hand-built Encode load', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 25);
+    fsBtn(el).click();
+    expect(fsText(el, '[data-total]')).toBe('120 kg'); // 20 + 2*(25+25)
+    expect(fsSide(el)).toEqual([25, 25]);
+  });
+
+  it('reads the view in the active display Unit', () => {
+    const el = mountConsole();
+    type(el, '100');
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    fsBtn(el).click();
+    expect(fsText(el, '[data-total]')).toBe('220 lb');
+  });
+
+  it('a glance is read-only: opening fullscreen remembers nothing', () => {
+    const el = mountConsole();
+    type(el, '100'); // typed but keypad not closed -- not yet remembered
+    expect(recentLabels(el)).toEqual([]);
+    fsBtn(el).click();
+    expect(recentLabels(el)).toEqual([]); // unlike the share card, no push on open
+  });
+
+  it('closing the view from within dismisses it', () => {
+    const el = mountConsole();
+    fsBtn(el).click();
+    expect(fsCard(el).hidden).toBe(false);
+    fsCard(el)
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-close]')!
+      .click();
+    expect(fsCard(el).hidden).toBe(true);
+  });
+});
