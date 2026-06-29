@@ -18,6 +18,7 @@ import './entry.ts';
 import './palette.ts';
 import './sleeve.ts';
 import './recents.ts';
+import './share.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, barWithCollars } from '../lib/plates.ts';
@@ -26,6 +27,7 @@ import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
+import type { LoadSummary } from '../lib/summary.ts';
 import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { Plate } from '../lib/plates.ts';
@@ -42,6 +44,7 @@ type Entry = HTMLElement & {
 };
 type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
 type Palette = HTMLElement & { inventory: readonly Plate[] };
+type Share = HTMLElement & { load: LoadSummary; open(): void };
 type Mode = 'decode' | 'encode';
 
 // The Recent Targets history persists shell-side under its own key (ADR-0007/0009),
@@ -59,6 +62,7 @@ class RackConsole extends HTMLElement {
   private recentsRow!: Recents;
   private palette!: Palette;
   private sleeve!: Sleeve;
+  private share!: Share;
   private total!: HTMLElement;
   private secondary!: HTMLButtonElement;
   private delta!: HTMLElement;
@@ -255,6 +259,17 @@ class RackConsole extends HTMLElement {
         }
         .over[hidden] { display: none; }
         .over:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* The Share control: a quiet pill that opens the loading card (RBAR-19). Always
+           available -- the card reflects whatever is on the Bar, bare or loaded. */
+        .share {
+          align-self: center;
+          display: inline-flex; align-items: center; gap: 7px;
+          font: inherit; font-size: 14px; font-weight: 600; color: var(--rack-muted);
+          background: transparent; border: 1px solid var(--rack-line);
+          border-radius: 999px; padding: 8px 16px; min-height: 44px; cursor: pointer;
+        }
+        .share:hover { color: var(--rack-fg); }
+        .share:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
       </style>
       <div class="stack">
         <!-- The user-facing labels name the INPUT you work from ("By Weight" =
@@ -284,12 +299,22 @@ class RackConsole extends HTMLElement {
           <span class="delta" data-delta hidden></span>
         </div>
         <button type="button" class="over" data-over hidden></button>
+        <button type="button" class="share" data-share>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 10V2M8 2L5 5M8 2l3 3M3 9v3a2 2 0 002 2h6a2 2 0 002-2V9"
+                  stroke="currentColor" stroke-width="1.6"
+                  stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+          Share
+        </button>
       </div>
+      <rack-share></rack-share>
     `;
     this.entry = this.root.querySelector('rack-entry') as Entry;
     this.recentsRow = this.root.querySelector('rack-recents') as Recents;
     this.palette = this.root.querySelector('rack-palette') as Palette;
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
+    this.share = this.root.querySelector('rack-share') as Share;
     this.total = this.root.querySelector('[data-total]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.delta = this.root.querySelector('[data-delta]')!;
@@ -339,6 +364,8 @@ class RackConsole extends HTMLElement {
       this.side = (this.showingOver && over ? over : primary).side;
       this.render();
     });
+    // The Share control opens the loading card (RBAR-19, ADR-0011); see openShare.
+    this.root.querySelector('[data-share]')!.addEventListener('click', () => this.openShare());
     // The kg|lb Primary unit toggle (ADR-0010). Honored only on an unlocked set; the
     // chosen unit persists and the surfaces re-render in it.
     this.unitButtons.forEach((b) =>
@@ -405,6 +432,26 @@ class RackConsole extends HTMLElement {
     this.recentsRow.targets = this.recents;
     this.render(); // keep the row's mode visibility in sync
     writePersisted(RECENTS_KEY, JSON.stringify(this.recents));
+  }
+
+  // Open the loading card (RBAR-19, ADR-0011): snapshot the current load -- the achieved
+  // Total, the Side Load, the bare Bar + per-Side Collar, and the active display Unit --
+  // and hand it to the card. Opening in By-Weight (Decode) with a committed Target also
+  // remembers it (the third recents push site, closing the RBAR-20 seam from ADR-0009);
+  // By-Plates (Encode) has no Target, so it pushes nothing.
+  private openShare(): void {
+    if (this.mode === 'decode' && this.decoded) {
+      this.rememberTarget(this.decoded.primary.total - this.decoded.primary.delta);
+    }
+    // The card derives the Total from these (loadTotalKg), so no separate Total is
+    // passed -- nothing to drift from the Plates.
+    this.share.load = {
+      side: this.side,
+      barKg: this._barKg,
+      collarKg: this._collarKg,
+      unit: this.activeUnit(),
+    };
+    this.share.open();
   }
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
