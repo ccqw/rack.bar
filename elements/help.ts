@@ -108,14 +108,15 @@ class RackHelp extends HTMLElement {
         .step .body strong { font-weight: 700; }
       </style>
       <button type="button" class="toggle" data-help-toggle
-              aria-haspopup="dialog" aria-expanded="false" aria-label="How it works">
+              aria-controls="rack-help-popover" aria-expanded="false" aria-label="How it works">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <circle cx="8" cy="8" r="6.4" stroke="currentColor" stroke-width="1.5"></circle>
           <circle cx="8" cy="5.1" r=".95" fill="currentColor"></circle>
           <path d="M8 7.3v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
         </svg>
       </button>
-      <div class="popover" data-help-popover role="dialog" aria-label="How it works" hidden>
+      <div class="popover" data-help-popover id="rack-help-popover"
+           role="group" aria-label="How it works" hidden>
         <span class="heading">How it works</span>
         <div class="step" data-help-step>
           <span class="n">1</span>

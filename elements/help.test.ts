@@ -43,6 +43,15 @@ describe('<rack-help> (the how-it-works popover, RBAR-21)', () => {
     expect(text).toContain('Side');
   });
 
+  it('links the button to the popover as a disclosure (aria-controls)', () => {
+    const { root } = mountHelp();
+    const id = popover(root).id;
+    expect(id).toBeTruthy();
+    expect(toggleBtn(root).getAttribute('aria-controls')).toBe(id);
+    // It is a static explainer with no interactive content -- a disclosure, not a dialog.
+    expect(popover(root).getAttribute('role')).not.toBe('dialog');
+  });
+
   it('a second tap on the button closes it again', () => {
     const { root } = mountHelp();
     toggleBtn(root).click();
