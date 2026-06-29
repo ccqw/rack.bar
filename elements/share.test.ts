@@ -13,7 +13,6 @@ type Share = HTMLElement & {
 const eleiko = (kg: number) => ELEIKO_KG.find((x) => x.kg === kg)!;
 
 const LOADED: LoadSummary = {
-  totalKg: 100,
   side: [eleiko(25), eleiko(25), eleiko(15), eleiko(2.5)],
   barKg: 20,
   collarKg: 0,
@@ -21,7 +20,6 @@ const LOADED: LoadSummary = {
 };
 
 const BARE: LoadSummary = {
-  totalKg: 20,
   side: [],
   barKg: 20,
   collarKg: 0,
@@ -45,8 +43,14 @@ describe('<rack-share>', () => {
     expect(el.hidden).toBe(true);
   });
 
-  it('shows the Total in the display Unit and the secondary in the other', () => {
-    const { el, root } = mount({ ...LOADED, unit: 'lb' });
+  it('derives + shows the Total in the display Unit and the secondary in the other', () => {
+    // 20 Bar + 2 x (25 + 15) = 100 kg, derived from the rig + Side Load (not stored).
+    const { el, root } = mount({
+      side: [eleiko(25), eleiko(15)],
+      barKg: 20,
+      collarKg: 0,
+      unit: 'lb',
+    });
     el.open();
     expect(root.querySelector('[data-total]')!.textContent!.trim()).toBe('220 lb');
     expect(root.querySelector('[data-secondary]')!.textContent!.trim()).toBe('100 kg');
@@ -130,6 +134,25 @@ describe('<rack-share>', () => {
     expect(el.hidden).toBe(false); // inside the card: stays open
     (root.querySelector('[data-scrim]') as HTMLElement).click();
     expect(el.hidden).toBe(true); // the scrim: closes
+  });
+
+  it('a clipboard write that resolves after close does not re-label the hidden card', async () => {
+    // A real ordering on a slow/permission-prompted clipboard: copy, then close before
+    // the write settles. The late confirm must not flip a closed card to "Copied".
+    let resolveWrite!: () => void;
+    const writeText = vi.fn(() => new Promise<void>((r) => (resolveWrite = r)));
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const { el, root } = mount();
+    el.open();
+    const copy = root.querySelector('[data-copy]') as HTMLButtonElement;
+    copy.click(); // write is in flight
+    el.close(); // lifter dismisses before it settles
+    resolveWrite(); // now the write resolves
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(copy.textContent).toBe('Copy summary'); // not "Copied"
+    expect(el.hidden).toBe(true);
+    vi.unstubAllGlobals();
   });
 
   describe('the Copied confirmation reverts', () => {

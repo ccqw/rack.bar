@@ -364,8 +364,7 @@ class RackConsole extends HTMLElement {
       this.side = (this.showingOver && over ? over : primary).side;
       this.render();
     });
-    // The Share control opens the loading card (RBAR-19, ADR-0011): snapshot the current
-    // load, hand it to the card, and open it.
+    // The Share control opens the loading card (RBAR-19, ADR-0011); see openShare.
     this.root.querySelector('[data-share]')!.addEventListener('click', () => this.openShare());
     // The kg|lb Primary unit toggle (ADR-0010). Honored only on an unlocked set; the
     // chosen unit persists and the surfaces re-render in it.
@@ -444,8 +443,9 @@ class RackConsole extends HTMLElement {
     if (this.mode === 'decode' && this.decoded) {
       this.rememberTarget(this.decoded.primary.total - this.decoded.primary.delta);
     }
+    // The card derives the Total from these (loadTotalKg), so no separate Total is
+    // passed -- nothing to drift from the Plates.
     this.share.load = {
-      totalKg: encode(this.side, this.baselineKg()),
       side: this.side,
       barKg: this._barKg,
       collarKg: this._collarKg,

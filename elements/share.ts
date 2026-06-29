@@ -8,7 +8,14 @@
 // one property down (`load`, a snapshot of the current load), one event up (`close`). It
 // owns no calculator state; the console snapshots its load and feeds it (ADR-0011). The
 // visible chips and the copied text both derive from lib/summary, so they cannot drift.
-import { groupSide, loadingSummary } from '../lib/summary.ts';
+import {
+  BARE_BAR,
+  configText,
+  groupSide,
+  groupText,
+  loadingSummary,
+  loadTotalKg,
+} from '../lib/summary.ts';
 import type { LoadSummary } from '../lib/summary.ts';
 import { format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
@@ -30,7 +37,6 @@ class RackShare extends HTMLElement {
   // The load to summarise. The console sets this before open(); a bare default keeps a
   // pre-seed render harmless. Assigning re-renders while open so a live change shows.
   private _load: LoadSummary = {
-    totalKg: 0,
     side: [],
     barKg: 0,
     collarKg: 0,
@@ -176,30 +182,29 @@ class RackShare extends HTMLElement {
   // Unit; the secondary reads the other. The Side Load folds into colour chips (or a
   // bare-bar line) via the same lib/summary the copied text uses (ADR-0011).
   private render(): void {
-    const { totalKg, side, barKg, collarKg, unit } = this._load;
+    const { side, barKg, collarKg, unit } = this._load;
     const other: Unit = unit === 'kg' ? 'lb' : 'kg';
-    this.totalEl.textContent = format(totalKg, unit);
-    this.secondaryEl.textContent = format(totalKg, other);
+    const total = loadTotalKg(this._load);
+    this.totalEl.textContent = format(total, unit);
+    this.secondaryEl.textContent = format(total, other);
 
+    // Chips (loaded) or the bare-bar line (empty) -- one assignment, no dead markup.
+    // The chip label comes from the shared `groupText`, so it can't drift from the
+    // copied text (ADR-0011); `data-chip`/`data-bare` are the test hooks.
     const groups = groupSide(side);
-    this.chipsEl.innerHTML = groups
-      .map(
-        (g) => `
+    this.chipsEl.innerHTML =
+      groups.length === 0
+        ? `<span class="bare" data-bare>${BARE_BAR}</span>`
+        : groups
+            .map(
+              (g) => `
         <span class="chip" data-chip data-color="${g.color}"
-              style="--disc: var(--rack-plate-${g.color})">${
-          g.count > 1 ? `${g.count}x ${g.face}` : g.face
-        }</span>`,
-      )
-      .join('');
-    // The bare-bar line stands in for the chips when nothing is loaded.
-    if (groups.length === 0) {
-      this.chipsEl.innerHTML = `<span class="bare" data-bare>Bare bar - no plates</span>`;
-    }
+              style="--disc: var(--rack-plate-${g.color})">${groupText(g)}</span>`,
+            )
+            .join('');
 
-    this.captionEl.textContent =
-      collarKg > 0
-        ? `Bar ${format(barKg, unit)}, collars ${format(collarKg, unit)} - per side`
-        : `Bar ${format(barKg, unit)} - per side`;
+    // The config caption reuses the shared config wording, plus a "per side" note.
+    this.captionEl.textContent = `${configText(barKg, collarKg, unit)} - per side`;
   }
 
   // Write the plain-text summary to the clipboard and confirm with a transient "Copied"
@@ -218,8 +223,12 @@ class RackShare extends HTMLElement {
   }
 
   // Flash "Copied" on the Copy button, then revert after a short delay. A pending revert
-  // is cleared first so a rapid re-tap restarts the window cleanly.
+  // is cleared first so a rapid re-tap restarts the window cleanly. Bails if the card was
+  // closed before this (async) clipboard write resolved -- otherwise a late confirm would
+  // re-label a hidden card and arm a stale timer, surfacing "Copied" on the next open for
+  // a copy the lifter never made in that session (the ADR-0011 no-false-confirm contract).
   private confirmCopied(): void {
+    if (this.hidden) return;
     if (this.copiedTimer !== null) clearTimeout(this.copiedTimer);
     this.copyBtn.textContent = 'Copied';
     this.copiedTimer = setTimeout(() => {

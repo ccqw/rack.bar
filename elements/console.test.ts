@@ -852,6 +852,35 @@ describe('<rack-console> (Share card)', () => {
     expect(recentLabels(el)).toEqual([]);
   });
 
+  it('reflects the over-target loadout when shown, while remembering the typed Target', () => {
+    const el = mountConsole();
+    type(el, '100.5'); // off-grid: primary 100 (under), round-up 101
+    over(el).click(); // show the round-up loadout -- this.side becomes the over loadout
+    shareBtn(el).click();
+    expect(shareText(el, '[data-total]')).toBe('101 kg'); // the over Total, not the 100 primary
+    expect(shareChips(el)).toEqual(['25', '15', '0.5']);
+    expect(recentLabels(el)).toEqual([100.5]); // the typed Target, not the over Total
+  });
+
+  it('folds a fitted Collar into the card Total and caption', () => {
+    const el = mountConsole();
+    el.collarKg = 2.5; // 20 Bar + 2 x 2.5 Collar baseline
+    type(el, '105');
+    shareBtn(el).click();
+    expect(shareText(el, '[data-total]')).toBe('105 kg'); // 25 + 2 x (25 + 15) folded baseline
+    expect(shareText(el, '[data-caption]')).toContain('collars 2.5 kg');
+  });
+
+  it('reads iron faces and lb through the card on the Training set', () => {
+    const el = mountConsole();
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    type(el, '135'); // 45 lb iron Bar + 2 x 45 lb iron = 135 lb
+    shareBtn(el).click();
+    expect(shareText(el, '[data-total]')).toBe('135 lb');
+    expect(shareChips(el)).toEqual(['45']); // the stamped lb face, not a kg mass
+  });
+
   it('closing the card from within dismisses it', () => {
     const el = mountConsole();
     shareBtn(el).click();

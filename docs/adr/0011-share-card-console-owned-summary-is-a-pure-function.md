@@ -52,6 +52,6 @@ Target, so opening the card there pushes nothing.
 
 The Copy button confirms with a transient "Copied" only on a successful clipboard
 write -- a failed or unavailable clipboard leaves the label unchanged rather than
-claiming a copy that did not happen. The `cardIn` entrance animation and the
-final colour/spacing treatment fold from the RBAR-10 handoff; the structure ships
-thin here.
+claiming a copy that did not happen. The entrance animation (the `rack-card` and
+`rack-fade` keyframes, the handoff's `cardIn`) and the final colour/spacing
+treatment fold from the RBAR-10 handoff; the structure ships thin here.

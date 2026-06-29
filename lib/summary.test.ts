@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupSide, loadingSummary } from './summary.ts';
+import { groupSide, loadingSummary, loadTotalKg } from './summary.ts';
 import { ELEIKO_KG, IRON_LB } from './plates.ts';
 import type { Plate } from './plates.ts';
 
@@ -40,7 +40,6 @@ describe('groupSide', () => {
 describe('loadingSummary', () => {
   it('is three lines: wordmark + Total (secondary), per-Side, config', () => {
     const text = loadingSummary({
-      totalKg: 100,
       side: [eleiko(25), eleiko(15)],
       barKg: 20,
       collarKg: 0,
@@ -55,7 +54,6 @@ describe('loadingSummary', () => {
 
   it('groups repeated Plates as N x face on the per-Side line', () => {
     const text = loadingSummary({
-      totalKg: 110,
       side: [eleiko(25), eleiko(25), eleiko(2.5)],
       barKg: 20,
       collarKg: 0,
@@ -66,7 +64,6 @@ describe('loadingSummary', () => {
 
   it('names the Collars on the config line when fitted', () => {
     const text = loadingSummary({
-      totalKg: 105,
       side: [eleiko(25), eleiko(15)],
       barKg: 20,
       collarKg: 2.5,
@@ -77,7 +74,6 @@ describe('loadingSummary', () => {
 
   it('reads the Total and config in the display Unit, secondary in the other', () => {
     const text = loadingSummary({
-      totalKg: 100,
       side: [eleiko(25), eleiko(15)],
       barKg: 20,
       collarKg: 0,
@@ -89,7 +85,6 @@ describe('loadingSummary', () => {
 
   it('bare bar: the per-Side line says no plates', () => {
     const text = loadingSummary({
-      totalKg: 20,
       side: [],
       barKg: 20,
       collarKg: 0,
@@ -99,5 +94,19 @@ describe('loadingSummary', () => {
     expect(lines[0]).toBe('rack.bar 20 kg (44 lb)');
     expect(lines[1]).toBe('Bare bar - no plates');
     expect(lines[2]).toBe('Bar 20 kg');
+  });
+});
+
+describe('loadTotalKg', () => {
+  it('derives the Total from the rig + Side Load (Bar + 2 x Side Load)', () => {
+    expect(loadTotalKg({ side: [eleiko(25), eleiko(15)], barKg: 20, collarKg: 0, unit: 'kg' })).toBe(100);
+  });
+
+  it('folds the Collars into the baseline (Bar + 2 x Collar + 2 x Side Load)', () => {
+    expect(loadTotalKg({ side: [eleiko(25), eleiko(15)], barKg: 20, collarKg: 2.5, unit: 'kg' })).toBe(105);
+  });
+
+  it('a bare Bar Totals to the Bar', () => {
+    expect(loadTotalKg({ side: [], barKg: 20, collarKg: 0, unit: 'kg' })).toBe(20);
   });
 });

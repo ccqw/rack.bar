@@ -8,13 +8,16 @@
 // when the display Unit is lb (the same kg-face-under-an-lb-readout convention the
 // sleeve and palette use). The Total and config lines carry the Unit via `format`.
 import type { Plate, PlateColor } from './plates.ts';
+import { barWithCollars, totalKg } from './plates.ts';
 import { format } from './units.ts';
 import type { Unit } from './units.ts';
 
-/** A snapshot of the current load the card summarises (RBAR-19). All weights kg. */
+/**
+ * A snapshot of the current load the card summarises (RBAR-19). All weights kg.
+ * The Total is NOT stored -- it is derived from the rig + Side Load (`loadTotalKg`),
+ * so the snapshot has no denormalized field that can contradict its own Plates.
+ */
 export interface LoadSummary {
-  /** The achieved Total on the Bar (Bar + 2 x Collar + 2 x Side Load), in kg. */
-  readonly totalKg: number;
   /** The Side Load -- the Plates on one Side, heaviest-first. */
   readonly side: readonly Plate[];
   /** The bare Bar, in kg (no Collars folded in). */
@@ -23,6 +26,18 @@ export interface LoadSummary {
   readonly collarKg: number;
   /** The display Unit the Total and config read in; the secondary reads the other. */
   readonly unit: Unit;
+}
+
+/** The bare-bar stand-in shown on the per-Side line when nothing is loaded. */
+export const BARE_BAR = 'Bare bar - no plates';
+
+/**
+ * The achieved Total for a snapshot: Bar + 2 x Collar + 2 x Side Load, via the
+ * existing core (ADR-0002/0008). The single place the card's Total is computed --
+ * the element and the plain text both read it, so they cannot disagree.
+ */
+export function loadTotalKg(s: LoadSummary): number {
+  return totalKg(s.side, barWithCollars(s.barKg, s.collarKg));
 }
 
 /** A run of identical Plates on one Side: its face stamp, colour, and how many. */
@@ -59,9 +74,24 @@ export function groupSide(side: readonly Plate[]): readonly PlateGroup[] {
   return groups;
 }
 
-/** One per-Side group as `N x face`, or just `face` when there is a single Plate. */
-function groupText(g: PlateGroup): string {
+/**
+ * One per-Side group as `N x face`, or just `face` for a single Plate. Exported so
+ * the card's chips and the plain text render the group label from ONE place -- the
+ * "cannot drift" guarantee (ADR-0011) covers the rendered label, not just the fold.
+ */
+export function groupText(g: PlateGroup): string {
   return g.count > 1 ? `${g.count}x ${g.face}` : g.face;
+}
+
+/**
+ * The rig-config line: the Bar, plus the Collars when fitted, in `unit` (ADR-0011).
+ * Shared by the plain text and the card caption (the caption appends "per side"), so
+ * the config wording cannot drift between them either.
+ */
+export function configText(barKg: number, collarKg: number, unit: Unit): string {
+  return collarKg > 0
+    ? `Bar ${format(barKg, unit)}, collars ${format(collarKg, unit)}`
+    : `Bar ${format(barKg, unit)}`;
 }
 
 /**
@@ -71,19 +101,18 @@ function groupText(g: PlateGroup): string {
  *   Per side: 2x 25, 15           <- the Side Load grouped, or "Bare bar - no plates"
  *   Bar 20 kg, collars 2.5 kg     <- the rig config (Collars line omitted when None)
  *
- * Total and config read in `unit`; the secondary reads the other Unit. Plate faces
- * are the Plate's own stamp (no Unit suffix) -- the Total line carries the Unit.
+ * Total and config read in `unit`; the secondary reads the other Unit. The Total is
+ * derived from the rig + Side Load (`loadTotalKg`), and the group label, bare-bar
+ * text, and config all come from the shared helpers -- so the text and the card
+ * cannot diverge. Plate faces are the Plate's own stamp; the Total line carries Unit.
  */
 export function loadingSummary(s: LoadSummary): string {
   const other: Unit = s.unit === 'kg' ? 'lb' : 'kg';
-  const head = `rack.bar ${format(s.totalKg, s.unit)} (${format(s.totalKg, other)})`;
+  const total = loadTotalKg(s);
+  const head = `rack.bar ${format(total, s.unit)} (${format(total, other)})`;
   const perSide =
     s.side.length === 0
-      ? 'Bare bar - no plates'
+      ? BARE_BAR
       : `Per side: ${groupSide(s.side).map(groupText).join(', ')}`;
-  const config =
-    s.collarKg > 0
-      ? `Bar ${format(s.barKg, s.unit)}, collars ${format(s.collarKg, s.unit)}`
-      : `Bar ${format(s.barKg, s.unit)}`;
-  return `${head}\n${perSide}\n${config}`;
+  return `${head}\n${perSide}\n${configText(s.barKg, s.collarKg, s.unit)}`;
 }
