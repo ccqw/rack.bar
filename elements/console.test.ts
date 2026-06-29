@@ -86,6 +86,84 @@ function tapDisc(el: HTMLElement, index: number): void {
   discs(el)[index].click();
 }
 
+// Identify a .stack child block by a short token, so the console's vertical order can be
+// asserted as a list. modes/viz/readout/over/share carry a class; the editor blocks are
+// custom elements named by tag (rack-entry / rack-recents / rack-palette).
+function blockToken(child: Element): string {
+  for (const cls of ['modes', 'viz', 'readout', 'over', 'share']) {
+    if (child.classList.contains(cls)) return cls === 'viz' ? 'viz' : cls;
+  }
+  return child.tagName.toLowerCase();
+}
+
+// The full vertical order of every block in the main column, present-or-hidden.
+function blockOrder(el: HTMLElement): string[] {
+  const stack = el.shadowRoot!.querySelector('.stack')!;
+  return [...stack.children].map(blockToken);
+}
+
+// The order of just the VISIBLE blocks, filtering on the `hidden` the shell drives
+// (entry/recents/palette/over toggle per mode + state). This is what the lifter actually
+// sees top-to-bottom -- the handoff section 4a/4b order.
+function visibleBlockOrder(el: HTMLElement): string[] {
+  const stack = el.shadowRoot!.querySelector('.stack')!;
+  return [...stack.children]
+    .filter((c) => !(c as HTMLElement).hidden)
+    .map(blockToken);
+}
+
+describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
+  it('orders the column bar -> Total -> round-up -> Target -> Recent -> palette -> Share', () => {
+    // The static block order (handoff "Screens / views": bar always directly under the
+    // mode toggle, then the Total region, then the editors). One DOM order serves both
+    // modes -- the palette sits where the Target/Recent editors do, all toggled by hidden.
+    const el = mountConsole();
+    expect(blockOrder(el)).toEqual([
+      'modes',
+      'viz',
+      'readout',
+      'over',
+      'rack-entry',
+      'rack-recents',
+      'rack-palette',
+      'share',
+    ]);
+  });
+
+  it('By Weight reads mode -> bar -> Total -> round-up -> Target -> Recent -> Share (4a)', () => {
+    const el = mountConsole();
+    commit(el, '100.5'); // off-grid: a Recent chip exists and the round-up is offered
+    expect(visibleBlockOrder(el)).toEqual([
+      'modes',
+      'viz',
+      'readout',
+      'over',
+      'rack-entry',
+      'rack-recents',
+      'share',
+    ]);
+  });
+
+  it('By Plates reads mode -> bar -> Total -> Add palette -> Share (4b)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    expect(visibleBlockOrder(el)).toEqual([
+      'modes',
+      'viz',
+      'readout',
+      'rack-palette',
+      'share',
+    ]);
+  });
+
+  it('puts the bar visualizer first under the mode toggle in both modes', () => {
+    const el = mountConsole();
+    expect(visibleBlockOrder(el).slice(0, 2)).toEqual(['modes', 'viz']);
+    modeBtn(el, 'encode').click();
+    expect(visibleBlockOrder(el).slice(0, 2)).toEqual(['modes', 'viz']);
+  });
+});
+
 describe('<rack-console> (Decode: at-or-under + delta)', () => {
   it('decodes an exact Target into discs and the achieved Total, with no delta note', () => {
     const el = mountConsole();
