@@ -140,8 +140,12 @@ class RackHelp extends HTMLElement {
   }
 
   // Drop the document listeners if the element leaves the DOM while open, so a later
-  // stray outside click never reaches a detached popover.
+  // stray outside click never reaches a detached popover. Reset the open flag too: a
+  // reconnect rebuilds the markup closed, so leaving `isOpen` stale-true would desync the
+  // flag from the DOM -- the first toggle would no-op and a programmatic open() would be
+  // silently dropped by its own guard. Resetting keeps the flag honest across reconnects.
   disconnectedCallback(): void {
+    this.isOpen = false;
     document.removeEventListener('click', this.onDocPointer);
     document.removeEventListener('keydown', this.onKeydown);
   }

@@ -86,6 +86,18 @@ describe('<rack-help> (the how-it-works popover, RBAR-21)', () => {
     expect(popover(root).hidden).toBe(true);
   });
 
+  it('stays consistent across a disconnect-while-open then reconnect', () => {
+    const { el, root } = mountHelp();
+    toggleBtn(root).click(); // open
+    expect(popover(root).hidden).toBe(false);
+    el.remove(); // disconnect while open
+    document.body.append(el); // reconnect rebuilds the markup closed
+    expect(popover(el.shadowRoot!).hidden).toBe(true);
+    // A single toggle must open it -- the flag didn't desync into a no-op first tap.
+    toggleBtn(el.shadowRoot!).click();
+    expect(popover(el.shadowRoot!).hidden).toBe(false);
+  });
+
   it('drops its document listener when disconnected (no dangling close)', () => {
     const { el, root } = mountHelp();
     toggleBtn(root).click();
