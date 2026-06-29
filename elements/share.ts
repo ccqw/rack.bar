@@ -77,7 +77,9 @@ class RackShare extends HTMLElement {
         /* The dim backdrop: covers the viewport, taps through to close. */
         .scrim {
           position: fixed; inset: 0; z-index: 60;
-          background: var(--rack-scrim);
+          /* The share card is a centered modal -- it dims harder than a bottom
+             sheet (handoff "Share card" rgba(5,6,7,.72) vs the sheet's .55). */
+          background: var(--rack-scrim-modal);
           display: flex; align-items: center; justify-content: center;
           padding: 24px;
           animation: rack-fade .16s ease-out;

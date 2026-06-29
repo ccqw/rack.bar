@@ -32,35 +32,111 @@
   --rack-font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --rack-font-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Surface — dark so the colored plates carry the screen. */
-  --rack-bg: #0f1113;
-  --rack-fg: #f2f2f3;
-  --rack-muted: #8b9197;
-  --rack-line: #23272b;
-  --rack-radius: 14px;
+  /* ----------------------------------------------------------------------------
+     The handoff palette, reconciled 1:1 to docs/design-handoff/README.md "Design
+     tokens" (RBAR-26). The handoff names these --rb-*; we keep the --rack-* prefix
+     (ADR-0001) but match every hex exactly. The named tiers below are the canonical
+     scale; the collapsed legacy names (--rack-bg/-fg/-muted/-line) further down are
+     thin aliases onto this scale so the existing call sites inherit the corrected
+     palette while the visual slices (RBAR-24/25/27/28/29/30) re-point each surface
+     to its real tier.
+     -------------------------------------------------------------------------- */
 
-  /* Raised surfaces for overlays (the Setup sheet and later modals), an active
-     control fill, a stronger border for a selected control, and the dim backdrop
-     behind a sheet (RBAR-15, ADR-0007). Folded from the Claude Design handoff. */
-  --rack-overlay: #16191d;       /* bottom sheets / modals */
-  --rack-selected: #2a2f35;      /* a selected tile / control */
-  --rack-line-strong: #3a4047;   /* border on a selected control */
-  --rack-scrim: rgba(5, 6, 7, 0.55);
-  --rack-radius-sheet: 24px;     /* a bottom sheet's top corners */
-  --rack-radius-tile: 11px;      /* a selector tile */
+  /* Brand. The accent yellow doubles as the active-segment / primary-action fill;
+     accent-ink is the dark text that sits ON it. */
+  --rack-accent: #f5c518;
+  --rack-accent-ink: #0d0e10;
+
+  /* Surfaces, deepest -> most raised. surface = app background; sunken = the keypad
+     sheet; raised = inset controls (mode track); overlay = setup/share sheets+modals;
+     active = a selected row; selected = the active segment / selected tile fill. */
+  --rack-surface: #0d0e10;
+  --rack-sunken: #101216;
+  --rack-raised: #15171a;
+  --rack-overlay: #16191d;
+  --rack-active: #1b1f24;
+  --rack-selected: #272b30;
+
+  /* Borders, faint -> prominent. divider sits below border for hairlines between
+     stacked rows; active is the ring on a selected control. */
+  --rack-border: #20242a;
+  --rack-border-strong: #23272c;
+  --rack-border-muted: #2a2f35;
+  --rack-border-active: #3a4047;
+  --rack-divider: #1b1e22;
+
+  /* Text on dark, brightest -> faintest. dim is the section-label / caption grey;
+     disabled is the not-allowed control ink. */
+  --rack-text: #f4f4f5;
+  --rack-text-secondary: #aab0b7;
+  --rack-text-muted: #9aa1a9;
+  --rack-text-dim: #8b929a;
+  --rack-text-disabled: #41464c;
+
+  /* Semantic. danger = the Clear/over-capacity red (shares the red plate hex);
+     success = the exact-hit green dot. */
+  --rack-danger: #e0263a;
+  --rack-success: #4caf6a;
+
+  /* Shell -- the light "device wallpaper" the phone frame sits on. Not used by the
+     dark app surface today, but part of the handoff scale so a future framed/desktop
+     layout can reference it. */
+  --rack-page-bg: #e7e5df;
+  --rack-page-ink: #15181c;
+  --rack-page-faint: #9b958b;
 
   /* Plate colors — domain palette (CONTEXT.md), the IWF/Eleiko scheme. Lifters
      name a plate by its color, so these are semantic, not decorative. The metal
-     change plates mirror their 10x bumper's color (25<->2.5 red, etc.). */
-  --rack-plate-red: #d5202a;     /* 25, 2.5 */
-  --rack-plate-blue: #1e5aa8;    /* 20, 2.0 */
-  --rack-plate-yellow: #f4c400;  /* 15, 1.5 */
-  --rack-plate-green: #2c9e47;   /* 10, 1.0 */
-  --rack-plate-white: #ededed;   /*  5, 0.5 */
+     change plates mirror their 10x bumper's color (25<->2.5 red, etc.). Hex
+     reconciled to the handoff "Plate palette". */
+  --rack-plate-red: #e0263a;     /* 25, 2.5 */
+  --rack-plate-blue: #2563c9;    /* 20, 2.0 */
+  --rack-plate-yellow: #f5c518;  /* 15, 1.5 */
+  --rack-plate-green: #25a45a;   /* 10, 1.0 */
+  --rack-plate-white: #eef0f2;   /*  5, 0.5 */
   /* The plain-iron training set (RBAR-17): one dark finish, distinguished by its
      stamped lb label rather than color. Needs light ink on the disc/palette key. */
   --rack-plate-iron: #34383e;    /* 45, 35, 25, 10, 5, 2.5 lb */
 
-  /* Brand accent — the yellow plate doubles as the UI accent for now. */
-  --rack-accent: var(--rack-plate-yellow);
+  /* Disc-fill convention (handoff "Plate palette"): a disc is not a flat fill but a
+     soft top-lit gradient over its plate hex, with the disc shadow below. The bar
+     renderer (RBAR-24) applies it as follows, with --disc set to the plate hex:
+       background: linear-gradient(180deg, color-mix(in srgb, var(--disc) 95%, #fff), var(--disc));
+       box-shadow: var(--rack-shadow-disc);
+     Captured here so the renderer has one documented recipe; ink is dark on
+     white/yellow, white otherwise (already handled per-color in <rack-sleeve>). */
+
+  /* Radii (handoff "Radii"). --rack-radius-sheet is the app's own bottom-sheet
+     top-corner radius (setup/keypad), separate from the handoff control radii. */
+  --rack-radius-pill: 999px;
+  --rack-radius-card: 14px;
+  --rack-radius-sheet-control: 13px;
+  --rack-radius-tile: 11px;      /* a selector tile */
+  --rack-radius-sheet: 24px;     /* a bottom sheet's top corners */
+
+  /* Scrims (handoff "Setup sheet" / "Share card"). The share modal dims harder
+     (.72) than a bottom sheet (.55). */
+  --rack-scrim: rgba(5, 6, 7, 0.55);        /* setup / bottom sheets */
+  --rack-scrim-modal: rgba(5, 6, 7, 0.72);  /* share card modal */
+
+  /* Shadows (handoff "Shadows"). disc rims+lifts a plate; sheet/modal lift overlays
+     off the surface. */
+  --rack-shadow-disc: inset 0 0 0 1px rgba(255,255,255,.1), 0 2px 6px rgba(0,0,0,.25);
+  --rack-shadow-sheet: 0 -18px 44px -18px rgba(0,0,0,.7);
+  --rack-shadow-modal: 0 30px 60px -20px rgba(0,0,0,.7);
+
+  /* ----------------------------------------------------------------------------
+     Legacy collapsed names. These predate the handoff scale and were each doing the
+     work of a whole tier (--rack-muted for every grey, --rack-line for every
+     border). Keep them as aliases so the ~48 existing references resolve to
+     handoff-correct hex with no churn; the visual slices migrate each surface onto
+     the precise tier above and these can then retire. Do NOT add new references to
+     these in fresh code -- reach for the named tier.
+     -------------------------------------------------------------------------- */
+  --rack-bg: var(--rack-surface);
+  --rack-fg: var(--rack-text);
+  --rack-muted: var(--rack-text-dim);
+  --rack-line: var(--rack-border);
+  --rack-line-strong: var(--rack-border-active);
+  --rack-radius: var(--rack-radius-card);
 }
