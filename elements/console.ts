@@ -19,6 +19,7 @@ import './palette.ts';
 import './sleeve.ts';
 import './recents.ts';
 import './share.ts';
+import './fullscreen.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, barWithCollars } from '../lib/plates.ts';
@@ -45,6 +46,7 @@ type Entry = HTMLElement & {
 type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
 type Palette = HTMLElement & { inventory: readonly Plate[] };
 type Share = HTMLElement & { load: LoadSummary; open(): void };
+type Fullscreen = HTMLElement & { load: LoadSummary; open(): void };
 type Mode = 'decode' | 'encode';
 
 // The Recent Targets history persists shell-side under its own key (ADR-0007/0009),
@@ -63,6 +65,7 @@ class RackConsole extends HTMLElement {
   private palette!: Palette;
   private sleeve!: Sleeve;
   private share!: Share;
+  private fullscreen!: Fullscreen;
   private total!: HTMLElement;
   private secondary!: HTMLButtonElement;
   private delta!: HTMLElement;
@@ -207,6 +210,19 @@ class RackConsole extends HTMLElement {
         }
         .modes button:focus-visible { outline: 2px solid var(--rack-accent); }
         rack-entry[hidden], rack-palette[hidden] { display: none; }
+        /* The bar visualizer block: the sleeve, with the fullscreen control floated at
+           its top-right corner (handoff section 3) -- it blows the loaded Bar up to a
+           landscape, glanceable card (RBAR-18). */
+        .viz { position: relative; }
+        .fullscreen {
+          position: absolute; top: 0; right: 0; z-index: 1;
+          width: 36px; height: 36px; display: flex; align-items: center;
+          justify-content: center; padding: 0;
+          color: var(--rack-muted); background: transparent;
+          border: 1px solid var(--rack-line); border-radius: 10px; cursor: pointer;
+        }
+        .fullscreen:hover { color: var(--rack-fg); }
+        .fullscreen:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .readout { text-align: center; }
         /* The Total label sits beside the kg|lb unit toggle (the handoff's readout head). */
         .readhead {
@@ -285,7 +301,16 @@ class RackConsole extends HTMLElement {
              (RBAR-20). Hidden until the lifter has committed a Target. -->
         <rack-recents hidden></rack-recents>
         <rack-palette hidden></rack-palette>
-        <rack-sleeve></rack-sleeve>
+        <div class="viz">
+          <button type="button" class="fullscreen" data-fullscreen aria-label="Full screen">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
+                    stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </button>
+          <rack-sleeve></rack-sleeve>
+        </div>
         <div class="readout">
           <div class="readhead">
             <span class="label">Total</span>
@@ -309,12 +334,14 @@ class RackConsole extends HTMLElement {
         </button>
       </div>
       <rack-share></rack-share>
+      <rack-fullscreen></rack-fullscreen>
     `;
     this.entry = this.root.querySelector('rack-entry') as Entry;
     this.recentsRow = this.root.querySelector('rack-recents') as Recents;
     this.palette = this.root.querySelector('rack-palette') as Palette;
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
     this.share = this.root.querySelector('rack-share') as Share;
+    this.fullscreen = this.root.querySelector('rack-fullscreen') as Fullscreen;
     this.total = this.root.querySelector('[data-total]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.delta = this.root.querySelector('[data-delta]')!;
@@ -366,6 +393,10 @@ class RackConsole extends HTMLElement {
     });
     // The Share control opens the loading card (RBAR-19, ADR-0011); see openShare.
     this.root.querySelector('[data-share]')!.addEventListener('click', () => this.openShare());
+    // The fullscreen control blows the loaded Bar up to the immersive card (RBAR-18).
+    this.root
+      .querySelector('[data-fullscreen]')!
+      .addEventListener('click', () => this.openFullscreen());
     // The kg|lb Primary unit toggle (ADR-0010). Honored only on an unlocked set; the
     // chosen unit persists and the surfaces re-render in it.
     this.unitButtons.forEach((b) =>
@@ -452,6 +483,20 @@ class RackConsole extends HTMLElement {
       unit: this.activeUnit(),
     };
     this.share.open();
+  }
+
+  // Open the fullscreen rack card (RBAR-18): snapshot the same load the share card takes
+  // and blow it up. Reflects whatever is on the Bar in either mode (Decode or Encode).
+  // Unlike openShare, a fullscreen glance is read-only -- it remembers no Target (it is a
+  // view, not a commit), so it never touches the Recent row.
+  private openFullscreen(): void {
+    this.fullscreen.load = {
+      side: this.side,
+      barKg: this._barKg,
+      collarKg: this._collarKg,
+      unit: this.activeUnit(),
+    };
+    this.fullscreen.open();
   }
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
