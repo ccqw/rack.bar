@@ -17,6 +17,7 @@
 // the core stays pure and only ever sees these as function arguments (ADR-0001/0002).
 import './console.ts';
 import './setup.ts';
+import './help.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
@@ -67,6 +68,8 @@ class RackApp extends HTMLElement {
           display: flex; align-items: center; justify-content: space-between;
           gap: 12px; padding: 14px 18px;
         }
+        /* Left cluster: the wordmark next to the how-it-works help icon. */
+        .brand { display: inline-flex; align-items: center; gap: 9px; }
         .wordmark {
           font-family: var(--rack-font); font-weight: 800; font-size: 18px;
           letter-spacing: -.01em; color: var(--rack-fg);
@@ -90,7 +93,10 @@ class RackApp extends HTMLElement {
         }
       </style>
       <header>
-        <span class="wordmark">rack<span class="dot">.</span>bar</span>
+        <span class="brand">
+          <span class="wordmark">rack<span class="dot">.</span>bar</span>
+          <rack-help></rack-help>
+        </span>
         <button type="button" class="pill" data-setup-pill
                 aria-haspopup="dialog" aria-expanded="false">
           <span data-pill-label></span>
