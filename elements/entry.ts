@@ -14,7 +14,16 @@
 // steppers anchor at the Bar weight too, and an empty field falls back to it. A seeded
 // default is `pristine`: the next typed digit REPLACES it (so you get "5", not "205"),
 // while the steppers nudge it in place.
+//
+// The field works in the lifter's display Unit (RBAR-17, ADR-0010): the draft, the
+// shown value, the caption, and the steppers are all in `unit` (kg or lb), while the
+// numeric Target it emits is always canonical kg. Switching Unit reformats the SAME
+// canonical weight into the new Unit (it never re-parses the rounded draft, so kg ->
+// lb -> kg round-trips without drift). The Bar (anchor) is given in kg and shown
+// converted. Defaults to kg, so the kg behavior is unchanged.
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
+import { shownIn, draftToKg, stepFor } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
 
 // The keypad layout, row-major. 'del' deletes the last character, 'clear' empties.
 const KEYPAD_ROWS: readonly (readonly string[])[] = [
@@ -27,57 +36,97 @@ const KEYPAD_ROWS: readonly (readonly string[])[] = [
 // Spoken labels for the non-digit keys; digits announce as themselves.
 const KEY_ARIA: Record<string, string> = { del: 'Delete', '.': 'Decimal point' };
 
-// The achievable Total grid is whole kilos: the smallest Plate is 0.5 kg but it loads
-// on both Sides (2 x 0.5 = 1 kg), so the sensible stepper nudge is 1 kg.
-const STEP_KG = 1;
-
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private valueEl!: HTMLButtonElement;
+  private captionEl!: HTMLElement;
+  private decBtn!: HTMLButtonElement;
+  private incBtn!: HTMLButtonElement;
   private keypad!: HTMLElement;
 
-  // The Bar weight the field anchors to (RBAR-15, ADR-0002/0007). The lifter loads a
-  // bar UP from its own weight, so the seeded default, the empty-field placeholder, and
-  // the stepper origin are all the Bar weight, not zero. Defaults to the 20 kg Bar; the
-  // app shell sets this when the lifter picks another Bar in Setup. See the setter for
-  // how a change moves an untouched anchor without stomping a typed Target.
+  // The Bar weight the field anchors to (RBAR-15, ADR-0002/0007), canonical kg. The
+  // lifter loads a bar UP from its own weight, so the seeded default, the empty-field
+  // placeholder, and the stepper origin are all the Bar weight, shown in the display
+  // Unit. Defaults to the 20 kg Bar; the app shell sets this when the lifter picks
+  // another Bar. See the setter for how a change moves an untouched anchor without
+  // stomping a typed Target.
   private _barKg = DEFAULT_BAR_KG;
+  // The display Unit (RBAR-17, ADR-0010). The draft and steppers work in it; the
+  // emitted Target is always kg. Defaults to kg (the kg-only behavior pre-RBAR-17).
+  private _unit: Unit = 'kg';
 
   /**
-   * The Bar weight to anchor on. Moving the Bar re-seeds the anchor only when the field
-   * still holds the untouched seeded default (so picking a 15 kg Bar shows 15, not 20);
-   * a Target the lifter has typed -- or an emptied field, which already falls back to
-   * the live Bar via renderValue -- is left alone. Silent: never emits a target.
+   * The Bar weight to anchor on (canonical kg). Moving the Bar re-seeds the anchor only
+   * when the field still holds the untouched seeded default (so picking a 15 kg Bar
+   * shows 15, not 20); a Target the lifter has typed -- or an emptied field, which
+   * already falls back to the live Bar via renderValue -- is left alone. Silent: never
+   * emits a target.
    */
   set barKg(kg: number) {
-    const seededDefault = this.pristine && this.draft === String(this._barKg);
+    const seededDefault = this.pristine && this.draft === this.barShown();
     this._barKg = kg;
-    if (seededDefault) this.draft = String(kg);
+    if (seededDefault) this.draft = this.barShown();
     if (this.valueEl) this.renderValue(); // no-op before connect; connectedCallback renders
   }
   get barKg(): number {
     return this._barKg;
   }
 
-  // The single source of truth: the raw text the lifter has entered. '' = nothing yet,
-  // which falls back to the Bar weight as the anchor.
+  /**
+   * The display Unit. Switching reformats the field's canonical weight (`shownKg`) into
+   * the new Unit rather than re-parsing the rounded draft, so kg <-> lb round-trips do
+   * not drift. A seeded default re-seeds to the Bar in the new Unit; an empty field
+   * stays empty. Silent (never emits): the canonical Target is unchanged, only its
+   * presentation. The caption and steppers follow via renderValue.
+   */
+  set unit(u: Unit) {
+    if (u === this._unit) return;
+    const wasSeededDefault = this.pristine && this.draft === this.barShown();
+    this._unit = u;
+    if (this.draft === '') {
+      // stays empty; the muted anchor re-derives in renderValue
+    } else if (wasSeededDefault) {
+      this.draft = this.barShown(); // the Bar in the new Unit, still pristine
+    } else {
+      this.draft = this.shownKg === null ? '' : String(shownIn(this.shownKg, u));
+    }
+    if (this.valueEl) this.renderValue();
+  }
+  get unit(): Unit {
+    return this._unit;
+  }
+
+  // The single source of truth for what is shown: the raw text the lifter has entered,
+  // in the display Unit. '' = nothing yet, which falls back to the Bar weight as the
+  // anchor.
   private draft = '';
+  // The canonical kg the current draft represents, captured on every real edit
+  // (keypad/stepper/display). The Unit setter reformats FROM this so a Unit round-trip
+  // is exact; it is not recomputed from the rounded draft on a Unit switch.
+  private shownKg: number | null = null;
   // True when `draft` holds an untouched seeded default (initial Bar weight or a value
   // pushed in by display()). The next typed digit replaces it rather than appending.
   private pristine = false;
 
   /**
-   * Show `value` in the field without emitting a `target` event (null clears it). The
-   * console calls this when switching back into Decode (RBAR-7, ADR-0005): it seeds the
-   * box with the carried Side Load's Total so the +/- steppers move from the real
-   * current weight, not from zero -- and stays silent, so the hand-built loadout is not
-   * re-decoded (and never collapses to its canonical form) until the lifter acts. The
-   * seeded value is `pristine`, so the next typed digit replaces it.
+   * Show `value` (canonical kg) in the field without emitting a `target` event (null
+   * clears it). The console calls this when switching back into Decode (RBAR-7,
+   * ADR-0005): it seeds the box with the carried Side Load's Total so the +/- steppers
+   * move from the real current weight, not from zero -- and stays silent, so the
+   * hand-built loadout is not re-decoded until the lifter acts. The seeded value is
+   * `pristine`, so the next typed digit replaces it. Shown in the display Unit.
    */
   display(value: number | null): void {
-    this.draft = value === null ? '' : String(value);
+    this.draft = value === null ? '' : String(shownIn(value, this._unit));
+    this.shownKg = value;
     this.pristine = true;
     this.renderValue();
+  }
+
+  // The Bar weight as shown in the display Unit -- the seeded default and empty-field
+  // anchor. A string so it compares directly against the draft.
+  private barShown(): string {
+    return String(shownIn(this._barKg, this._unit));
   }
 
   connectedCallback(): void {
@@ -143,12 +192,12 @@ class RackEntry extends HTMLElement {
         .clear:focus-visible { outline: 2px solid var(--rack-accent); }
       </style>
       <!-- A decorative caption; the value button carries its own live aria-label. -->
-      <div class="caption">Target (kg)</div>
+      <div class="caption" data-caption>Target (kg)</div>
       <div class="row">
-        <button type="button" class="step" data-step="dec" aria-label="Decrease by ${STEP_KG} kg">-</button>
+        <button type="button" class="step" data-step="dec" aria-label="Decrease">-</button>
         <button type="button" class="value" data-value
                 aria-haspopup="true" aria-expanded="false">${DEFAULT_BAR_KG}</button>
-        <button type="button" class="step" data-step="inc" aria-label="Increase by ${STEP_KG} kg">+</button>
+        <button type="button" class="step" data-step="inc" aria-label="Increase">+</button>
       </div>
       <div class="keypad" data-keypad role="group" aria-label="Enter Target" hidden>
         ${keys}
@@ -157,6 +206,9 @@ class RackEntry extends HTMLElement {
     `;
 
     this.valueEl = this.root.querySelector('[data-value]')!;
+    this.captionEl = this.root.querySelector('[data-caption]')!;
+    this.decBtn = this.root.querySelector('[data-step="dec"]')!;
+    this.incBtn = this.root.querySelector('[data-step="inc"]')!;
     this.keypad = this.root.querySelector('[data-keypad]')!;
 
     this.valueEl.addEventListener('click', () => {
@@ -168,25 +220,22 @@ class RackEntry extends HTMLElement {
       // never commits and closing it does.
       if (wasOpen) this.emitKeypadClose();
     });
-    this.root
-      .querySelector('[data-step="inc"]')!
-      .addEventListener('click', () => this.step(+STEP_KG));
-    this.root
-      .querySelector('[data-step="dec"]')!
-      .addEventListener('click', () => this.step(-STEP_KG));
+    this.incBtn.addEventListener('click', () => this.step(+stepFor(this._unit)));
+    this.decBtn.addEventListener('click', () => this.step(-stepFor(this._unit)));
     this.root.querySelectorAll<HTMLButtonElement>('[data-key]').forEach((btn) =>
       btn.addEventListener('click', () => this.press(btn.dataset.key!)),
     );
 
     // Start at the Bar weight: a real, steppable starting point, silent (no target
     // event -- the console already renders the bare Bar). Pristine, so typing replaces it.
-    this.draft = String(this._barKg);
+    this.draft = this.barShown();
     this.pristine = true;
     this.renderValue();
   }
 
-  // A keypad press mutates the draft string, then emits the derived Target. A pristine
-  // default is replaced by the first typed digit/decimal rather than appended to.
+  // A keypad press mutates the draft string (in the display Unit), then emits the
+  // derived kg Target. A pristine default is replaced by the first typed digit/decimal
+  // rather than appended to.
   private press(k: string): void {
     const fresh = this.pristine;
     this.pristine = false;
@@ -207,40 +256,46 @@ class RackEntry extends HTMLElement {
     this.emit();
   }
 
-  // A stepper nudge: an empty field anchors at the Bar weight (you load up from the Bar),
-  // add the delta, clamp at 0 (Target is never negative), and round off float fuzz.
+  // A stepper nudge in the display Unit: an empty field anchors at the Bar (you load up
+  // from the Bar), add the delta, clamp at 0 (Target is never negative), and round off
+  // float fuzz. The shown value moves by stepFor(unit) -- 5 lb or 1 kg.
   private step(delta: number): void {
     this.pristine = false;
-    const current = this.draft === '' ? this._barKg : Number(this.draft);
-    const base = Number.isNaN(current) ? this._barKg : current;
+    const shownBar = shownIn(this._barKg, this._unit);
+    const current = this.draft === '' ? shownBar : Number(this.draft);
+    const base = Number.isNaN(current) ? shownBar : current;
     const next = Math.max(0, Number((base + delta).toFixed(2)));
     this.draft = String(next);
     this.renderValue();
     this.emit();
   }
 
-  // The numeric Target the rest of the app consumes: empty or unparseable -> null.
+  // The numeric Target the rest of the app consumes: the draft parsed from the display
+  // Unit to canonical kg. Empty or unparseable -> null.
   private currentTarget(): number | null {
-    if (this.draft.trim() === '') return null;
-    const n = Number(this.draft);
-    return Number.isNaN(n) ? null : n;
+    return draftToKg(this.draft, this._unit);
   }
 
   // An empty field shows the Bar weight as a muted anchor (what the steppers move from);
-  // a real value shows solid.
+  // a real value shows solid. The caption names the active Unit.
   private renderValue(): void {
     const empty = this.draft === '';
-    const shown = empty ? String(this._barKg) : this.draft;
+    const shown = empty ? this.barShown() : this.draft;
     this.valueEl.textContent = shown;
     this.valueEl.classList.toggle('empty', empty);
+    this.captionEl.textContent = `Target (${this._unit})`;
+    const step = stepFor(this._unit);
+    this.decBtn.setAttribute('aria-label', `Decrease by ${step} ${this._unit}`);
+    this.incBtn.setAttribute('aria-label', `Increase by ${step} ${this._unit}`);
     // Announce the live value (aria-labelledby would override the text and hide it).
-    this.valueEl.setAttribute('aria-label', `Target ${shown} kg`);
+    this.valueEl.setAttribute('aria-label', `Target ${shown} ${this._unit}`);
   }
 
   private emit(): void {
+    this.shownKg = this.currentTarget(); // canonical, for a drift-free Unit switch
     this.dispatchEvent(
       new CustomEvent<{ target: number | null }>('target', {
-        detail: { target: this.currentTarget() },
+        detail: { target: this.shownKg },
         bubbles: true,
         composed: true,
       }),

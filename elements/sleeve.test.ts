@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import './sleeve.ts';
-import { ELEIKO_KG } from '../lib/plates.ts';
+import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 
 function side(...kgs: number[]): Plate[] {
@@ -189,6 +189,19 @@ describe('<rack-sleeve>', () => {
       el.addEventListener('removeplate', seen);
       discs(el)[0].click();
       expect(seen).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the iron training set (RBAR-17, ADR-0010)', () => {
+    it('labels an iron disc by its stamped lb face, not its kg mass', () => {
+      const el = mountSleeve();
+      el.sideLoad = [IRON_LB[0], IRON_LB[5]]; // 45 lb, 2.5 lb
+      const ds = discs(el);
+      expect(ds.map((d) => d.dataset.color)).toEqual(['iron', 'iron']);
+      // the visible on-disc label reads the lb face (45), not 20.41166 kg
+      expect(ds[0].querySelector('.label')!.textContent).toBe('45');
+      // the accessible name names it in pounds
+      expect(ds[0].getAttribute('aria-label')).toBe('45 lb iron Plate');
     });
   });
 });

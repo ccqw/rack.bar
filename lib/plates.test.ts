@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   ELEIKO_KG,
+  IRON_LB,
   DEFAULT_BAR_KG,
   sideLoadKg,
   totalKg,
   barWithCollars,
 } from './plates.ts';
 import type { Plate } from './plates.ts';
+import { toLbWhole, lbToKg } from './units.ts';
 
 describe('the Eleiko plate set', () => {
   it('runs heaviest-first, 25 kg down to 0.5 kg', () => {
@@ -102,5 +104,32 @@ describe('barWithCollars (the effective Bar baseline, ADR-0008)', () => {
     // bare-rig baseline plus the Plate weight on both Sides.
     const side: Plate[] = [ELEIKO_KG[1], ELEIKO_KG[2]]; // 20 + 15 = 35 per Side
     expect(totalKg(side, barWithCollars(20, 2.5))).toBe(25 + 70); // 95
+  });
+});
+
+describe('the iron training plate set (RBAR-17, ADR-0010)', () => {
+  it('runs heaviest-first, 45 lb down to 2.5 lb, all iron-colored', () => {
+    expect(IRON_LB.map((p) => p.label)).toEqual(['45', '35', '25', '10', '5', '2.5']);
+    expect(IRON_LB.every((p) => p.color === 'iron')).toBe(true);
+  });
+
+  it('stores each Plate true mass in kg, derived from its lb label so it reads exact', () => {
+    // Mass is canonical kg; the lb FACE is the `label`. Deriving the mass from the
+    // label through the same factor (lbToKg) is what makes the lb readout land exact
+    // and a whole-lb Target decode without float drift.
+    IRON_LB.forEach((p) => {
+      expect(toLbWhole(p.kg)).toBe(Math.round(Number(p.label)));
+      expect(p.kg).toBeCloseTo(lbToKg(Number(p.label)), 9);
+    });
+  });
+
+  it('carries real render dimensions for the sleeve (ADR-0004)', () => {
+    expect(IRON_LB.every((p) => p.diameterMm > 0 && p.widthMm > 0)).toBe(true);
+  });
+
+  it('totals to whole pounds: a 45 lb Bar + one 45 lb pair = 135 lb', () => {
+    const bar = lbToKg(45);
+    const side = [IRON_LB[0]]; // one 45 lb plate per side
+    expect(toLbWhole(totalKg(side, bar))).toBe(135);
   });
 });

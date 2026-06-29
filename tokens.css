@@ -33,6 +33,9 @@
   --rack-plate-yellow: #f4c400;  /* 15, 1.5 */
   --rack-plate-green: #2c9e47;   /* 10, 1.0 */
   --rack-plate-white: #ededed;   /*  5, 0.5 */
+  /* The plain-iron training set (RBAR-17): one dark finish, distinguished by its
+     stamped lb label rather than color. Needs light ink on the disc/palette key. */
+  --rack-plate-iron: #34383e;    /* 45, 35, 25, 10, 5, 2.5 lb */
 
   /* Brand accent — the yellow plate doubles as the UI accent for now. */
   --rack-accent: var(--rack-plate-yellow);

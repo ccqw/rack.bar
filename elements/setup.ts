@@ -1,28 +1,35 @@
-// <rack-setup> -- the Setup bottom sheet (RBAR-15, ADR-0007). The host for all rig
-// configuration: RBAR-15 fills its Bar section (three tiles, 20/15/5 kg), RBAR-16 adds
-// a Collars section (None / Standard 2.5 kg), and the plate set (RBAR-17) follows as a
-// further section.
+// <rack-setup> -- the Setup bottom sheet (RBAR-15, ADR-0007/0010). The host for all rig
+// configuration: a Bar section (tiles for the active plate set's Bars), a Collars
+// section (None / Standard 2.5 kg), and a Plates section (Competition / Training).
 //
 // A controlled, near-stateless shell (ADR-0001): it holds no canonical config of its
-// own. It reflects the current Bar and Collar onto their active tiles via the `barKg` /
-// `collarKg` properties and emits `barchange` / `collarchange` when a tile is tapped;
-// the app shell (<rack-app>) owns the values, applies them, and feeds them back -- one
-// event up, one property down per concern (ADR-0007). open()/close() drive visibility;
+// own. It reflects the current Bar / Collar / plate set onto their active tiles via the
+// `barKg` / `collarKg` / `plateSet` properties and emits `barchange` / `collarchange` /
+// `platesetchange` when a tile is tapped; the app shell (<rack-app>) owns the values,
+// applies them, and feeds them back -- one event up, one property down per concern.
+// The plate set drives which Bars the Bar section offers (each set carries its own Bars,
+// ADR-0010), so changing it re-renders the Bar tiles. open()/close() drive visibility;
 // a scrim tap or the Done button closes and emits `close`. A tap inside the panel does
 // not dismiss.
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
+import { shownIn, format } from '../lib/units.ts';
+import {
+  PLATE_SETS,
+  PLATE_SET_KEYS,
+  plateSetFor,
+  isOfferedPlateSet,
+} from '../lib/platesets.ts';
+import type { PlateSetKey } from '../lib/platesets.ts';
 
-// The Bar weights offered, heaviest-first (men's / women's / technique). A fixed enum
-// of competition bars; the lb subtitle is a display convenience for a lifter who reads
-// in pounds (the value the bar is stamped with in a US gym). Exported as the single
-// source of truth for "a valid Bar", so the shell (<rack-app>) validates a chosen or
-// persisted Bar against the same set the tiles render (ADR-0007).
+// The Competition Bar weights, heaviest-first (men's / women's / technique). The other
+// sets carry their own Bars (ADR-0010, lib/platesets); these stay exported as the
+// Competition source of truth and for the existing app validation path.
 export const BAR_OPTIONS = [20, 15, 5] as const;
 
-/** A weight the lifter can actually pick: one of the offered Bars. */
+/** A Competition Bar the lifter can pick. */
 export type BarKg = (typeof BAR_OPTIONS)[number];
 
-/** True when `kg` is one of the offered Bars -- the guard both boundaries share. */
+/** True when `kg` is one of the Competition Bars. */
 export function isOfferedBar(kg: number): kg is BarKg {
   return (BAR_OPTIONS as readonly number[]).includes(kg);
 }
@@ -46,24 +53,28 @@ export function isOfferedCollar(kg: number): kg is CollarKg {
   return (COLLAR_OPTIONS as readonly number[]).includes(kg);
 }
 
-// kg -> whole lb for the tile subtitle. The exact factor matches the design handoff's
-// engine (engine.js `LB`), so the labels won't drift when the pounds slice (RBAR-17)
-// lands a real conversion in the core; here it is a shell-side display string only.
-const KG_TO_LB = 2.2046226218;
-function lbWhole(kg: number): number {
-  return Math.round(kg * KG_TO_LB);
-}
+// A one-line descriptor for each plate-set tile (the family + its native Unit).
+const PLATE_SET_SUB: Record<PlateSetKey, string> = {
+  comp: 'Eleiko - kg',
+  training: 'Iron - lb',
+};
 
 class RackSetup extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
+  private barTilesEl!: HTMLElement;
+  private platesetTilesEl!: HTMLElement;
   private tiles!: NodeListOf<HTMLButtonElement>;
   private collarTiles!: NodeListOf<HTMLButtonElement>;
+  private platesetTiles!: NodeListOf<HTMLButtonElement>;
 
   // The Bar reflected as the active tile. The app owns the canonical value; this only
   // mirrors it. Defaults to the 20 kg Bar (DEFAULT_BAR_KG).
   private _barKg = DEFAULT_BAR_KG;
   // The Collar reflected as the active tile, mirrored the same way. Defaults to None.
   private _collarKg = DEFAULT_COLLAR_KG;
+  // The active plate set, mirrored the same way. Defaults to Competition. Drives which
+  // Bars the Bar section offers (ADR-0010).
+  private _plateSetKey: PlateSetKey = 'comp';
 
   set barKg(kg: number) {
     this._barKg = kg;
@@ -81,6 +92,17 @@ class RackSetup extends HTMLElement {
     return this._collarKg;
   }
 
+  set plateSet(key: string) {
+    this._plateSetKey = isOfferedPlateSet(key) ? key : 'comp';
+    if (this.barTilesEl) {
+      this.renderBarTiles(); // the offered Bars changed with the set
+      this.syncPlatesetTiles();
+    }
+  }
+  get plateSet(): string {
+    return this._plateSetKey;
+  }
+
   /** Show the sheet. */
   open(): void {
     this.hidden = false;
@@ -94,14 +116,6 @@ class RackSetup extends HTMLElement {
 
   connectedCallback(): void {
     this.hidden = true; // a sheet is closed until opened
-    const tiles = BAR_OPTIONS.map(
-      (kg) => `
-        <button type="button" class="tile" data-bar="${kg}" aria-pressed="false"
-                aria-label="${kg} kg Bar (${lbWhole(kg)} lb)">
-          <span class="kg">${kg}<span class="u">kg</span></span>
-          <span class="sub">${lbWhole(kg)} lb</span>
-        </button>`,
-    ).join('');
 
     // The Collar tiles: None (no weight) or a Standard 2.5 kg-per-Side competition
     // collar. None shows a plain label; the Standard tile reads its per-Side weight with
@@ -169,7 +183,7 @@ class RackSetup extends HTMLElement {
            section-label (the last row's margin sits inside the panel's bottom pad). */
         .tiles { display: flex; gap: 8px; margin-bottom: 18px; }
         .tiles:last-of-type { margin-bottom: 0; }
-        /* A selector tile: kg headline + lb subtitle. Active = a raised, outlined fill;
+        /* A selector tile: kg/lb headline + subtitle. Active = a raised, outlined fill;
            inactive = transparent with a hairline. 44px+ tall touch target. */
         .tile {
           flex: 1; min-height: 56px;
@@ -198,14 +212,17 @@ class RackSetup extends HTMLElement {
             <button type="button" class="done" data-done>Done</button>
           </div>
           <span class="section-label">Bar</span>
-          <div class="tiles">${tiles}</div>
+          <div class="tiles" data-bar-tiles></div>
           <span class="section-label">Collars</span>
           <div class="tiles">${collarTiles}</div>
+          <span class="section-label">Plates</span>
+          <div class="tiles" data-plateset-tiles></div>
         </div>
       </div>
     `;
 
-    this.tiles = this.root.querySelectorAll<HTMLButtonElement>('[data-bar]');
+    this.barTilesEl = this.root.querySelector('[data-bar-tiles]')!;
+    this.platesetTilesEl = this.root.querySelector('[data-plateset-tiles]')!;
     this.collarTiles = this.root.querySelectorAll<HTMLButtonElement>('[data-collar]');
 
     // A scrim tap dismisses; a tap inside the panel must not (it would bubble to the
@@ -215,15 +232,54 @@ class RackSetup extends HTMLElement {
       .querySelector('[data-panel]')!
       .addEventListener('click', (e) => e.stopPropagation());
     this.root.querySelector('[data-done]')!.addEventListener('click', () => this.close());
-    this.tiles.forEach((t) =>
-      t.addEventListener('click', () => this.choose(Number(t.dataset.bar))),
-    );
     this.collarTiles.forEach((t) =>
       t.addEventListener('click', () => this.chooseCollar(Number(t.dataset.collar))),
     );
 
-    this.syncTiles();
+    this.renderBarTiles();
+    this.renderPlatesetTiles();
     this.syncCollarTiles();
+  }
+
+  // Render the Bar tiles for the active plate set's Bars (ADR-0010). The headline reads
+  // in the set's native Unit, the subtitle in the other Unit. data-bar carries the
+  // canonical kg, so the app validates and reflects against the same value.
+  private renderBarTiles(): void {
+    const set = plateSetFor(this._plateSetKey);
+    const other = set.unit === 'kg' ? 'lb' : 'kg';
+    this.barTilesEl.innerHTML = set.bars
+      .map(
+        (kg) => `
+        <button type="button" class="tile" data-bar="${kg}" aria-pressed="false"
+                aria-label="${format(kg, set.unit)} Bar (${format(kg, other)})">
+          <span class="kg">${shownIn(kg, set.unit)}<span class="u">${set.unit}</span></span>
+          <span class="sub">${format(kg, other)}</span>
+        </button>`,
+      )
+      .join('');
+    this.tiles = this.barTilesEl.querySelectorAll<HTMLButtonElement>('[data-bar]');
+    this.tiles.forEach((t) =>
+      t.addEventListener('click', () => this.choose(Number(t.dataset.bar))),
+    );
+    this.syncTiles();
+  }
+
+  // Render the plate-set tiles (Competition / Training), each its name + family/Unit sub.
+  private renderPlatesetTiles(): void {
+    this.platesetTilesEl.innerHTML = PLATE_SET_KEYS.map(
+      (key) => `
+        <button type="button" class="tile" data-plateset="${key}" aria-pressed="false"
+                aria-label="${PLATE_SETS[key].label} plates (${PLATE_SET_SUB[key]})">
+          <span class="kg">${PLATE_SETS[key].label}</span>
+          <span class="sub">${PLATE_SET_SUB[key]}</span>
+        </button>`,
+    ).join('');
+    this.platesetTiles =
+      this.platesetTilesEl.querySelectorAll<HTMLButtonElement>('[data-plateset]');
+    this.platesetTiles.forEach((t) =>
+      t.addEventListener('click', () => this.choosePlateset(t.dataset.plateset!)),
+    );
+    this.syncPlatesetTiles();
   }
 
   // A tile tap names the chosen Bar to the shell; the shell owns the value and sets
@@ -250,6 +306,18 @@ class RackSetup extends HTMLElement {
     );
   }
 
+  // A plate-set tile tap names the chosen set to the shell -- same contract (ADR-0010);
+  // the shell owns the value, swaps the Bar to the set's default, and feeds it all back.
+  private choosePlateset(key: string): void {
+    this.dispatchEvent(
+      new CustomEvent<{ plateSet: string }>('platesetchange', {
+        detail: { plateSet: key },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   // Mark the tile matching the current Bar as pressed; the rest released.
   private syncTiles(): void {
     this.tiles.forEach((t) =>
@@ -264,6 +332,13 @@ class RackSetup extends HTMLElement {
         'aria-pressed',
         String(Number(t.dataset.collar) === this._collarKg),
       ),
+    );
+  }
+
+  // Mark the tile matching the current plate set as pressed; the rest released.
+  private syncPlatesetTiles(): void {
+    this.platesetTiles.forEach((t) =>
+      t.setAttribute('aria-pressed', String(t.dataset.plateset === this._plateSetKey)),
     );
   }
 }

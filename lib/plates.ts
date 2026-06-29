@@ -1,15 +1,31 @@
 // The kilogram plate model for rack.bar — the functional core's reference data
 // (CONTEXT.md, ADR-0001). Bar weight and Inventory are first-class values here
 // even though v1 fixes them (ADR-0002); the solver that consumes this lands next.
+//
+// kg is the canonical mass for BOTH plate sets: the iron training set (ADR-0010) is
+// stamped in pounds but its masses derive from those labels via the exact factor
+// (lbToKg), so it stays kg-canonical like Eleiko and the solver core is untouched.
+import { lbToKg } from './units.ts';
 
-/** Eleiko/IWF plate color. Lifters name a Plate by its color (CONTEXT.md). */
-export type PlateColor = 'red' | 'blue' | 'yellow' | 'green' | 'white';
+/**
+ * Plate color. Lifters name a Competition Plate by its Eleiko color (CONTEXT.md);
+ * the iron training Plates (RBAR-17, ADR-0010) are a single plain-`iron` finish,
+ * distinguished by their stamped lb `label` instead of color.
+ */
+export type PlateColor = 'red' | 'blue' | 'yellow' | 'green' | 'white' | 'iron';
 
 export interface Plate {
-  /** Weight of a single Plate, in kilograms. */
+  /** Weight of a single Plate, in kilograms -- always canonical, both sets. */
   readonly kg: number;
-  /** Its color in the Eleiko scheme. */
+  /** Its color in the Eleiko scheme (or `iron` for the training set). */
   readonly color: PlateColor;
+  /**
+   * The face value stamped on the Plate, when it differs from its kg weight: the
+   * iron Plates are stamped in pounds ("45", "2.5"), so the readouts and the disc
+   * show this rather than the kg mass. Absent on the kg Eleiko set, whose face IS
+   * its kg (derived via plateLabel). (RBAR-17, ADR-0010.)
+   */
+  readonly label?: string;
   /**
    * Real plate diameter, in millimetres -- drives the disc's rendered HEIGHT when
    * drawn side-on (ADR-0004). The four competition bumpers (25-10) share one 450 mm
@@ -44,6 +60,31 @@ export const ELEIKO_KG: readonly Plate[] = [
   { kg: 1, color: 'green', diameterMm: 148, widthMm: 19 },
   { kg: 0.5, color: 'white', diameterMm: 127, widthMm: 16 },
 ];
+
+/**
+ * The plain-iron training Inventory (RBAR-17, ADR-0010): the standard US gym set,
+ * stamped in pounds, heaviest-first. Each Plate's true `kg` mass is DERIVED from its
+ * lb `label` through the exact factor (`lbToKg`), so a whole-lb Target decodes onto
+ * the grid with no float drift and the lb readout reads back exact. The mm dimensions
+ * (ADR-0004) are the handoff `IRON` table; the precise values are not load-bearing
+ * (the sleeve scales them under one fit factor) but the descending ladder is.
+ */
+export const IRON_LB: readonly Plate[] = (
+  [
+    ['45', 450, 50],
+    ['35', 400, 44],
+    ['25', 330, 34],
+    ['10', 230, 24],
+    ['5', 195, 20],
+    ['2.5', 160, 17],
+  ] as const
+).map(([label, diameterMm, widthMm]) => ({
+  kg: lbToKg(Number(label)),
+  color: 'iron' as const,
+  label,
+  diameterMm,
+  widthMm,
+}));
 
 /** Default Bar weight (men's, kg). Swappable later (ADR-0002, ROADMAP). */
 export const DEFAULT_BAR_KG = 20;

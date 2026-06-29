@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import './setup.ts';
+import { lbToKg } from '../lib/units.ts';
 
 type Setup = HTMLElement & {
   barKg: number;
   collarKg: number;
+  plateSet: string;
   open(): void;
   close(): void;
 };
@@ -137,5 +139,43 @@ describe('<rack-setup> Collars section (RBAR-16, ADR-0008)', () => {
     expect(seen).toHaveBeenLastCalledWith(2.5);
     collarTile(root, 0).click();
     expect(seen).toHaveBeenLastCalledWith(0);
+  });
+});
+
+describe('<rack-setup> Plates section (RBAR-17, ADR-0010)', () => {
+  function platesetTile(root: ShadowRoot, key: string): HTMLButtonElement {
+    return root.querySelector<HTMLButtonElement>(`[data-plateset="${key}"]`)!;
+  }
+
+  it('renders Competition and Training tiles, Competition active by default', () => {
+    const { root } = mountSetup();
+    expect(platesetTile(root, 'comp').textContent).toContain('Competition');
+    expect(platesetTile(root, 'training').textContent).toContain('Training');
+    expect(platesetTile(root, 'comp').getAttribute('aria-pressed')).toBe('true');
+    expect(platesetTile(root, 'training').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('emits platesetchange when a plate-set tile is tapped', () => {
+    const { el, root } = mountSetup();
+    const seen = vi.fn();
+    el.addEventListener('platesetchange', (e) =>
+      seen((e as CustomEvent<{ plateSet: string }>).detail.plateSet),
+    );
+    platesetTile(root, 'training').click();
+    expect(seen).toHaveBeenLastCalledWith('training');
+  });
+
+  it('re-renders the Bar tiles for the active set: a single 45 lb Bar on Training', () => {
+    const { el, root } = mountSetup();
+    el.plateSet = 'training';
+    el.barKg = lbToKg(45);
+    // the kg tiles are gone; the one iron Bar tile reads in pounds
+    expect(root.querySelector('[data-bar="20"]')).toBeNull();
+    const ironTile = root.querySelector<HTMLButtonElement>(
+      `[data-bar="${lbToKg(45)}"]`,
+    )!;
+    expect(ironTile).toBeTruthy();
+    expect(ironTile.textContent).toContain('45');
+    expect(ironTile.getAttribute('aria-pressed')).toBe('true');
   });
 });

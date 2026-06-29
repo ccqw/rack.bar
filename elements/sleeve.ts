@@ -34,11 +34,13 @@ const MIN_DISC_PX = 10;
 const STACK_BELOW_MM = 30;
 const FALLBACK_SCALE = MAX_SCALE; // used when the host has no measured width yet
 
-// The visible disc caption. Lifters read "point five", so drop the leading zero on the
-// sub-1 change plates (0.5 -> .5) -- narrower and natural -- while 1.5 / 2.5 keep theirs.
-// The full "0.5 kg" still goes to assistive tech via the disc's aria-label.
-function plateLabel(kg: number): string {
-  return kg < 1 ? String(kg).replace(/^0/, '') : String(kg);
+// The visible disc caption. An iron Plate carries its own stamped lb `label` (e.g.
+// "45", "2.5"); a kg Eleiko Plate derives it from its kg. Lifters read "point five", so
+// drop the leading zero on the sub-1 change plates (0.5 -> .5) -- narrower and natural --
+// while 1.5 / 2.5 keep theirs. The full name still goes to assistive tech via aria-label.
+function plateLabel(plate: Plate): string {
+  if (plate.label !== undefined) return plate.label;
+  return plate.kg < 1 ? String(plate.kg).replace(/^0/, '') : String(plate.kg);
 }
 
 class RackSleeve extends HTMLElement {
@@ -93,15 +95,18 @@ class RackSleeve extends HTMLElement {
     const discs = this.plates
       .map((p) => {
         const style = `--disc: var(--rack-plate-${p.color}); --mm-d: ${p.diameterMm}; --mm-w: ${p.widthMm}`;
-        // Both modes expose the kg + color to assistive tech; only Encode adds the
-        // "Remove" verb. The on-disc digits are decorative (aria-label carries the name).
+        // The accessible name: an iron Plate is named by its stamped lb face ("45 lb
+        // iron"), an Eleiko Plate by its kg + color ("25 kg red"). Only Encode adds the
+        // "Remove" verb; the on-disc digits are decorative (aria-label carries the name).
+        const name =
+          p.label !== undefined ? `${p.label} lb iron` : `${p.kg} kg ${p.color}`;
         const aria = this.removable
-          ? ` aria-label="Remove ${p.kg} kg ${p.color} Plate"`
-          : ` aria-label="${p.kg} kg ${p.color} Plate"`;
+          ? ` aria-label="Remove ${name} Plate"`
+          : ` aria-label="${name} Plate"`;
         // On a thin change plate a horizontal number won't fit, so stack the digits one
         // per line; the bumpers keep their number horizontal. textContent is unchanged
-        // (the <br>s drop out), so the label still reads as the plain kg to tests + AT.
-        const text = plateLabel(p.kg);
+        // (the <br>s drop out), so the label still reads as the plain face to tests + AT.
+        const text = plateLabel(p);
         const labelHtml =
           p.widthMm < STACK_BELOW_MM && text.length > 1 ? [...text].join('<br>') : text;
         return `<${tag}${attrs} class="disc" data-kg="${p.kg}" data-color="${p.color}" style="${style}"${aria}><span class="label" aria-hidden="true">${labelHtml}</span></${tag}>`;
@@ -139,7 +144,8 @@ class RackSleeve extends HTMLElement {
         }
         .disc[data-color="red"] .label,
         .disc[data-color="blue"] .label,
-        .disc[data-color="green"] .label { color: #fff; }
+        .disc[data-color="green"] .label,
+        .disc[data-color="iron"] .label { color: #fff; }
         /* When interactive the disc is a <button>: strip the button chrome so it looks
            identical to the inert <div> disc, but keep it tappable. */
         button.disc {
