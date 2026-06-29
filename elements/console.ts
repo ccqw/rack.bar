@@ -22,7 +22,7 @@ import './share.ts';
 import './fullscreen.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
-import { DEFAULT_BAR_KG, barWithCollars } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, barWithCollars, atSleeveCapacity } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
@@ -68,7 +68,8 @@ class RackConsole extends HTMLElement {
   private fullscreen!: Fullscreen;
   private total!: HTMLElement;
   private secondary!: HTMLButtonElement;
-  private delta!: HTMLElement;
+  private status!: HTMLElement;
+  private statusLabel!: HTMLElement;
   private over!: HTMLButtonElement;
   private unitButtons!: NodeListOf<HTMLButtonElement>;
   private modeButtons!: NodeListOf<HTMLButtonElement>;
@@ -258,13 +259,35 @@ class RackConsole extends HTMLElement {
         }
         .secondary.off { opacity: .7; font-style: italic; }
         .secondary:focus-visible { outline: 2px solid var(--rack-accent); }
-        /* The "a few kg short" / "below the Bar" / "over target" note reads as a
-           quiet aside. Decode only. */
-        .readout .delta {
-          display: block; margin-top: 2px;
-          font-size: 13px; color: var(--rack-muted);
+        /* The status line: the Secondary readout with the status pill beside it, on one
+           centered row (handoff 4a, screenshot 01). Decode only. */
+        .statusline {
+          display: flex; align-items: center; justify-content: center;
+          gap: 9px; margin-top: 2px; min-height: 22px;
         }
-        .readout .delta[hidden] { display: none; }
+        /* The status pill (RBAR-28): the Total's Exact / N over / N short / Bar at
+           capacity indicator. A quiet uppercase mono pill with a state dot. Over is the
+           one solid variant (accent fill, ink text) -- the handoff's emphasis on going
+           over Target; the rest are outline pills. */
+        .status {
+          display: inline-flex; align-items: center; gap: 6px;
+          font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
+          letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
+          line-height: 1; border-radius: 999px; padding: 4px 10px;
+          color: var(--rack-muted);
+          background: transparent; border: 1px solid var(--rack-line-strong);
+        }
+        .status[hidden] { display: none; }
+        .status .dot {
+          width: 5px; height: 5px; border-radius: 999px; flex: none;
+          background: var(--rack-accent);
+        }
+        .status.exact .dot { background: var(--rack-success); }
+        .status.over {
+          color: var(--rack-accent-ink);
+          background: var(--rack-accent); border-color: var(--rack-accent);
+        }
+        .status.over .dot { display: none; }
         /* The over-target opt-in: a quiet, deliberately un-pushy round-up control
            (ADR-0003 -- never auto-selected). */
         .over {
@@ -320,8 +343,12 @@ class RackConsole extends HTMLElement {
             </div>
           </div>
           <output data-total>${DEFAULT_BAR_KG} kg</output>
-          <button type="button" class="secondary" data-secondary></button>
-          <span class="delta" data-delta hidden></span>
+          <div class="statusline">
+            <button type="button" class="secondary" data-secondary></button>
+            <span class="status" data-status hidden
+              ><span class="dot" aria-hidden="true"></span
+              ><span data-status-label></span></span>
+          </div>
         </div>
         <!-- The round-up opt-in sits under the Total (handoff 4a), above the Target block. -->
         <button type="button" class="over" data-over hidden></button>
@@ -350,7 +377,8 @@ class RackConsole extends HTMLElement {
     this.fullscreen = this.root.querySelector('rack-fullscreen') as Fullscreen;
     this.total = this.root.querySelector('[data-total]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
-    this.delta = this.root.querySelector('[data-delta]')!;
+    this.status = this.root.querySelector('[data-status]')!;
+    this.statusLabel = this.root.querySelector('[data-status-label]')!;
     this.over = this.root.querySelector('[data-over]')!;
     this.unitButtons = this.root.querySelectorAll('[data-unit]');
     this.modeButtons = this.root.querySelectorAll('[data-mode]');
@@ -549,19 +577,21 @@ class RackConsole extends HTMLElement {
       b.setAttribute('aria-pressed', String(b.dataset.mode === this.mode)),
     );
 
-    // The delta note and over opt-in are Decode-only, and only once a Target is typed.
+    // The status pill and over opt-in are Decode-only, and only once a Target is typed.
     // Both read off the DISPLAYED numbers in the active unit (ADR-0010 displayed-unit
-    // exactness): in kg this reduces to the raw delta, in lb it keeps "exact/under/over"
+    // exactness): in kg this reduces to the raw delta, in lb it keeps "exact/over/short"
     // honest to what is on screen.
     if (this.mode === 'decode' && this.decoded) {
       const { primary, over } = this.decoded;
       const shown = this.showingOver && over ? over : primary;
       const targetKg = primary.total - primary.delta;
-      this.renderDelta(shown, targetKg, shown === over, unit);
-      this.renderOver(over ?? null, primary, targetKg, unit);
+      const atCap = atSleeveCapacity(shown.side, this.inventory());
+      this.renderStatus(shown, targetKg, unit, atCap);
+      this.renderOver(over ?? null, primary, targetKg, unit, atCap);
     } else {
-      this.delta.hidden = true;
-      this.delta.textContent = '';
+      this.status.hidden = true;
+      this.status.className = 'status'; // drop any prior state class/label while hidden
+      this.statusLabel.textContent = '';
       this.over.hidden = true;
       this.over.textContent = '';
     }
@@ -592,32 +622,26 @@ class RackConsole extends HTMLElement {
     );
   }
 
-  // The delta note, keyed off the DISPLAYED numbers (ADR-0010). Compare the shown Total
-  // to the Target in the active unit: equal -> displayed-exact, hidden; shown under ->
-  // "N under target"; shown over -> the over-target option ("N over target") or, for the
-  // primary, the sub-baseline floor (the Target sits below the bare rig).
-  private renderDelta(shown: Loadout, targetKg: number, isOver: boolean, unit: Unit): void {
-    const dTarget = shownIn(targetKg, unit);
-    const dShown = shownIn(shown.total, unit);
-    if (dShown === dTarget) {
-      this.delta.hidden = true;
-      this.delta.textContent = '';
-      return;
-    }
-    this.delta.hidden = false;
-    if (dShown < dTarget) {
-      this.delta.textContent = `${fmtNum(dTarget - dShown)} ${unit} under target`;
-    } else if (isOver) {
-      this.delta.textContent = `${fmtNum(dShown - dTarget)} ${unit} over target`;
-    } else {
-      // The primary sits above the Target: the Target is below the bare rig (the floor).
-      // With collars on, the floor is Bar + 2 x collar, so name that baseline (ADR-0008),
-      // shown in the active unit so it is truthful about what the lifter can't go under.
-      this.delta.textContent =
-        this._collarKg > 0
-          ? `below the Bar + Collars (${format(this.baselineKg(), unit)})`
-          : `below the ${format(this._barKg, unit)} Bar`;
-    }
+  // The Total status pill (RBAR-28, handoff 4a), keyed off the DISPLAYED numbers
+  // (ADR-0010): the shown Total vs the Target, both rounded to the active unit, plus the
+  // physical sleeve-capacity flag. Always shown while a Target is decoded (Exact reads
+  // as a green pill, not a hidden one). The pill's `kind` rides a class so the CSS picks
+  // the dot colour / solid-vs-outline fill; the label rides the inner span.
+  private renderStatus(
+    shown: Loadout,
+    targetKg: number,
+    unit: Unit,
+    atCapacity: boolean,
+  ): void {
+    const { kind, label } = statusPill(
+      shownIn(shown.total, unit),
+      shownIn(targetKg, unit),
+      unit,
+      atCapacity,
+    );
+    this.status.hidden = false;
+    this.status.className = `status ${kind}`;
+    this.statusLabel.textContent = label;
   }
 
   // The over-target opt-in control (ADR-0003), in the active unit. Absent in Encode and
@@ -629,17 +653,25 @@ class RackConsole extends HTMLElement {
   // a unit toggle that makes the primary display exact would strand them over Target with
   // no path back (the ADR-0003 invariant). Offers: round up while on primary, back to
   // primary while on over -- so the lifter can step either way.
+  //
+  // `atCapacity` suppresses the round-up OFFER (not the way back): when the primary Side
+  // is physically full the status pill reads "Bar at capacity", and our uncapped decode
+  // (ADR-0003) would still hand back an `over` that can't actually be loaded -- offering
+  // "round up" beside a "Bar at capacity" pill would contradict it. The handoff engine
+  // omits `over` at the cap for the same reason; we drop it in the view, since our core
+  // does not cap.
   private renderOver(
     over: Loadout | null,
     primary: Loadout,
     targetKg: number,
     unit: Unit,
+    atCapacity: boolean,
   ): void {
     const dTarget = shownIn(targetKg, unit);
     const dPrimary = shownIn(primary.total, unit);
     const dOver = over ? shownIn(over.total, unit) : dPrimary;
     const noRoundUpToOffer = dPrimary === dTarget || dOver === dPrimary;
-    if (over === null || (!this.showingOver && noRoundUpToOffer)) {
+    if (over === null || (!this.showingOver && (noRoundUpToOffer || atCapacity))) {
       this.over.hidden = true;
       this.over.textContent = '';
       return;
@@ -655,6 +687,40 @@ class RackConsole extends HTMLElement {
 // "0.5000000001" or "0.50". Whole lb values pass through unchanged.
 function fmtNum(n: number): string {
   return String(Number(n.toFixed(2)));
+}
+
+/** The state the Total status pill is in (RBAR-28). */
+export type StatusKind = 'exact' | 'over' | 'short' | 'capacity';
+
+/** A resolved status pill: its `kind` (drives the styling) and its plain-language copy. */
+export interface Status {
+  readonly kind: StatusKind;
+  readonly label: string;
+}
+
+/**
+ * The Total readout's status pill (RBAR-28, handoff 4a), derived purely from the
+ * DISPLAYED numbers (ADR-0010) so it stays honest to what the lifter reads, never the
+ * raw kg delta. `shownTotal`/`shownTarget` are both already rounded to the active unit:
+ *
+ *   equal               -> Exact (a green-dot reassurance)
+ *   Total above Target  -> "N over" (the round-up opt-in AND the sub-baseline floor case)
+ *   Total below Target  -> "N short", or "Bar at capacity" when the Side is physically
+ *                          full (`atCapacity`) so the miss cannot be closed
+ *
+ * Capacity only overrides the SHORT reading -- an over or exact Total is never masked.
+ */
+export function statusPill(
+  shownTotal: number,
+  shownTarget: number,
+  unit: Unit,
+  atCapacity: boolean,
+): Status {
+  if (shownTotal === shownTarget) return { kind: 'exact', label: 'Exact' };
+  const mag = fmtNum(Math.abs(shownTotal - shownTarget));
+  if (shownTotal > shownTarget) return { kind: 'over', label: `${mag} ${unit} over` };
+  if (atCapacity) return { kind: 'capacity', label: 'Bar at capacity' };
+  return { kind: 'short', label: `${mag} ${unit} short` };
 }
 
 customElements.define('rack-console', RackConsole);

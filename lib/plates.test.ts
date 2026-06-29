@@ -3,7 +3,11 @@ import {
   ELEIKO_KG,
   IRON_LB,
   DEFAULT_BAR_KG,
+  SLEEVE_MM,
   sideLoadKg,
+  sideWidthMm,
+  minPlateWidthMm,
+  atSleeveCapacity,
   totalKg,
   barWithCollars,
 } from './plates.ts';
@@ -131,5 +135,46 @@ describe('the iron training plate set (RBAR-17, ADR-0010)', () => {
     const bar = lbToKg(45);
     const side = [IRON_LB[0]]; // one 45 lb plate per side
     expect(toLbWhole(totalKg(side, bar))).toBe(135);
+  });
+});
+
+describe('sleeve capacity (RBAR-28, view-layer physical cap)', () => {
+  it('exposes the usable per-Side sleeve length (handoff engine.js)', () => {
+    expect(SLEEVE_MM).toBe(415);
+  });
+
+  it('sums Plate thickness on one Side, in millimetres', () => {
+    // 25 (58) + 15 (39) = 97 mm.
+    const side = [ELEIKO_KG[0], ELEIKO_KG[2]];
+    expect(sideWidthMm(side)).toBe(58 + 39);
+    expect(sideWidthMm([])).toBe(0);
+  });
+
+  it('finds the narrowest Plate in a set (the smallest width that still fits)', () => {
+    // The 2.5 kg change plate is the thinnest Eleiko at 15 mm.
+    expect(minPlateWidthMm(ELEIKO_KG)).toBe(15);
+  });
+
+  it('reads an empty and a lightly-loaded Side as having room', () => {
+    expect(atSleeveCapacity([], ELEIKO_KG)).toBe(false);
+    expect(atSleeveCapacity([ELEIKO_KG[0]], ELEIKO_KG)).toBe(false); // one 25, 58 mm
+  });
+
+  it('treats an empty plate set as not-at-capacity (no Plate to add, no Infinity trap)', () => {
+    // Math.min() of nothing is Infinity; guard it so an empty Inventory does not report
+    // every Side as full (mirrors decode.ts's empty-Inventory guard).
+    expect(atSleeveCapacity([ELEIKO_KG[0]], [])).toBe(false);
+    expect(minPlateWidthMm([])).toBe(Infinity); // documents the underlying trap
+  });
+
+  it('flags a Side as full when not even the narrowest Plate would fit', () => {
+    // Stack 25 kg bumpers (58 mm each) until the narrowest (15 mm) no longer fits
+    // within 415 mm: 7 x 58 = 406, and 406 + 15 = 421 > 415 -> full.
+    const seven = Array(7).fill(ELEIKO_KG[0]);
+    expect(sideWidthMm(seven)).toBe(406);
+    expect(atSleeveCapacity(seven, ELEIKO_KG)).toBe(true);
+    // Six (348 mm) still leaves room for a 15 mm plate (348 + 15 = 363 <= 415).
+    const six = Array(6).fill(ELEIKO_KG[0]);
+    expect(atSleeveCapacity(six, ELEIKO_KG)).toBe(false);
   });
 });

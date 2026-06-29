@@ -90,6 +90,47 @@ export const IRON_LB: readonly Plate[] = (
 /** Default Bar weight (men's, kg). Swappable later (ADR-0002, ROADMAP). */
 export const DEFAULT_BAR_KG = 20;
 
+/**
+ * Usable sleeve length per Side, in millimetres (handoff engine.js). A real Bar runs
+ * out of room before it runs out of Plates, so this is the physical cap the view reads
+ * to flag "Bar at capacity" (RBAR-28). The decode core (ADR-0003) is deliberately
+ * UNLIMITED -- it never enforces this -- so the cap is a pure view-layer derivation,
+ * exactly like the prototype's `vm()`. A future sleeve-capped solver would consume it.
+ */
+export const SLEEVE_MM = 415;
+
+// A hair of tolerance on the width comparison so a future fractional Plate can't be
+// defeated by floating-point drift (mirrors decode's EPS).
+const WIDTH_EPS = 1e-9;
+
+/** Total Plate thickness on one Side, in millimetres -- the sleeve-cap measure. */
+export function sideWidthMm(side: readonly Plate[]): number {
+  return side.reduce((mm, p) => mm + p.widthMm, 0);
+}
+
+/** The narrowest Plate in a set (mm) -- the smallest width that could still be added. */
+export function minPlateWidthMm(plates: readonly Plate[]): number {
+  return Math.min(...plates.map((p) => p.widthMm));
+}
+
+/**
+ * Whether one Side is physically full: not even the narrowest Plate of `set` would fit
+ * within SLEEVE_MM on top of the current Side (RBAR-28). A pure check on the rendered
+ * widths -- the decode core does not cap, so the view reads this to show "Bar at
+ * capacity" in place of an unclosable "N short".
+ */
+export function atSleeveCapacity(
+  side: readonly Plate[],
+  set: readonly Plate[],
+): boolean {
+  // An empty set has no Plate to add at all, which is not a sleeve-room problem -- and
+  // guarding it keeps minPlateWidthMm's Math.min() from returning Infinity and reporting
+  // every Side as "full" (the same empty-Inventory trap decode.ts guards). A future
+  // custom Inventory (ADR-0002) can reach this; today's hard-coded sets never do.
+  if (set.length === 0) return false;
+  return sideWidthMm(side) + minPlateWidthMm(set) > SLEEVE_MM + WIDTH_EPS;
+}
+
 /** Total weight of a Side Load — the Plates on one Side — in kilograms. */
 export function sideLoadKg(plates: readonly Plate[]): number {
   return plates.reduce((sum, p) => sum + p.kg, 0);
