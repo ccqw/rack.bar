@@ -776,3 +776,89 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
     expect(total(el)).toBe('45 lb'); // bare 45 lb iron Bar, no Plates
   });
 });
+
+// The share card (RBAR-19, ADR-0011): the console owns the card, snapshots its current
+// load, and feeds it. Opening the card in By-Weight mode also remembers the shown Target
+// (the third recents push site -- closes the RBAR-20 deferred seam, ADR-0009/0011).
+function shareCard(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('rack-share')!;
+}
+function shareBtn(el: HTMLElement): HTMLButtonElement {
+  return el.shadowRoot!.querySelector<HTMLButtonElement>('[data-share]')!;
+}
+function shareText(el: HTMLElement, sel: string): string {
+  return shareCard(el).shadowRoot!.querySelector<HTMLElement>(sel)!.textContent!.trim();
+}
+function shareChips(el: HTMLElement): string[] {
+  return [
+    ...shareCard(el).shadowRoot!.querySelectorAll<HTMLElement>('[data-chip]'),
+  ].map((c) => c.textContent!.trim());
+}
+describe('<rack-console> (Share card)', () => {
+  it('a Share control opens the card, hidden until then', () => {
+    const el = mountConsole();
+    expect(shareCard(el).hidden).toBe(true);
+    shareBtn(el).click();
+    expect(shareCard(el).hidden).toBe(false);
+  });
+
+  it('the card reflects the current Decode load: Total and per-Side chips', () => {
+    const el = mountConsole();
+    type(el, '100'); // 20 Bar + 25 + 15 per side
+    shareBtn(el).click();
+    expect(shareText(el, '[data-total]')).toBe('100 kg');
+    expect(shareChips(el)).toEqual(['25', '15']);
+  });
+
+  it('the card reflects a hand-built Encode load', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 25);
+    shareBtn(el).click();
+    expect(shareText(el, '[data-total]')).toBe('120 kg'); // 20 + 2*(25+25)
+    expect(shareChips(el)).toEqual(['2x 25']);
+  });
+
+  it('shows the bare-bar state when nothing is loaded', () => {
+    const el = mountConsole();
+    shareBtn(el).click();
+    expect(shareChips(el)).toHaveLength(0);
+    expect(shareText(el, '[data-bare]')).toContain('Bare bar');
+  });
+
+  it('reads the card in the active display Unit', () => {
+    const el = mountConsole();
+    type(el, '100'); // 100 kg Target in the default kg display
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    shareBtn(el).click();
+    expect(shareText(el, '[data-total]')).toBe('220 lb');
+    expect(shareText(el, '[data-secondary]')).toBe('100 kg');
+  });
+
+  it('opening the card in By-Weight remembers the shown Target (RBAR-20 seam)', () => {
+    const el = mountConsole();
+    type(el, '100'); // typed but keypad not closed -- not yet remembered
+    expect(recentLabels(el)).toEqual([]);
+    shareBtn(el).click();
+    expect(recentLabels(el)).toEqual([100]); // the open pushed it (kg-canonical)
+  });
+
+  it('opening the card in By-Plates remembers nothing (no Target there)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    shareBtn(el).click();
+    expect(recentLabels(el)).toEqual([]);
+  });
+
+  it('closing the card from within dismisses it', () => {
+    const el = mountConsole();
+    shareBtn(el).click();
+    expect(shareCard(el).hidden).toBe(false);
+    shareCard(el)
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-close]')!
+      .click();
+    expect(shareCard(el).hidden).toBe(true);
+  });
+});
