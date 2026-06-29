@@ -30,10 +30,10 @@ kg is therefore **no longer the sole canonical Unit** (ADR-0006 relaxed). Instea
   second solver exists. The Unit is a property of how a set is *shown and entered*,
   resolved at the shell boundary; the core never sees a Unit.
 - The greedy loader is **unchanged**, and ADR-0003's at-or-under correctness still
-  holds for the iron set: greedy heaviest-first equals the true greatest-achievable
-  total at or under target was verified exhaustively for {45,35,25,10,5,2.5} lb
-  across the whole reachable per-Side range (a regression test ships with this
-  slice). The iron set is canonical, like Eleiko -- no search needed.
+  holds for the iron set: that greedy heaviest-first equals the true greatest-achievable
+  total at or under target was verified against a DP oracle for {45,35,25,10,5,2.5} lb
+  across every reachable total up to 405 lb (the regression test's bound; well past any
+  real load). The iron set is canonical, like Eleiko -- no search needed.
 
 So the core change is small: `decode` already takes an `inventory` parameter
 (ADR-0002); the iron set is just a different array passed to it. The Plate model

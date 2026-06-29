@@ -64,8 +64,9 @@ export const ELEIKO_KG: readonly Plate[] = [
 /**
  * The plain-iron training Inventory (RBAR-17, ADR-0010): the standard US gym set,
  * stamped in pounds, heaviest-first. Each Plate's true `kg` mass is DERIVED from its
- * lb `label` through the exact factor (`lbToKg`), so a whole-lb Target decodes onto
- * the grid with no float drift and the lb readout reads back exact. The mm dimensions
+ * lb `label` through the exact factor (`lbToKg`), so a whole-lb Target decodes onto the
+ * grid -- the residual float drift between target and achieved sum stays far below the
+ * loader's 1e-9 epsilon -- and the whole-lb readout rounds back exact. The mm dimensions
  * (ADR-0004) are the handoff `IRON` table; the precise values are not load-bearing
  * (the sleeve scales them under one fit factor) but the descending ladder is.
  */

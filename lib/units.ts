@@ -5,8 +5,10 @@
 //
 // Drawn from the design handoff engine (engine.js: LB / draftToKg / toLbWhole /
 // stepFor), reviewed for fit. The exact factor is the kg-per-lb form (ADR-0006's
-// 0.45359237) rather than the engine's reciprocal, so an entered whole-lb weight
-// maps to a kg value the iron masses (also derived from it) land on exactly.
+// 0.45359237) rather than the engine's reciprocal, so an entered whole-lb weight and the
+// iron masses (also derived from it) agree to within the loader's epsilon -- floating
+// point is not associative, so the residual drift is real but sub-1e-9 (decode's EPS),
+// and the whole-lb readout rounds it away (see toLbWhole).
 
 /** The Unit a weight is shown and entered in (CONTEXT.md). kg is canonical internally. */
 export type Unit = 'kg' | 'lb';

@@ -111,13 +111,15 @@ class RackApp extends HTMLElement {
     this.pillLabel = this.root.querySelector('[data-pill-label]')!;
 
     // Seed every surface from the (possibly persisted) plate set, Bar, and Collar. Push
-    // the plate set first so the console adopts the right Inventory/Unit, then the Bar.
-    this.console.plateSet = this.plateSetKey;
+    // the Bar before the plate set, matching adoptPlateSet's invariant ("set barKg first
+    // so a re-decode sees it") -- harmless at init (no standing Target yet), but keeping
+    // one ordering rule everywhere avoids a stale-Bar transient if that ever changes.
     this.console.barKg = this.barKg;
     this.console.collarKg = this.collarKg;
-    this.setup.plateSet = this.plateSetKey;
+    this.console.plateSet = this.plateSetKey;
     this.setup.barKg = this.barKg;
     this.setup.collarKg = this.collarKg;
+    this.setup.plateSet = this.plateSetKey;
     this.relabel();
 
     this.pill.addEventListener('click', () => {

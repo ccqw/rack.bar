@@ -675,6 +675,24 @@ describe('<rack-console> display unit toggle (RBAR-17, ADR-0010)', () => {
     expect(over(el).hidden).toBe(true);
   });
 
+  it('keeps the round-up control reachable after a unit toggle while parked on over (ADR-0003)', () => {
+    // The two state machines crossing: choose the over loadout, then toggle units to a
+    // unit where the primary now DISPLAYS exact. The over control must not vanish -- it is
+    // the only way back to the at-or-under primary, so hiding it would strand the lifter
+    // over Target with no path back (100.01 kg -> primary 100, over 101; in lb both the
+    // primary and the Target display 220, which pre-fix hid the control).
+    const el = mountConsole();
+    type(el, '100.01'); // off-grid: primary 100 kg, over 101 kg
+    over(el).click(); // round up -> on the 101 kg over loadout
+    expect(total(el)).toBe('101 kg');
+    unitBtn(el, 'lb').click(); // primary now displays 220 lb == Target 220 lb
+    expect(total(el)).toBe('223 lb'); // still parked on the over loadout
+    expect(over(el).hidden).toBe(false); // the way back is still offered
+    over(el).click(); // step back to the at-or-under primary
+    expect(total(el)).toBe('220 lb');
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+  });
+
   it('shows a pounds under-target note when the displayed pounds really miss', () => {
     const el = mountConsole();
     unitBtn(el, 'lb').click();
@@ -717,6 +735,22 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
     el.plateSet = 'comp';
     expect(unitBtn(el, 'kg').disabled).toBe(false); // free again
     expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true'); // remembered lb pref
+  });
+
+  it('re-solves a standing Decode Target against the new set when the plate set changes', () => {
+    // A Decode Target is unit-agnostic kg, so switching the set does NOT clear it (unlike
+    // a hand-built Encode loadout): the same ~100 kg Target re-solves on the iron rig.
+    const el = mountConsole();
+    type(el, '100'); // comp: 25 + 15 Eleiko, exact
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    // the Target persisted and re-solved on iron: a non-empty all-iron Side Load, in lb,
+    // and not the bare 45 lb Bar
+    expect(discs(el).length).toBeGreaterThan(0);
+    expect(discs(el).every((d) => d.dataset.color === 'iron')).toBe(true);
+    expect(total(el)).toContain('lb');
+    expect(total(el)).not.toBe('45 lb');
   });
 
   it('swaps the Encode palette to the iron denominations on Training', () => {

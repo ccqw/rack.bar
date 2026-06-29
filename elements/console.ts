@@ -522,11 +522,15 @@ class RackConsole extends HTMLElement {
     }
   }
 
-  // The over-target opt-in control (ADR-0003), in the active unit. Absent in Encode, when
-  // there is no over option, when the primary already DISPLAYS exact (a sub-display-unit
-  // miss the lifter can't feel -- ADR-0010), or when rounding up would not change the
-  // displayed Total. Otherwise it offers the other Loadout: round up to over while on
-  // primary, or drop back to primary while on over -- so the lifter can step either way.
+  // The over-target opt-in control (ADR-0003), in the active unit. Absent in Encode and
+  // when there is no over option. While the lifter is NOT on the over loadout it is the
+  // round-up offer, hidden when the primary already DISPLAYS exact (a sub-display-unit
+  // miss the lifter can't feel -- ADR-0010) or when rounding up would not change the
+  // displayed Total. While the lifter IS on the over loadout (`showingOver`) the control
+  // is their only way back to the at-or-under primary, so it must ALWAYS show -- otherwise
+  // a unit toggle that makes the primary display exact would strand them over Target with
+  // no path back (the ADR-0003 invariant). Offers: round up while on primary, back to
+  // primary while on over -- so the lifter can step either way.
   private renderOver(
     over: Loadout | null,
     primary: Loadout,
@@ -536,14 +540,15 @@ class RackConsole extends HTMLElement {
     const dTarget = shownIn(targetKg, unit);
     const dPrimary = shownIn(primary.total, unit);
     const dOver = over ? shownIn(over.total, unit) : dPrimary;
-    if (over === null || dPrimary === dTarget || dOver === dPrimary) {
+    const noRoundUpToOffer = dPrimary === dTarget || dOver === dPrimary;
+    if (over === null || (!this.showingOver && noRoundUpToOffer)) {
       this.over.hidden = true;
       this.over.textContent = '';
       return;
     }
     this.over.hidden = false;
     this.over.textContent = this.showingOver
-      ? `Back to ${format(primary.total, unit)} (under target)`
+      ? `Back to ${format(primary.total, unit)}`
       : `Round up to ${format(over.total, unit)} (+${fmtNum(dOver - dTarget)})`;
   }
 }
