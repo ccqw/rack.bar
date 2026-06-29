@@ -296,11 +296,11 @@ class RackConsole extends HTMLElement {
           <button type="button" data-mode="decode" aria-pressed="true">By Weight</button>
           <button type="button" data-mode="encode" aria-pressed="false">By Plates</button>
         </div>
-        <rack-entry></rack-entry>
-        <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
-             (RBAR-20). Hidden until the lifter has committed a Target. -->
-        <rack-recents hidden></rack-recents>
-        <rack-palette hidden></rack-palette>
+        <!-- The bar is the hero (RBAR-25, handoff section 3 + 4a/4b): the sleeve sits
+             directly under the mode toggle, with the Total readout and the round-up
+             immediately below it, THEN the editors (Target entry / Recents in By Weight,
+             the Add palette in By Plates). One DOM order serves both modes -- the editors
+             toggle by the hidden attribute, so the visible column reads right either way. -->
         <div class="viz">
           <button type="button" class="fullscreen" data-fullscreen aria-label="Full screen">
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -323,7 +323,13 @@ class RackConsole extends HTMLElement {
           <button type="button" class="secondary" data-secondary></button>
           <span class="delta" data-delta hidden></span>
         </div>
+        <!-- The round-up opt-in sits under the Total (handoff 4a), above the Target block. -->
         <button type="button" class="over" data-over hidden></button>
+        <rack-entry></rack-entry>
+        <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
+             (RBAR-20). Hidden until the lifter has committed a Target. -->
+        <rack-recents hidden></rack-recents>
+        <rack-palette hidden></rack-palette>
         <button type="button" class="share" data-share>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M8 10V2M8 2L5 5M8 2l3 3M3 9v3a2 2 0 002 2h6a2 2 0 002-2V9"
