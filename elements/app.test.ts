@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './app.ts';
+import { lbToKg } from '../lib/units.ts';
 
-type WithBar = HTMLElement & { barKg: number; collarKg: number };
+type WithBar = HTMLElement & { barKg: number; collarKg: number; plateSet: string };
 
 function mountApp(): { el: HTMLElement; root: ShadowRoot } {
   const el = document.createElement('rack-app');
@@ -14,7 +15,12 @@ function pill(root: ShadowRoot): HTMLButtonElement {
 }
 function setup(
   root: ShadowRoot,
-): HTMLElement & { barKg: number; collarKg: number; hidden: boolean } {
+): HTMLElement & {
+  barKg: number;
+  collarKg: number;
+  plateSet: string;
+  hidden: boolean;
+} {
   return root.querySelector('rack-setup')!;
 }
 function consoleEl(root: ShadowRoot): WithBar {
@@ -220,5 +226,60 @@ describe('<rack-app> Collars wiring (RBAR-16, ADR-0008)', () => {
     expect(consoleEl(root).collarKg).toBe(2.5);
     expect(localStorage.getItem(KEY)).toBe('15');
     expect(localStorage.getItem(COLLAR_KEY)).toBe('2.5');
+  });
+});
+
+describe('<rack-app> plate-set wiring (RBAR-17, ADR-0010)', () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => vi.restoreAllMocks());
+
+  const PLATESET_KEY = 'rackbar.plateSet';
+
+  function choosePlateset(root: ShadowRoot, key: string): void {
+    setup(root)
+      .shadowRoot!.querySelector<HTMLButtonElement>(`[data-plateset="${key}"]`)!
+      .click();
+  }
+
+  it('defaults to Competition, threaded to the console and sheet', () => {
+    const { root } = mountApp();
+    expect(consoleEl(root).plateSet).toBe('comp');
+    expect(setup(root).plateSet).toBe('comp');
+  });
+
+  it('choosing Training swaps the Bar to 45 lb, threads the set, and persists both', () => {
+    const { root } = mountApp();
+    pill(root).click();
+    choosePlateset(root, 'training');
+    expect(consoleEl(root).plateSet).toBe('training');
+    expect(consoleEl(root).barKg).toBe(lbToKg(45)); // the set's default Bar
+    expect(pill(root).textContent).toContain('45'); // "45 lb bar"
+    expect(localStorage.getItem(PLATESET_KEY)).toBe('training');
+    expect(localStorage.getItem(KEY)).toBe(String(lbToKg(45)));
+  });
+
+  it('restores a persisted Training set on init (set + its default Bar)', () => {
+    localStorage.setItem(PLATESET_KEY, 'training');
+    localStorage.setItem(KEY, String(lbToKg(45)));
+    const { root } = mountApp();
+    expect(consoleEl(root).plateSet).toBe('training');
+    expect(consoleEl(root).barKg).toBe(lbToKg(45));
+    expect(pill(root).textContent).toContain('45');
+  });
+
+  it('falls back to Competition when the persisted plate set is off-menu', () => {
+    localStorage.setItem(PLATESET_KEY, 'bogus');
+    const { root } = mountApp();
+    expect(consoleEl(root).plateSet).toBe('comp');
+    expect(consoleEl(root).barKg).toBe(20);
+  });
+
+  it('keeps a switched-back Competition Bar valid (off-set kg Bar rejected on Training)', () => {
+    // A persisted 15 kg Bar is valid only on Competition; if the set is Training it must
+    // not load (an iron rig has no 15 kg bar), falling back to the Training default.
+    localStorage.setItem(PLATESET_KEY, 'training');
+    localStorage.setItem(KEY, '15');
+    const { root } = mountApp();
+    expect(consoleEl(root).barKg).toBe(lbToKg(45)); // 15 kg is off-menu for Training
   });
 });

@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import './console.ts';
+import { lbToKg } from '../lib/units.ts';
 
-type Console = HTMLElement & { barKg: number; collarKg: number };
+type Console = HTMLElement & {
+  barKg: number;
+  collarKg: number;
+  plateSet: string;
+};
 
 function mountConsole(): Console {
   const el = document.createElement('rack-console') as Console;
@@ -605,5 +610,169 @@ describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
     expect(recentsEl(el).hidden).toBe(true); // recents are a Decode affordance
     modeBtn(el, 'decode').click();
     expect(recentsEl(el).hidden).toBe(false);
+  });
+});
+
+// -- kg|lb display unit + plate set (RBAR-17, ADR-0010) ------------------------------
+const UNIT_KEY = 'rackbar.unit';
+const SECONDARY_KEY = 'rackbar.secondary';
+
+function unitBtn(el: HTMLElement, unit: 'kg' | 'lb'): HTMLButtonElement {
+  return el.shadowRoot!.querySelector<HTMLButtonElement>(`[data-unit="${unit}"]`)!;
+}
+function secondaryEl(el: HTMLElement): HTMLButtonElement {
+  return el.shadowRoot!.querySelector<HTMLButtonElement>('[data-secondary]')!;
+}
+
+describe('<rack-console> display unit toggle (RBAR-17, ADR-0010)', () => {
+  it('defaults to kg and reads the Total in kg', () => {
+    const el = mountConsole();
+    expect(unitBtn(el, 'kg').getAttribute('aria-pressed')).toBe('true');
+    expect(total(el)).toBe('20 kg');
+  });
+
+  it('toggling to lb re-reads the Total in pounds and entry follows', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true');
+    expect(total(el)).toBe('44 lb'); // a bare 20 kg Bar reads 44 lb
+    // the entry caption follows the unit
+    expect(
+      entry(el).shadowRoot!.querySelector('[data-caption]')!.textContent,
+    ).toBe('Target (lb)');
+  });
+
+  it('persists the Primary unit and restores it on init', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    expect(localStorage.getItem(UNIT_KEY)).toBe('lb');
+    el.remove();
+    const el2 = mountConsole();
+    expect(unitBtn(el2, 'lb').getAttribute('aria-pressed')).toBe('true');
+    expect(total(el2)).toBe('44 lb');
+  });
+
+  it('shows the Secondary readout in the other unit, hideable and persisted', () => {
+    const el = mountConsole();
+    const sec = secondaryEl(el);
+    expect(sec.textContent).toBe('44 lb'); // kg primary -> lb secondary
+    sec.click(); // hide it
+    expect(sec.textContent).toContain('Show');
+    expect(localStorage.getItem(SECONDARY_KEY)).toBe('0');
+    el.remove();
+    const el2 = mountConsole();
+    expect(secondaryEl(el2).textContent).toContain('Show'); // stays hidden
+  });
+
+  it('keys the under-target note off the DISPLAYED pounds, not the raw kg delta', () => {
+    // 311 lb decodes to a 141 kg bar that reads back as 311 lb -- displayed-exact, even
+    // though it is 0.15 lb under in raw kg. The note and the round-up must both hide.
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    type(el, '311');
+    expect(total(el)).toBe('311 lb');
+    expect(delta(el).hidden).toBe(true);
+    expect(over(el).hidden).toBe(true);
+  });
+
+  it('keeps the round-up control reachable after a unit toggle while parked on over (ADR-0003)', () => {
+    // The two state machines crossing: choose the over loadout, then toggle units to a
+    // unit where the primary now DISPLAYS exact. The over control must not vanish -- it is
+    // the only way back to the at-or-under primary, so hiding it would strand the lifter
+    // over Target with no path back (100.01 kg -> primary 100, over 101; in lb both the
+    // primary and the Target display 220, which pre-fix hid the control).
+    const el = mountConsole();
+    type(el, '100.01'); // off-grid: primary 100 kg, over 101 kg
+    over(el).click(); // round up -> on the 101 kg over loadout
+    expect(total(el)).toBe('101 kg');
+    unitBtn(el, 'lb').click(); // primary now displays 220 lb == Target 220 lb
+    expect(total(el)).toBe('223 lb'); // still parked on the over loadout
+    expect(over(el).hidden).toBe(false); // the way back is still offered
+    over(el).click(); // step back to the at-or-under primary
+    expect(total(el)).toBe('220 lb');
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+  });
+
+  it('shows a pounds under-target note when the displayed pounds really miss', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    // 310 lb = 140.6 kg; nearest Eleiko at-or-under is 140 kg, which reads 309 lb -- a
+    // real 1 lb miss in displayed pounds (not a sub-display-unit rounding miss).
+    type(el, '310');
+    expect(total(el)).toBe('309 lb');
+    const note = delta(el);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain('lb');
+    expect(note.textContent!.toLowerCase()).toContain('under');
+    // and the round-up to the next pound is offered
+    expect(over(el).hidden).toBe(false);
+    expect(over(el).textContent!.toLowerCase()).toContain('round up');
+  });
+});
+
+describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
+  it('decodes against the iron Inventory and forces lb when Training is chosen', () => {
+    const el = mountConsole();
+    el.barKg = lbToKg(45); // the app pairs the set with its default Bar
+    el.plateSet = 'training';
+    // unit is forced to lb and the toggle is locked
+    expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true');
+    expect(unitBtn(el, 'kg').disabled).toBe(true);
+    expect(unitBtn(el, 'lb').disabled).toBe(true);
+    // a whole-lb Target lands exactly on the iron grid
+    type(el, '135'); // 45 lb Bar + one 45 lb pair
+    expect(total(el)).toBe('135 lb');
+    expect(discs(el).length).toBe(1);
+  });
+
+  it('restores a free kg|lb toggle when switching back to Competition', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click(); // free lb choice on Competition, persisted as the pref
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training'; // forced lb (toggle locked)
+    expect(unitBtn(el, 'kg').disabled).toBe(true);
+    el.barKg = 20;
+    el.plateSet = 'comp';
+    expect(unitBtn(el, 'kg').disabled).toBe(false); // free again
+    expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true'); // remembered lb pref
+  });
+
+  it('re-solves a standing Decode Target against the new set when the plate set changes', () => {
+    // A Decode Target is unit-agnostic kg, so switching the set does NOT clear it (unlike
+    // a hand-built Encode loadout): the same ~100 kg Target re-solves on the iron rig.
+    const el = mountConsole();
+    type(el, '100'); // comp: 25 + 15 Eleiko, exact
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    // the Target persisted and re-solved on iron: a non-empty all-iron Side Load, in lb,
+    // and not the bare 45 lb Bar
+    expect(discs(el).length).toBeGreaterThan(0);
+    expect(discs(el).every((d) => d.dataset.color === 'iron')).toBe(true);
+    expect(total(el)).toContain('lb');
+    expect(total(el)).not.toBe('45 lb');
+  });
+
+  it('swaps the Encode palette to the iron denominations on Training', () => {
+    const el = mountConsole();
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    modeBtn(el, 'encode').click();
+    const keys = [
+      ...palette(el).shadowRoot!.querySelectorAll<HTMLButtonElement>('.key'),
+    ].map((k) => k.textContent);
+    expect(keys).toEqual(['45', '35', '25', '10', '5', '2.5']);
+  });
+
+  it('clears a hand-built Encode loadout when the plate set changes (Plates do not cross sets)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 20); // an Eleiko loadout
+    expect(discs(el).length).toBe(2);
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training'; // iron rig -- the Eleiko Plates are gone
+    expect(discs(el).length).toBe(0);
+    expect(total(el)).toBe('45 lb'); // bare 45 lb iron Bar, no Plates
   });
 });

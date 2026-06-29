@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import './entry.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
+import { lbToKg, shownIn } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
 
 type Entry = HTMLElement & {
   display(value: number | null): void;
   barKg: number;
+  unit: Unit;
 };
 
 function mountEntry(): { el: Entry; root: ShadowRoot } {
@@ -265,5 +268,64 @@ describe('<rack-entry>', () => {
     expect(root.querySelector('[data-value]')!.textContent).toContain('50');
     el.display(null);
     expect(seen).not.toHaveBeenCalled();
+  });
+
+  describe('display Unit (RBAR-17, ADR-0010)', () => {
+    function valueText(root: ShadowRoot): string {
+      return root.querySelector<HTMLElement>('[data-value]')!.textContent ?? '';
+    }
+
+    it('captions the field with the active Unit', () => {
+      const { el, root } = mountEntry();
+      expect(root.querySelector('[data-caption]')!.textContent).toBe('Target (kg)');
+      el.unit = 'lb';
+      expect(root.querySelector('[data-caption]')!.textContent).toBe('Target (lb)');
+    });
+
+    it('shows the seeded Bar anchor in the active Unit (20 kg -> 44 lb)', () => {
+      const { el, root } = mountEntry();
+      el.unit = 'lb';
+      expect(valueText(root)).toBe('44'); // toLbWhole(20)
+    });
+
+    it('parses a typed lb entry to a canonical kg Target', () => {
+      const { el, root } = mountEntry();
+      el.unit = 'lb';
+      const seen = targetSpy(el);
+      ['1', '3', '5'].forEach((k) => key(root, k));
+      expect(seen).toHaveBeenLastCalledWith(lbToKg(135));
+    });
+
+    it('steps by 5 lb in lb mode (the US-gym increment)', () => {
+      const { el, root } = mountEntry();
+      el.unit = 'lb';
+      el.display(lbToKg(135)); // shows 135
+      const seen = targetSpy(el);
+      tap(root, '[data-step="inc"]');
+      expect(valueText(root)).toBe('140');
+      expect(seen).toHaveBeenLastCalledWith(lbToKg(140));
+    });
+
+    it('reformats the SAME canonical weight on a Unit switch (no re-parse)', () => {
+      const { el, root } = mountEntry();
+      ['1', '0', '0'].forEach((k) => key(root, k)); // 100 kg
+      el.unit = 'lb';
+      expect(valueText(root)).toBe(String(shownIn(100, 'lb'))); // 220
+    });
+
+    it('round-trips kg -> lb -> kg without drift (canonical preserved)', () => {
+      const { el, root } = mountEntry();
+      ['1', '0', '0'].forEach((k) => key(root, k)); // 100 kg
+      el.unit = 'lb'; // shows 220
+      el.unit = 'kg'; // must return to 100, not 99.79 (220 lb re-parsed)
+      expect(valueText(root)).toBe('100');
+    });
+
+    it('seeds display() in the active Unit', () => {
+      const { el, root } = mountEntry();
+      el.unit = 'lb';
+      el.display(lbToKg(225));
+      expect(valueText(root)).toBe('225');
+    });
   });
 });

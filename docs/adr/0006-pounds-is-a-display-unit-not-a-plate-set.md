@@ -72,3 +72,23 @@ will record that model and how the plate-set switch reconciles with the kg|lb di
 toggle (design intent: choosing a set forces its Unit). Until that ADR lands, the
 decision recorded above governs the **Competition (kg/Eleiko) path only** and is not
 superseded for it.
+
+## 2026-06-28 -- superseded by ADR-0010 (RBAR-17 shipped)
+
+The follow-up ADR promised above is **ADR-0010** ("Plate sets carry their own native
+Unit and Inventory"). It now governs. Two specifics in this record are superseded:
+
+- The **plate-set boundary** ("pounds is a display unit, _not_ a plate set; the lb
+  plate set stays parked") -- ADR-0010 ships the real iron Training set. kg is no
+  longer the sole canonical Unit; each set carries its own native Unit + Inventory +
+  Bars, while the solver core stays kg internally.
+- The **persistence ownership sketch** ("Primary unit + show-Secondary are the app's
+  only persisted state, app-side"). ADR-0010 moves the Unit display state
+  **console-side** (`rackbar.unit` / `rackbar.secondary`), with the app owning rig
+  config (`barKg` / `collarKg` / `plateSet`). Read this ADR's note as its principle
+  -- config persists in the shell, never the core -- not its literal ownership/count.
+
+What still stands from this ADR, carried into ADR-0010 unchanged: the Primary/
+Secondary lifter model, the exact 0.45359237 factor with whole-pound lb rounding,
+the 5 lb / 1 kg steppers, and **displayed-unit exactness** (the under/over notes key
+off the rounded numbers on screen, not the raw kg delta).

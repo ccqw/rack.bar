@@ -6,13 +6,19 @@
 // shape as the Setup tiles (ADR-0007). The console owns the list, its persistence, and
 // its dedupe/cap (lib/recents, ADR-0009).
 //
-// Targets are kilograms (the canonical store, ADR-0006); the chips read in kg until the
-// Primary-unit layer lands (RBAR-17), at which point this is where the kg|lb format hooks.
+// Targets are kilograms (the canonical store, ADR-0006/0009); the chips render in the
+// console's active display Unit (RBAR-17, ADR-0010) -- this is the kg|lb format hook the
+// earlier slices anticipated. The `data-target` stays canonical kg, so re-apply is
+// Unit-agnostic; only the visible label and aria change Unit.
+import { format } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
+
 class RackRecents extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private rail!: HTMLElement;
 
   private _targets: readonly number[] = [];
+  private _unit: Unit = 'kg';
 
   /** The recent Targets to show, most-recent-first (kg). Assigning re-renders the row
    * and hides the element entirely when the history is empty (no stray empty rail). */
@@ -22,6 +28,15 @@ class RackRecents extends HTMLElement {
   }
   get targets(): readonly number[] {
     return this._targets;
+  }
+
+  /** The display Unit the chips read in (the store stays kg). Re-renders the labels. */
+  set unit(u: Unit) {
+    this._unit = u;
+    if (this.rail) this.renderChips();
+  }
+  get unit(): Unit {
+    return this._unit;
   }
 
   connectedCallback(): void {
@@ -85,7 +100,7 @@ class RackRecents extends HTMLElement {
       .map(
         (kg) => `
         <button type="button" class="chip" role="listitem" data-target="${kg}"
-                aria-label="Set Target to ${fmtKg(kg)} kg">${fmtKg(kg)} kg</button>`,
+                aria-label="Set Target to ${format(kg, this._unit)}">${format(kg, this._unit)}</button>`,
       )
       .join('');
     this.rail.querySelectorAll<HTMLButtonElement>('[data-target]').forEach((chip) =>
@@ -104,12 +119,6 @@ class RackRecents extends HTMLElement {
       }),
     );
   }
-}
-
-// Strip floating-point fuzz and trailing zeros so a 60.5 kg Target reads "60.5", not
-// "60.5000001" or "60.50" (mirrors the console's fmtKg).
-function fmtKg(kg: number): string {
-  return String(Number(kg.toFixed(2)));
 }
 
 customElements.define('rack-recents', RackRecents);

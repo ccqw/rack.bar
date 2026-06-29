@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import './recents.ts';
+import { lbToKg } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
 
-type Recents = HTMLElement & { targets: readonly number[] };
+type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
 
 function mountRecents(): { el: Recents; root: ShadowRoot } {
   const el = document.createElement('rack-recents') as Recents;
@@ -37,6 +39,18 @@ describe('<rack-recents>', () => {
     chips(root)[1].click(); // the 100 kg chip
     expect(seen).toHaveBeenCalledTimes(1);
     expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
+  it('renders the chip labels in the active Unit, keeping data-target canonical kg (RBAR-17)', () => {
+    const { el, root } = mountRecents();
+    el.targets = [lbToKg(135), lbToKg(225)];
+    el.unit = 'lb';
+    expect(chips(root).map((c) => c.textContent!.trim())).toEqual(['135 lb', '225 lb']);
+    // the store stays kg, so re-apply is Unit-agnostic
+    expect(chips(root).map((c) => Number(c.dataset.target))).toEqual([
+      lbToKg(135),
+      lbToKg(225),
+    ]);
   });
 
   it('renders nothing and stays hidden when the history is empty', () => {

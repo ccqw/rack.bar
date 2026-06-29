@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { decode } from './decode.ts';
-import { ELEIKO_KG, totalKg, barWithCollars } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, totalKg, barWithCollars } from './plates.ts';
+import { lbToKg, toLbWhole } from './units.ts';
 
 describe('decode (at-or-under loading core, ADR-0003)', () => {
   it('decodes an exact Target into the canonical fewest-Plate Side Load, biggest-first', () => {
@@ -246,5 +247,41 @@ describe('decode against a collar baseline (ADR-0008)', () => {
     expect(over?.total).toBe(101);
     expect(over?.delta).toBe(0.5);
     expect(over?.total).toBe(totalKg(over!.side, collared));
+  });
+});
+
+describe('decode on the iron training set (RBAR-17, ADR-0010)', () => {
+  const bar = lbToKg(45); // the 45 lb training Bar
+
+  it('lands whole-lb Targets exactly on the iron grid', () => {
+    // 135 lb = 45 Bar + one 45 lb pair; 225 lb = 45 Bar + two 45 lb pairs.
+    expect(toLbWhole(decode(lbToKg(135), bar, IRON_LB).primary.total)).toBe(135);
+    expect(toLbWhole(decode(lbToKg(225), bar, IRON_LB).primary.total)).toBe(225);
+  });
+
+  it('never overshoots: the primary Total is at or under the Target', () => {
+    for (let lb = 45; lb <= 405; lb += 1) {
+      const { primary } = decode(lbToKg(lb), bar, IRON_LB);
+      expect(toLbWhole(primary.total)).toBeLessThanOrEqual(lb);
+    }
+  });
+
+  it('is the GREATEST achievable Total at or under Target (greedy is optimal -- iron is canonical)', () => {
+    // Independent oracle: DP for the best coin sum <= budget, iron lb x2 to stay
+    // integer ([45,35,25,10,5,2.5] lb -> [90,70,50,20,10,5]). If greedy ever lost to
+    // a non-greedy combo this fails -- the regression guard ADR-0010 leans on.
+    const coins = [90, 70, 50, 20, 10, 5];
+    const N = 360; // budget = (totalLb - 45 Bar), up to 405 lb total
+    const best = new Array(N + 1).fill(0);
+    for (let t = 1; t <= N; t++) {
+      for (const c of coins) if (c <= t) best[t] = Math.max(best[t], c + best[t - c]);
+    }
+    for (let totalLb = 45; totalLb <= 405; totalLb += 5) {
+      const { primary } = decode(lbToKg(totalLb), bar, IRON_LB);
+      // The side's plate faces, x2, sum to (achieved Total - 45 Bar) in lb.
+      const decodeSideLbX2 = primary.side.reduce((s, p) => s + Number(p.label) * 2, 0);
+      const optimalSideLbX2 = best[totalLb - 45];
+      expect(decodeSideLbX2).toBe(optimalSideLbX2);
+    }
   });
 });

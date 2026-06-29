@@ -1,36 +1,43 @@
 // <rack-app> -- the app shell and composition root (RBAR-15, ADR-0007). It owns the
-// rig configuration (the Bar and the Collars; the plate set later) and feeds it down:
-// it renders the header (wordmark + a Setup pill), the <rack-console> calculator, and
-// the <rack-setup> sheet, and wires the three together.
+// rig configuration (the Bar, the Collars, and the plate set) and feeds it down: it
+// renders the header (wordmark + a Setup pill), the <rack-console> calculator, and the
+// <rack-setup> sheet, and wires the three together.
 //
-//   pill tap             -> open the Setup sheet
-//   sheet `barchange`    -> adopt the Bar: persist it, push it to the console, relabel
-//                           the pill, reflect the active tile
-//   sheet `collarchange` -> adopt the Collar: persist it, push it to the console, reflect
-//                           the active tile (RBAR-16, ADR-0008)
-//   sheet `close`        -> drop the pill's open state
+//   pill tap                -> open the Setup sheet
+//   sheet `barchange`       -> adopt the Bar: persist it, push it to the console, relabel
+//                              the pill, reflect the active tile
+//   sheet `collarchange`    -> adopt the Collar: persist it, push it to the console,
+//                              reflect the active tile (RBAR-16, ADR-0008)
+//   sheet `platesetchange`  -> adopt the plate set: persist it, swap the Bar to the set's
+//                              default, push set + Bar to the console and sheet (RBAR-17,
+//                              ADR-0010)
+//   sheet `close`           -> drop the pill's open state
 //
 // Each config concern persists shell-side under its own localStorage key (ADR-0007);
 // the core stays pure and only ever sees these as function arguments (ADR-0001/0002).
 import './console.ts';
 import './setup.ts';
-import { isOfferedBar, isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
+import { isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
-import { DEFAULT_BAR_KG } from '../lib/plates.ts';
+import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
+import type { PlateSetKey } from '../lib/platesets.ts';
+import { format } from '../lib/units.ts';
 
-type Console = HTMLElement & { barKg: number; collarKg: number };
+type Console = HTMLElement & { barKg: number; collarKg: number; plateSet: string };
 type Setup = HTMLElement & {
   barKg: number;
   collarKg: number;
+  plateSet: string;
   open(): void;
   close(): void;
 };
 
 // One persisted config key per concern (ADR-0007), read/written through the shared
-// best-effort helpers (persist.ts). The unit preference joins these as RBAR-17 lands;
-// recents persists shell-side too but console-owned, under its own key (ADR-0009).
+// best-effort helpers (persist.ts). Recents persists shell-side too but console-owned,
+// under its own key (ADR-0009); the unit preference is console-owned too (ADR-0010).
 const STORAGE_KEY = 'rackbar.barKg';
 const COLLAR_STORAGE_KEY = 'rackbar.collarKg';
+const PLATESET_STORAGE_KEY = 'rackbar.plateSet';
 
 class RackApp extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -39,16 +46,20 @@ class RackApp extends HTMLElement {
   private pill!: HTMLButtonElement;
   private pillLabel!: HTMLElement;
 
-  private barKg = DEFAULT_BAR_KG;
+  // The active plate set drives the offered Bars and the native Unit (ADR-0010); load it
+  // first, since the Bar validates against its Bars.
+  private plateSetKey: PlateSetKey = 'comp';
+  private barKg = plateSetFor('comp').defaultBarKg;
   private collarKg = DEFAULT_COLLAR_KG;
 
   connectedCallback(): void {
+    this.plateSetKey = this.loadPlateSet();
     this.barKg = this.loadBar();
     this.collarKg = this.loadCollar();
     // Children are defined before this runs (imports at top + rack-app's own define is
     // last), so assigning innerHTML upgrades <rack-console>/<rack-setup> synchronously
-    // and their connectedCallbacks finish here -- which is why the barKg seeding below
-    // (after the queries) lands on already-connected elements, not inert ones.
+    // and their connectedCallbacks finish here -- which is why the seeding below (after
+    // the queries) lands on already-connected elements, not inert ones.
     this.root.innerHTML = `
       <style>
         :host { display: flex; flex-direction: column; flex: 1; width: 100%; }
@@ -99,11 +110,16 @@ class RackApp extends HTMLElement {
     this.pill = this.root.querySelector('[data-setup-pill]')!;
     this.pillLabel = this.root.querySelector('[data-pill-label]')!;
 
-    // Seed every surface from the (possibly persisted) Bar and Collar.
+    // Seed every surface from the (possibly persisted) plate set, Bar, and Collar. Push
+    // the Bar before the plate set, matching adoptPlateSet's invariant ("set barKg first
+    // so a re-decode sees it") -- harmless at init (no standing Target yet), but keeping
+    // one ordering rule everywhere avoids a stale-Bar transient if that ever changes.
     this.console.barKg = this.barKg;
     this.console.collarKg = this.collarKg;
+    this.console.plateSet = this.plateSetKey;
     this.setup.barKg = this.barKg;
     this.setup.collarKg = this.collarKg;
+    this.setup.plateSet = this.plateSetKey;
     this.relabel();
 
     this.pill.addEventListener('click', () => {
@@ -116,18 +132,26 @@ class RackApp extends HTMLElement {
     this.setup.addEventListener('collarchange', (e) =>
       this.adoptCollar((e as CustomEvent<{ collarKg: number }>).detail.collarKg),
     );
+    this.setup.addEventListener('platesetchange', (e) =>
+      this.adoptPlateSet((e as CustomEvent<{ plateSet: string }>).detail.plateSet),
+    );
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
     );
   }
 
+  // The Bars the active plate set offers -- the set the persisted/chosen Bar validates
+  // against (ADR-0010). Each set carries its own Bars; comp is kg, training a single lb.
+  private offeredBars(): readonly number[] {
+    return plateSetFor(this.plateSetKey).bars;
+  }
+
   // Adopt a Bar chosen in Setup: persist it, thread it into the calculator, relabel the
   // pill, and reflect the active tile. The sheet stays open so the lifter sees the choice.
-  // The barchange payload is an external contract (ADR-0007 grows it in RBAR-16/17), so an
-  // off-menu Bar is an invariant breach, not a value to persist and feed the core -- ignore
-  // it rather than stranding the readout on a Bar no tile matches or poisoning storage.
+  // An off-menu Bar (one the active set does not offer) is an invariant breach, not a
+  // value to persist and feed the core -- ignore it rather than stranding the readout.
   private adopt(kg: number): void {
-    if (!isOfferedBar(kg)) return;
+    if (!this.offeredBars().includes(kg)) return;
     this.barKg = kg;
     this.saveBar(kg);
     this.console.barKg = kg;
@@ -136,9 +160,7 @@ class RackApp extends HTMLElement {
   }
 
   // Adopt a Collar chosen in Setup: same shape as adopt() (ADR-0007/0008). An off-menu
-  // value is an invariant breach (a rogue or forward-compat event), not a value to
-  // persist and feed the core -- ignore it rather than stranding the rig on a Collar no
-  // tile matches. The sheet stays open so the lifter sees the choice land.
+  // value is an invariant breach, ignored rather than fed to the core.
   private adoptCollar(kg: number): void {
     if (!isOfferedCollar(kg)) return;
     this.collarKg = kg;
@@ -147,19 +169,46 @@ class RackApp extends HTMLElement {
     this.setup.collarKg = kg;
   }
 
-  private relabel(): void {
-    this.pillLabel.textContent = `${this.barKg} kg bar`;
+  // Adopt a plate set chosen in Setup (RBAR-17, ADR-0010): persist it, swap the Bar to
+  // the set's default (a Bar does not cross sets), persist that too, then push the Bar
+  // FIRST and the set second so the console re-solves against the right Bar AND Inventory.
+  // An off-menu key is ignored. The sheet stays open so the lifter sees the switch land.
+  private adoptPlateSet(key: string): void {
+    if (!isOfferedPlateSet(key)) return;
+    this.plateSetKey = key;
+    this.savePlateSet(key);
+    this.barKg = plateSetFor(key).defaultBarKg;
+    this.saveBar(this.barKg);
+    this.console.barKg = this.barKg;
+    this.setup.barKg = this.barKg;
+    this.console.plateSet = key;
+    this.setup.plateSet = key;
+    this.relabel();
   }
 
-  // Read the persisted Bar. A missing, non-numeric, or off-menu value (including a
-  // blocked localStorage, which readPersisted reads as null) falls back to the 20 kg
-  // default. Validating against the offered set (not just "finite and positive") means a
-  // corrupt or legacy key can't load a Bar that no tile matches.
+  // The pill names the current Bar in the active set's native Unit (e.g. "20 kg bar",
+  // "45 lb bar") -- the lb readout already signals a Training rig.
+  private relabel(): void {
+    const set = plateSetFor(this.plateSetKey);
+    this.pillLabel.textContent = `${format(this.barKg, set.unit)} bar`;
+  }
+
+  // Read the persisted plate set, validated against the offered keys (ADR-0007 pattern):
+  // a missing, blocked, or off-menu value falls back to Competition (the default).
+  private loadPlateSet(): PlateSetKey {
+    const raw = readPersisted(PLATESET_STORAGE_KEY);
+    return raw !== null && isOfferedPlateSet(raw) ? raw : 'comp';
+  }
+
+  // Read the persisted Bar, validated against the ACTIVE set's Bars. A missing,
+  // non-numeric, off-menu, or storage-blocked value falls back to that set's default Bar,
+  // so a corrupt or legacy key can never load a Bar no tile matches.
   private loadBar(): number {
+    const set = plateSetFor(this.plateSetKey);
     const raw = readPersisted(STORAGE_KEY);
-    if (raw === null) return DEFAULT_BAR_KG; // absent or storage blocked: the default.
+    if (raw === null) return set.defaultBarKg; // absent or storage blocked: the default.
     const n = Number(raw);
-    return isOfferedBar(n) ? n : DEFAULT_BAR_KG;
+    return this.offeredBars().includes(n) ? n : set.defaultBarKg;
   }
 
   // Persist the Bar, best-effort (writePersisted swallows a failed write).
@@ -167,9 +216,7 @@ class RackApp extends HTMLElement {
     writePersisted(STORAGE_KEY, String(kg));
   }
 
-  // Read the persisted Collar, validated against the offered set exactly like the Bar:
-  // a missing, non-numeric, off-menu, or storage-blocked value falls back to None, so a
-  // corrupt or legacy key can never load a Collar no tile matches.
+  // Read the persisted Collar, validated against the offered set exactly like the Bar.
   private loadCollar(): number {
     const raw = readPersisted(COLLAR_STORAGE_KEY);
     if (raw === null) return DEFAULT_COLLAR_KG; // absent or storage blocked: None.
@@ -180,6 +227,11 @@ class RackApp extends HTMLElement {
   // Persist the Collar, best-effort -- same swallow-on-failure contract as the Bar.
   private saveCollar(kg: number): void {
     writePersisted(COLLAR_STORAGE_KEY, String(kg));
+  }
+
+  // Persist the plate set, best-effort.
+  private savePlateSet(key: PlateSetKey): void {
+    writePersisted(PLATESET_STORAGE_KEY, key);
   }
 }
 
