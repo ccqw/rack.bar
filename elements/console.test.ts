@@ -77,6 +77,17 @@ function palette(el: HTMLElement): HTMLElement {
   return el.shadowRoot!.querySelector<HTMLElement>('rack-palette')!;
 }
 
+// The "On the bar" loaded-chips row (RBAR-27) and its chips / Clear control.
+function loaded(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('rack-loaded')!;
+}
+function loadedChips(el: HTMLElement): HTMLButtonElement[] {
+  return [...loaded(el).shadowRoot!.querySelectorAll<HTMLButtonElement>('.chip')];
+}
+function clearBtn(el: HTMLElement): HTMLButtonElement {
+  return loaded(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-clear]')!;
+}
+
 // The value currently shown in the Target field (what the +/- steppers move from).
 // An empty draft renders the muted Bar-weight anchor; report that as '' (no Target).
 function entryValue(el: HTMLElement): string {
@@ -135,6 +146,7 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
       'over',
       'rack-entry',
       'rack-recents',
+      'rack-loaded',
       'rack-palette',
       'share',
     ]);
@@ -154,13 +166,14 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
     ]);
   });
 
-  it('By Plates reads mode -> bar -> Total -> Add palette -> Share (4b)', () => {
+  it('By Plates reads mode -> bar -> Total -> On the bar -> Add palette -> Share (4b)', () => {
     const el = mountConsole();
     modeBtn(el, 'encode').click();
     expect(visibleBlockOrder(el)).toEqual([
       'modes',
       'viz',
       'readout',
+      'rack-loaded',
       'rack-palette',
       'share',
     ]);
@@ -358,6 +371,67 @@ describe('<rack-console> (Bar selection flows into the solver, RBAR-15)', () => 
     el.barKg = 15; // the carried loadout stays; only the Total re-reads: 15 + 2 x 50
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '25']);
     expect(total(el)).toContain('115');
+  });
+});
+
+describe('<rack-console> ("On the bar" loaded chips + Clear, RBAR-27)', () => {
+  it('shows the loaded-chips row in By Plates and hides it in By Weight', () => {
+    const el = mountConsole();
+    expect(loaded(el).hidden).toBe(true); // Decode (By Weight)
+    modeBtn(el, 'encode').click();
+    expect(loaded(el).hidden).toBe(false); // Encode (By Plates)
+  });
+
+  it('renders a chip per loaded Plate group, folded via groupSide', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 25);
+    tapAdd(el, 20);
+    expect(loadedChips(el).map((c) => c.textContent!.trim())).toEqual(['25x2', '20']);
+  });
+
+  it('tapping a loaded chip removes one of that Plate from the Side', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 25);
+    tapAdd(el, 20); // 20 + 2 x (25 + 25 + 20) = 160
+    expect(total(el)).toContain('160');
+    loadedChips(el)[0].click(); // remove one 25
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '20']);
+    expect(total(el)).toContain('110'); // 20 + 2 x (25 + 20)
+  });
+
+  it('Clear empties the Side back to the bare Bar', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 20);
+    expect(discs(el).length).toBe(2);
+    clearBtn(el).click();
+    expect(discs(el).length).toBe(0);
+    expect(total(el)).toContain('20'); // bare 20 kg Bar
+    expect(loadedChips(el)).toHaveLength(0);
+  });
+
+  it('keeps the chips in step with a sleeve disc removal (one source, the Side Load)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 20);
+    expect(loadedChips(el).map((c) => c.textContent!.trim())).toEqual(['25', '20']);
+    tapDisc(el, 0); // pull the 25 off via the sleeve
+    expect(loadedChips(el).map((c) => c.textContent!.trim())).toEqual(['20']);
+  });
+
+  it('renders loaded chips in lb labels on the iron (Training) set (ADR-0010)', () => {
+    const el = mountConsole();
+    el.plateSet = 'training';
+    el.barKg = lbToKg(45);
+    modeBtn(el, 'encode').click();
+    tapAdd(el, lbToKg(45));
+    expect(loadedChips(el).map((c) => c.textContent!.trim())).toEqual(['45']);
   });
 });
 

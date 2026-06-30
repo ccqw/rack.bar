@@ -16,6 +16,7 @@
 // is lb-only), so the unit toggle derives free-vs-locked from the set.
 import './entry.ts';
 import './palette.ts';
+import './loaded.ts';
 import './sleeve.ts';
 import './recents.ts';
 import './share.ts';
@@ -44,6 +45,7 @@ type Entry = HTMLElement & {
   unit: Unit;
 };
 type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
+type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[] };
 type Share = HTMLElement & { load: LoadSummary; open(): void };
 type Fullscreen = HTMLElement & { load: LoadSummary; open(): void };
@@ -62,6 +64,7 @@ class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private entry!: Entry;
   private recentsRow!: Recents;
+  private loadedRow!: Loaded;
   private palette!: Palette;
   private sleeve!: Sleeve;
   private share!: Share;
@@ -356,6 +359,10 @@ class RackConsole extends HTMLElement {
         <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
              (RBAR-20). Hidden until the lifter has committed a Target. -->
         <rack-recents hidden></rack-recents>
+        <!-- "On the bar": the loaded-chips row + Clear, By-Plates mode only (RBAR-27,
+             handoff 4b). Sits directly above the Add palette; both share the editor slot
+             with the By-Weight Target/Recent blocks, toggled by hidden. -->
+        <rack-loaded hidden></rack-loaded>
         <rack-palette hidden></rack-palette>
         <button type="button" class="share" data-share>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -371,6 +378,7 @@ class RackConsole extends HTMLElement {
     `;
     this.entry = this.root.querySelector('rack-entry') as Entry;
     this.recentsRow = this.root.querySelector('rack-recents') as Recents;
+    this.loadedRow = this.root.querySelector('rack-loaded') as Loaded;
     this.palette = this.root.querySelector('rack-palette') as Palette;
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
     this.share = this.root.querySelector('rack-share') as Share;
@@ -412,6 +420,18 @@ class RackConsole extends HTMLElement {
     this.sleeve.addEventListener('removeplate', (e) => {
       if (this.mode !== 'encode') return;
       this.side = removePlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate);
+      this.render();
+    });
+    // Encode: the "On the bar" chips remove one of a Plate (mirroring a sleeve disc tap);
+    // Clear empties the Side wholesale (RBAR-27). Both guard the mode and re-render.
+    this.loadedRow.addEventListener('removeplate', (e) => {
+      if (this.mode !== 'encode') return;
+      this.side = removePlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate);
+      this.render();
+    });
+    this.loadedRow.addEventListener('clearbar', () => {
+      if (this.mode !== 'encode') return;
+      this.side = [];
       this.render();
     });
     // The over-target opt-in toggles between the at-or-under primary and the over option.
@@ -573,6 +593,10 @@ class RackConsole extends HTMLElement {
     // there is something to show (the row also self-hides when empty -- ADR-0009).
     this.recentsRow.hidden = this.mode !== 'decode' || this.recents.length === 0;
     this.palette.hidden = this.mode !== 'encode';
+    // The "On the bar" chips + Clear are By-Plates only; the row stays visible there even
+    // when empty (it shows its own "Tap to add a pair" hint), so it toggles by mode alone.
+    this.loadedRow.hidden = this.mode !== 'encode';
+    this.loadedRow.side = this.side;
     this.modeButtons.forEach((b) =>
       b.setAttribute('aria-pressed', String(b.dataset.mode === this.mode)),
     );

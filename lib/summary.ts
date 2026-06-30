@@ -78,6 +78,12 @@ export function groupSide(side: readonly Plate[]): readonly PlateGroup[] {
  * One per-Side group as `N x face`, or just `face` for a single Plate. Exported so
  * the card's chips and the plain text render the group label from ONE place -- the
  * "cannot drift" guarantee (ADR-0011) covers the rendered label, not just the fold.
+ *
+ * 2026-06-29 (RBAR-27): this is the share/fullscreen card's flat label format. The
+ * "On the bar" loaded chips (<rack-loaded>) deliberately do NOT use it -- they render a
+ * styled face + `xN` suffix per the handoff (section 4b), a presentation a single flat
+ * string cannot carry. Both still fold via `groupSide`, so the faces and counts cannot
+ * drift; only the loaded chips' visual label format differs by design.
  */
 export function groupText(g: PlateGroup): string {
   return g.count > 1 ? `${g.count}x ${g.face}` : g.face;
