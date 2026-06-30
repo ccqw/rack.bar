@@ -65,6 +65,14 @@ describe('<rack-app> (app shell + Setup wiring, RBAR-15)', () => {
     expect(pill(root).textContent!.toLowerCase()).toContain('bar');
   });
 
+  it('captions the Setup pill with the plate-set short name + a leading icon (RBAR-30)', () => {
+    const { root } = mountApp();
+    // Default set is Competition -> the compact "Comp" caption rides beside the Bar.
+    expect(pill(root).querySelector('[data-pill-set]')!.textContent).toBe('Comp');
+    // The sliders/setup glyph leads the pill (handoff section 1, screenshot 01).
+    expect(pill(root).querySelector('[data-pill-icon]')).not.toBeNull();
+  });
+
   it('opens the Setup sheet from the pill, reflecting the open state', () => {
     const { root } = mountApp();
     expect(setup(root).hidden).toBe(true);
@@ -254,6 +262,7 @@ describe('<rack-app> plate-set wiring (RBAR-17, ADR-0010)', () => {
     expect(consoleEl(root).plateSet).toBe('training');
     expect(consoleEl(root).barKg).toBe(lbToKg(45)); // the set's default Bar
     expect(pill(root).textContent).toContain('45'); // "45 lb bar"
+    expect(pill(root).querySelector('[data-pill-set]')!.textContent).toBe('Training'); // caption follows the set
     expect(localStorage.getItem(PLATESET_KEY)).toBe('training');
     expect(localStorage.getItem(KEY)).toBe(String(lbToKg(45)));
   });

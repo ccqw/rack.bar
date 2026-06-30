@@ -17,7 +17,11 @@ import './sleeve.ts';
 import { configText, loadTotalKg } from '../lib/summary.ts';
 import type { LoadSummary } from '../lib/summary.ts';
 import { format } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
+import { plateSetFor } from '../lib/platesets.ts';
 import type { Plate } from '../lib/plates.ts';
+import { BUTTON_FX } from './buttonfx.ts';
+import { ROLL_CSS, rollText } from './numroll.ts';
 
 type Sleeve = HTMLElement & { sideLoad: readonly Plate[]; interactive: boolean };
 
@@ -25,8 +29,23 @@ class RackFullscreen extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private overlay!: HTMLElement;
   private totalEl!: HTMLElement;
+  private secondaryEl!: HTMLElement;
   private captionEl!: HTMLElement;
   private sleeve!: Sleeve;
+
+  // The active plate set, for the caption's set name + native-Unit Bar (RBAR-30). The
+  // console pushes it alongside `load`; an unknown key resolves to Competition
+  // (plateSetFor), so a pre-seed render is harmless.
+  private _plateSet = 'comp';
+
+  /** The plate set whose name + native Unit the caption reads (RBAR-30). Re-renders. */
+  set plateSet(key: string) {
+    this._plateSet = key;
+    if (this.overlay) this.render();
+  }
+  get plateSet(): string {
+    return this._plateSet;
+  }
 
   // The load to blow up. The console sets this before open(); a bare default keeps a
   // pre-seed render harmless. Assigning re-renders while open so a live change shows.
@@ -63,6 +82,7 @@ class RackFullscreen extends HTMLElement {
 
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}${ROLL_CSS}
         :host { display: block; }
         :host([hidden]) { display: none; }
         @keyframes rack-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -95,13 +115,23 @@ class RackFullscreen extends HTMLElement {
           letter-spacing: -.02em; color: var(--rack-fg);
         }
         .wordmark .dot { color: var(--rack-accent); }
+        /* The huge Total: Hanken 800 with tabular figures (handoff section 8). Hanken is
+           proportional, so tnum must be explicit -- without it the glance jitters as the
+           digits change width (the same carry-forward the console Total carries). */
         .total {
-          margin-top: 12px; font-family: var(--rack-font-num); font-weight: 700;
+          margin-top: 12px; font-family: var(--rack-font); font-weight: 800;
           font-size: clamp(40px, 16vw, 58px); line-height: 1;
-          letter-spacing: -.02em; color: var(--rack-fg);
+          letter-spacing: -.03em; color: var(--rack-fg);
+          font-variant-numeric: tabular-nums;
         }
+        /* The secondary line: the same Total in the OTHER Unit + a per-side note. */
+        .secondary {
+          margin-top: 8px; font-family: var(--rack-font); font-weight: 500;
+          font-size: 14px; color: var(--rack-muted);
+        }
+        /* The config line: the plate-set name + the Bar (+ Collars when fitted). */
         .caption {
-          margin-top: 14px; font-family: var(--rack-font-num); font-size: 11px;
+          margin-top: 16px; font-family: var(--rack-font-num); font-size: 11px;
           font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
           color: var(--rack-muted);
         }
@@ -136,6 +166,7 @@ class RackFullscreen extends HTMLElement {
         <div class="head">
           <span class="wordmark" data-wordmark>rack<span class="dot">.</span>bar</span>
           <span class="total" data-total></span>
+          <span class="secondary" data-secondary></span>
           <span class="caption" data-caption></span>
         </div>
         <div class="stage">
@@ -148,6 +179,7 @@ class RackFullscreen extends HTMLElement {
 
     this.overlay = this.root.querySelector('[data-overlay]')!;
     this.totalEl = this.root.querySelector('[data-total]')!;
+    this.secondaryEl = this.root.querySelector('[data-secondary]')!;
     this.captionEl = this.root.querySelector('[data-caption]')!;
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
 
@@ -158,14 +190,21 @@ class RackFullscreen extends HTMLElement {
     this.render();
   }
 
-  // Render every surface from the current load. The Total derives from the rig + Side
-  // Load (loadTotalKg) and reads in the load's Unit; the caption reuses the shared config
-  // wording (so it can't drift from the share card), plus a "per side" note. The sleeve
-  // draws the Side Load inert -- in the immersive view a disc tap exits, it never edits.
+  // Render every surface from the current load (handoff section 8). The Total derives
+  // from the rig + Side Load (loadTotalKg) and reads in the load's display Unit, rolling
+  // up on change (numRoll). The secondary line shows the same Total in the OTHER Unit + a
+  // per-side note. The config line names the plate set and the Bar in the SET's native
+  // Unit (like the header pill) -- reusing the shared configText so the Bar/Collar wording
+  // can't drift from the share card. The sleeve draws the Side Load inert (a disc tap
+  // exits, it never edits).
   private render(): void {
     const { side, barKg, collarKg, unit } = this._load;
-    this.totalEl.textContent = format(loadTotalKg(this._load), unit);
-    this.captionEl.textContent = `${configText(barKg, collarKg, unit)} - per side`;
+    const set = plateSetFor(this._plateSet);
+    const other: Unit = unit === 'kg' ? 'lb' : 'kg';
+    const total = loadTotalKg(this._load);
+    rollText(this.totalEl, format(total, unit));
+    this.secondaryEl.textContent = `${format(total, other)} - per side`;
+    this.captionEl.textContent = `${set.label} - ${configText(barKg, collarKg, set.unit)}`;
     this.sleeve.interactive = false;
     this.sleeve.sideLoad = side;
   }

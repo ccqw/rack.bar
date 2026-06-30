@@ -6,6 +6,7 @@ import type { LoadSummary } from '../lib/summary.ts';
 
 type Fullscreen = HTMLElement & {
   load: LoadSummary;
+  plateSet: string;
   open(): void;
   close(): void;
 };
@@ -77,18 +78,36 @@ describe('<rack-fullscreen>', () => {
     expect(root.querySelector('[data-total]')!.textContent!.trim()).toBe('220 lb');
   });
 
-  it('captions the rig config with a per-side note, naming Collars only when fitted', () => {
+  it('captions with a secondary-unit line + per-side note (RBAR-30)', () => {
+    const { el, root } = mount(LOADED); // comp / kg by default
+    el.open();
+    const sec = root.querySelector('[data-secondary]')!.textContent!;
+    // The achieved Total in the OTHER unit (a kg load reads its secondary in lb) + per side.
+    expect(sec).toContain('lb');
+    expect(sec).toContain('per side');
+  });
+
+  it('names the plate set + Bar in the config line, Collars only when fitted (RBAR-30)', () => {
     const none = mount(LOADED);
     none.el.open();
-    expect(none.root.querySelector('[data-caption]')!.textContent).toContain('20 kg');
-    expect(none.root.querySelector('[data-caption]')!.textContent).toContain('per side');
-    expect(none.root.querySelector('[data-caption]')!.textContent).not.toContain('collar');
+    const cap = none.root.querySelector('[data-caption]')!.textContent!;
+    expect(cap).toContain('Competition'); // the active plate set
+    expect(cap).toContain('20 kg'); // the Bar, in the set's native Unit
+    expect(cap).not.toContain('collar'); // None fitted
+    expect(cap).not.toContain('per side'); // the per-side note moved to the secondary line
 
     const withCollar = mount({ ...LOADED, collarKg: 2.5 });
     withCollar.el.open();
     expect(withCollar.root.querySelector('[data-caption]')!.textContent).toContain(
       'collars 2.5 kg',
     );
+  });
+
+  it('reflects the active plate set name in the caption (RBAR-30)', () => {
+    const { el, root } = mount(LOADED);
+    el.plateSet = 'training';
+    el.open();
+    expect(root.querySelector('[data-caption]')!.textContent).toContain('Training');
   });
 
   it('blows up the current Side Load through the embedded sleeve', () => {

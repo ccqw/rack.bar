@@ -20,6 +20,7 @@ import './setup.ts';
 import './help.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
+import { BUTTON_FX } from './buttonfx.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { format } from '../lib/units.ts';
@@ -46,6 +47,7 @@ class RackApp extends HTMLElement {
   private setup!: Setup;
   private pill!: HTMLButtonElement;
   private pillLabel!: HTMLElement;
+  private pillSet!: HTMLElement;
 
   // The active plate set drives the offered Bars and the native Unit (ADR-0010); load it
   // first, since the Bar validates against its Bars.
@@ -63,6 +65,7 @@ class RackApp extends HTMLElement {
     // the queries) lands on already-connected elements, not inert ones.
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}
         :host { display: flex; flex-direction: column; flex: 1; width: 100%; }
         header {
           display: flex; align-items: center; justify-content: space-between;
@@ -85,6 +88,14 @@ class RackApp extends HTMLElement {
         }
         .pill:hover { color: var(--rack-fg); }
         .pill:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        .pill .sliders { display: block; flex: none; }
+        /* The Bar over a compact plate-set caption ("Comp" / "Training"), handoff
+           section 1 / screenshot 01. The size step (not colour) carries the hierarchy. */
+        .pill-text { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.12; }
+        .pill-set {
+          font-size: 9px; font-weight: 600; letter-spacing: .08em;
+          color: var(--rack-text-dim);
+        }
         .pill .chev { display: block; transition: transform .16s ease; }
         .pill[aria-expanded="true"] .chev { transform: rotate(180deg); }
         main {
@@ -99,7 +110,21 @@ class RackApp extends HTMLElement {
         </span>
         <button type="button" class="pill" data-setup-pill
                 aria-haspopup="dialog" aria-expanded="false">
-          <span data-pill-label></span>
+          <svg class="sliders" data-pill-icon width="13" height="13" viewBox="0 0 16 16"
+               fill="none" aria-hidden="true">
+            <line x1="2.5" y1="5" x2="13.5" y2="5" stroke="var(--rack-accent)"
+                  stroke-width="1.6" stroke-linecap="round"></line>
+            <line x1="2.5" y1="11" x2="13.5" y2="11" stroke="var(--rack-accent)"
+                  stroke-width="1.6" stroke-linecap="round"></line>
+            <circle cx="10" cy="5" r="2.3" fill="var(--rack-raised)"
+                    stroke="var(--rack-accent)" stroke-width="1.6"></circle>
+            <circle cx="6" cy="11" r="2.3" fill="var(--rack-raised)"
+                    stroke="var(--rack-accent)" stroke-width="1.6"></circle>
+          </svg>
+          <span class="pill-text">
+            <span data-pill-label></span>
+            <span class="pill-set" data-pill-set></span>
+          </span>
           <svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none"
                aria-hidden="true">
             <path d="M3.5 6L8 10.5 12.5 6" stroke="currentColor" stroke-width="1.8"
@@ -115,6 +140,7 @@ class RackApp extends HTMLElement {
     this.setup = this.root.querySelector('rack-setup') as Setup;
     this.pill = this.root.querySelector('[data-setup-pill]')!;
     this.pillLabel = this.root.querySelector('[data-pill-label]')!;
+    this.pillSet = this.root.querySelector('[data-pill-set]')!;
 
     // Seed every surface from the (possibly persisted) plate set, Bar, and Collar. Push
     // the Bar before the plate set, matching adoptPlateSet's invariant ("set barKg first
@@ -193,10 +219,13 @@ class RackApp extends HTMLElement {
   }
 
   // The pill names the current Bar in the active set's native Unit (e.g. "20 kg bar",
-  // "45 lb bar") -- the lb readout already signals a Training rig.
+  // "45 lb bar") over a compact plate-set caption ("Comp" / "Training") -- the handoff's
+  // header pill (section 1, screenshot 01). Both the Bar and the caption follow a set or
+  // Bar change, so adopt()/adoptPlateSet() call relabel() and the pill stays in sync.
   private relabel(): void {
     const set = plateSetFor(this.plateSetKey);
     this.pillLabel.textContent = `${format(this.barKg, set.unit)} bar`;
+    this.pillSet.textContent = set.shortLabel;
   }
 
   // Read the persisted plate set, validated against the offered keys (ADR-0007 pattern):

@@ -18,6 +18,7 @@
 // differs. The sleeve still holds no plate math; it emits intent and the console
 // applies the pure removePlate() transform.
 import type { Plate } from '../lib/plates.ts';
+import { BUTTON_FX } from './buttonfx.ts';
 
 // Fit-to-width scale (ADR-0004). A bumper is 450 mm; cap the zoom so a normal load
 // renders at a comfortable fixed size and only a genuinely huge bar (whose plates
@@ -134,6 +135,7 @@ class RackSleeve extends HTMLElement {
       this.plates.length === 0 ? '<span class="empty" aria-hidden="true">+</span>' : discs;
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}
         :host {
           display: flex; align-items: center; justify-content: center;
           min-height: ${TARGET_BUMPER_PX}px;

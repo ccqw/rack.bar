@@ -18,8 +18,10 @@ export type PlateSetKey = 'comp' | 'training';
 /** A family of Plates the lifter loads: its Inventory, native Unit, and Bars. */
 export interface PlateSet {
   readonly key: PlateSetKey;
-  /** The lifter-facing name (Setup tile). */
+  /** The lifter-facing name (Setup tile, fullscreen caption). */
   readonly label: string;
+  /** A compact name for tight chrome -- the header Setup pill caption (RBAR-30). */
+  readonly shortLabel: string;
   /** The Unit this set is stamped and reasoned in (its default display Unit, ADR-0010). */
   readonly unit: Unit;
   /**
@@ -45,6 +47,7 @@ export const PLATE_SETS: Record<PlateSetKey, PlateSet> = {
   comp: {
     key: 'comp',
     label: 'Competition',
+    shortLabel: 'Comp',
     unit: 'kg',
     unitLocked: false,
     inventory: ELEIKO_KG,
@@ -54,6 +57,7 @@ export const PLATE_SETS: Record<PlateSetKey, PlateSet> = {
   training: {
     key: 'training',
     label: 'Training',
+    shortLabel: 'Training',
     unit: 'lb',
     unitLocked: true,
     inventory: IRON_LB,
