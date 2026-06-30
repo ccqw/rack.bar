@@ -20,6 +20,8 @@ describe('plate sets (RBAR-17, ADR-0010)', () => {
     expect(comp.inventory).toBe(ELEIKO_KG);
     expect(comp.bars).toEqual([20, 15, 5]);
     expect(comp.defaultBarKg).toBe(20);
+    expect(comp.label).toBe('Competition');
+    expect(comp.shortLabel).toBe('Comp'); // the compact header-pill caption (RBAR-30)
   });
 
   it('bundles the Training set: iron, lb-locked, a single 45 lb Bar', () => {
@@ -29,6 +31,8 @@ describe('plate sets (RBAR-17, ADR-0010)', () => {
     expect(tr.inventory).toBe(IRON_LB);
     expect(tr.bars).toEqual([lbToKg(45)]);
     expect(tr.defaultBarKg).toBe(lbToKg(45));
+    expect(tr.label).toBe('Training');
+    expect(tr.shortLabel).toBe('Training');
   });
 
   it('resolves a set by key, defaulting an unknown key to Competition', () => {

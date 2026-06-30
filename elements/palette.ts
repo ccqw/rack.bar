@@ -9,6 +9,7 @@
 // of dark keys stamped with their lb label. Defaults to Eleiko.
 import { ELEIKO_KG } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
+import { BUTTON_FX } from './buttonfx.ts';
 
 class RackPalette extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -44,6 +45,7 @@ class RackPalette extends HTMLElement {
       .join('');
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}
         :host { display: block; }
         .keys {
           display: grid; grid-template-columns: repeat(${columns}, 1fr);

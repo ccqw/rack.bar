@@ -15,6 +15,7 @@
 // iron set shows lb labels, the Eleiko set shows kg.
 import { groupSide } from '../lib/summary.ts';
 import type { Plate } from '../lib/plates.ts';
+import { BUTTON_FX } from './buttonfx.ts';
 
 class RackLoaded extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -41,6 +42,7 @@ class RackLoaded extends HTMLElement {
   connectedCallback(): void {
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}
         :host { display: block; }
         :host([hidden]) { display: none; }
         /* The On the bar / Clear head: shown only when something is loaded. */

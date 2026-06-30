@@ -1201,3 +1201,27 @@ describe('<rack-console> status pill wiring (RBAR-28)', () => {
     expect(line.querySelector('[data-status]')).not.toBeNull();
   });
 });
+
+describe('<rack-console> (big Total typography + numRoll, RBAR-30)', () => {
+  // The big Total reads Hanken 800 with explicit tabular figures (handoff 4a). The
+  // explicit tnum is load-bearing: Hanken is proportional, so without it the digits
+  // jitter on change (the carry-forward the Total kept while it was monospace).
+  it('styles the big Total as Hanken with explicit tabular-nums', () => {
+    const el = mountConsole();
+    const css = el.shadowRoot!.querySelector('style')!.textContent!;
+    // Scope to the .readout output rule body only, so a sibling rule using the same
+    // token elsewhere can't false-pass this assertion.
+    const start = css.indexOf('.readout output');
+    const readout = css.slice(start, css.indexOf('}', start));
+    expect(readout).toContain('var(--rack-font)'); // Hanken, not --rack-font-num
+    expect(readout).toContain('tabular-nums');
+  });
+
+  it('arms the Total roll (numRoll marker) when the Total changes', () => {
+    const el = mountConsole();
+    const out = el.shadowRoot!.querySelector('[data-total]')!;
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25); // Total moves 20 -> 70: the roll arms
+    expect(out.classList.contains('roll')).toBe(true);
+  });
+});

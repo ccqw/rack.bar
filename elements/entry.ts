@@ -24,6 +24,8 @@
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 import { shownIn, draftToKg, stepFor } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
+import { BUTTON_FX } from './buttonfx.ts';
+import { ROLL_CSS, rollText } from './numroll.ts';
 
 // The keypad layout, row-major. 'del' deletes the last character, 'clear' empties.
 const KEYPAD_ROWS: readonly (readonly string[])[] = [
@@ -139,6 +141,7 @@ class RackEntry extends HTMLElement {
 
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}${ROLL_CSS}
         :host { display: block; }
         .caption {
           display: block; text-align: center;
@@ -281,7 +284,7 @@ class RackEntry extends HTMLElement {
   private renderValue(): void {
     const empty = this.draft === '';
     const shown = empty ? this.barShown() : this.draft;
-    this.valueEl.textContent = shown;
+    rollText(this.valueEl, shown); // the Target value rolls up on change (numRoll, RBAR-30)
     this.valueEl.classList.toggle('empty', empty);
     this.captionEl.textContent = `Target (${this._unit})`;
     const step = stepFor(this._unit);

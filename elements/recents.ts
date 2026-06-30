@@ -12,6 +12,7 @@
 // Unit-agnostic; only the visible label and aria change Unit.
 import { format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
+import { BUTTON_FX } from './buttonfx.ts';
 
 class RackRecents extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -42,6 +43,7 @@ class RackRecents extends HTMLElement {
   connectedCallback(): void {
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}
         :host { display: block; }
         :host([hidden]) { display: none; }
         .label {

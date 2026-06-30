@@ -27,6 +27,8 @@ import { DEFAULT_BAR_KG, barWithCollars, atSleeveCapacity } from '../lib/plates.
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
+import { BUTTON_FX } from './buttonfx.ts';
+import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import type { LoadSummary } from '../lib/summary.ts';
@@ -48,7 +50,7 @@ type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
 type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[] };
 type Share = HTMLElement & { load: LoadSummary; open(): void };
-type Fullscreen = HTMLElement & { load: LoadSummary; open(): void };
+type Fullscreen = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
 type Mode = 'decode' | 'encode';
 
 // The Recent Targets history persists shell-side under its own key (ADR-0007/0009),
@@ -195,6 +197,7 @@ class RackConsole extends HTMLElement {
   connectedCallback(): void {
     this.root.innerHTML = `
       <style>
+        ${BUTTON_FX}${ROLL_CSS}
         :host { display: block; width: 100%; max-width: 520px; }
         .stack {
           display: flex; flex-direction: column; gap: 24px; align-items: stretch;
@@ -249,9 +252,14 @@ class RackConsole extends HTMLElement {
         }
         .units button:disabled { cursor: default; opacity: .55; }
         .units button:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* The big Total (handoff 4a): Hanken 800 / 54px / -.025em with tabular figures.
+           Hanken is proportional, so tnum must be explicit -- it "stayed on" only while
+           the Total was monospace JetBrains Mono; now that it is Hanken the digits would
+           jitter on change without it. Rolls up on change (numRoll, via rollText). */
         .readout output {
-          display: block; font-family: var(--rack-font-num);
-          font-size: clamp(28px, 9vw, 40px); font-weight: 600;
+          display: block; font-family: var(--rack-font); font-weight: 800;
+          font-size: clamp(40px, 13vw, 54px); letter-spacing: -.025em;
+          font-variant-numeric: tabular-nums;
           color: var(--rack-fg); margin-top: 4px;
         }
         /* The Secondary readout: the same Total in the other unit, tap to hide/show
@@ -550,6 +558,9 @@ class RackConsole extends HTMLElement {
       collarKg: this._collarKg,
       unit: this.activeUnit(),
     };
+    // The set drives the caption's name + native-Unit Bar (RBAR-30); the load snapshot
+    // (ADR-0011 shape, shared with the share card) deliberately stays set-agnostic.
+    this.fullscreen.plateSet = this._plateSetKey;
     this.fullscreen.open();
   }
 
@@ -585,7 +596,7 @@ class RackConsole extends HTMLElement {
     this.sleeve.interactive = this.mode === 'encode';
     this.entry.unit = unit;
     this.recentsRow.unit = unit;
-    this.total.textContent = format(encode(this.side, this.baselineKg()), unit);
+    rollText(this.total, format(encode(this.side, this.baselineKg()), unit));
     this.renderUnitToggle(unit);
     this.renderSecondary(unit);
     this.entry.hidden = this.mode !== 'decode';
