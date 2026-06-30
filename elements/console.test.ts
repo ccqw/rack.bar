@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import './console.ts';
+import { statusPill } from './console.ts';
 import { lbToKg } from '../lib/units.ts';
 
 type Console = HTMLElement & {
@@ -45,8 +46,17 @@ function total(el: HTMLElement): string {
   return el.shadowRoot!.querySelector('[data-total]')!.textContent ?? '';
 }
 
-function delta(el: HTMLElement): HTMLElement {
-  return el.shadowRoot!.querySelector<HTMLElement>('[data-delta]')!;
+// The Total status pill (RBAR-28): the under/over/exact/capacity indicator beside the
+// secondary readout. It carries its state as a class (`status <kind>`) and its copy in
+// the label span.
+function statusEl(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('[data-status]')!;
+}
+function statusKind(el: HTMLElement): string {
+  return [...statusEl(el).classList].filter((c) => c !== 'status').join(' ');
+}
+function statusText(el: HTMLElement): string {
+  return statusEl(el).querySelector('[data-status-label]')!.textContent ?? '';
 }
 
 function over(el: HTMLElement): HTMLButtonElement {
@@ -164,43 +174,48 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
   });
 });
 
-describe('<rack-console> (Decode: at-or-under + delta)', () => {
-  it('decodes an exact Target into discs and the achieved Total, with no delta note', () => {
+describe('<rack-console> (Decode: at-or-under + status pill)', () => {
+  it('decodes an exact Target into discs and the achieved Total, showing the Exact pill', () => {
     const el = mountConsole();
     type(el, '100');
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
     expect(total(el)).toContain('100');
-    expect(delta(el).hidden).toBe(true);
+    expect(statusEl(el).hidden).toBe(false);
+    expect(statusKind(el)).toBe('exact');
+    expect(statusText(el)).toBe('Exact');
   });
 
-  it('shows the bare Bar and Total 20 for an empty Target', () => {
+  it('shows the bare Bar and Total 20 for an empty Target, with no status pill', () => {
     const el = mountConsole();
     type(el, '');
     expect(discs(el).length).toBe(0);
     expect(total(el)).toContain('20');
-    expect(delta(el).hidden).toBe(true);
+    expect(statusEl(el).hidden).toBe(true);
   });
 
-  it('rounds an off-grid Target down and renders how far under it landed', () => {
+  it('rounds an off-grid Target down and reads "N short" on the pill', () => {
     const el = mountConsole();
     type(el, '100.5');
     // Nearest at-or-under is 100 -> the same 25 + 15 Side Load is shown.
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
     expect(total(el)).toContain('100');
-    const note = delta(el);
-    expect(note.hidden).toBe(false);
-    expect(note.textContent).toContain('0.5');
-    expect(note.textContent!.toLowerCase()).toContain('under');
+    expect(statusEl(el).hidden).toBe(false);
+    expect(statusKind(el)).toBe('short');
+    expect(statusText(el)).toBe('0.5 kg short');
   });
 
-  it('floors a sub-Bar Target at the bare Bar and flags it', () => {
+  it('floors a sub-Bar Target at the bare Bar, reading "N over" (the floor folds into over)', () => {
+    // Per the handoff (4a), a Total above the Target -- including the sub-Bar floor where
+    // the bare Bar already exceeds the Target -- reads as "N over". There is no separate
+    // "below the Bar" copy in the handoff; the pill states the plain fact (you are 10 kg
+    // over the Target you typed).
     const el = mountConsole();
     type(el, '10');
     expect(discs(el).length).toBe(0);
     expect(total(el)).toContain('20');
-    const note = delta(el);
-    expect(note.hidden).toBe(false);
-    expect(note.textContent!.toLowerCase()).toContain('bar');
+    expect(statusEl(el).hidden).toBe(false);
+    expect(statusKind(el)).toBe('over');
+    expect(statusText(el)).toBe('10 kg over');
     // A sub-Bar Target already sits above the Target -- no round-up to offer.
     expect(over(el).hidden).toBe(true);
   });
@@ -225,9 +240,8 @@ describe('<rack-console> (Decode: at-or-under + delta)', () => {
       over(el).click();
       expect(total(el)).toContain('101');
       expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15', '0.5']);
-      const note = delta(el);
-      expect(note.hidden).toBe(false);
-      expect(note.textContent!.toLowerCase()).toContain('over');
+      expect(statusKind(el)).toBe('over');
+      expect(statusText(el)).toBe('0.5 kg over');
     });
 
     it('toggles back to the at-or-under primary from the over option', () => {
@@ -303,15 +317,13 @@ describe('<rack-console> (Bar selection flows into the solver, RBAR-15)', () => 
     expect(total(el)).toContain('100'); // still hits the Target, just more Plates
   });
 
-  it('names the chosen Bar in the sub-Bar floor note', () => {
+  it('reads a sub-Bar Target as "N over" against the chosen Bar (the floor folds into over)', () => {
     const el = mountConsole();
     el.barKg = 5;
-    type(el, '3'); // below the 5 kg Bar -> floored at the bare Bar
+    type(el, '3'); // below the 5 kg Bar -> floored at the bare Bar (Total 5, 2 over)
     expect(total(el)).toContain('5');
-    const note = delta(el);
-    expect(note.hidden).toBe(false);
-    expect(note.textContent).toContain('5');
-    expect(note.textContent!.toLowerCase()).toContain('bar');
+    expect(statusKind(el)).toBe('over');
+    expect(statusText(el)).toBe('2 kg over');
   });
 
   it('moves the Target entry anchor to the chosen Bar', () => {
@@ -331,7 +343,7 @@ describe('<rack-console> (Bar selection flows into the solver, RBAR-15)', () => 
     expect(total(el)).toContain('101');
     el.barKg = 15; // re-decode 100.5 against the 15 kg Bar
     expect(total(el)).toContain('100'); // back on the at-or-under primary
-    expect(delta(el).textContent!.toLowerCase()).toContain('under');
+    expect(statusKind(el)).toBe('short');
     const opt = over(el);
     expect(opt.hidden).toBe(false);
     expect(opt.textContent!.toLowerCase()).toContain('round up'); // fresh, not "back to"
@@ -409,13 +421,13 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
     expect(total(el)).toContain('50'); // 20 + 2 x 15
   });
 
-  it('hides the delta and the over-target opt-in in Encode mode', () => {
+  it('hides the status pill and the over-target opt-in in Encode mode', () => {
     const el = mountConsole();
     type(el, '100.5'); // Decode: over option surfaces
     expect(over(el).hidden).toBe(false);
     modeBtn(el, 'encode').click();
     expect(over(el).hidden).toBe(true);
-    expect(delta(el).hidden).toBe(true);
+    expect(statusEl(el).hidden).toBe(true);
   });
 
   it('carries the chosen over loadout through Encode and back without a stale note', () => {
@@ -430,7 +442,7 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15', '0.5']);
     expect(total(el)).toContain('101');
     expect(over(el).hidden).toBe(true);
-    expect(delta(el).hidden).toBe(true);
+    expect(statusEl(el).hidden).toBe(true);
   });
 
   it('removes the tapped duplicate, not just any match, through the DOM path', () => {
@@ -465,10 +477,10 @@ describe('<rack-console> (Decode/Encode toggle, shared Side Load)', () => {
       tapAdd(el, 25);
       tapAdd(el, 20); // 20 + 2 x 45 = 110
       modeBtn(el, 'decode').click();
-      // the hand-built loadout is still on the Bar, with no delta note (no Target yet)
+      // the hand-built loadout is still on the Bar, with no status pill (no Target yet)
       expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '20']);
       expect(total(el)).toContain('110');
-      expect(delta(el).hidden).toBe(true);
+      expect(statusEl(el).hidden).toBe(true);
       // typing a Target takes Decode back over
       type(el, '100');
       expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
@@ -544,17 +556,16 @@ describe('<rack-console> (Collars fold into the baseline, RBAR-16, ADR-0008)', (
     expect(total(el)).toContain('90');
   });
 
-  it('names the Bar + Collars baseline in the sub-baseline floor note', () => {
-    // A Target below the bare rig (Bar + 2 x collar) floors at the baseline. With a
-    // collar fitted the note must name that baseline, not the bare Bar (ADR-0008).
+  it('reads a sub-baseline Target as "N over" with a Collar fitted (floor folds into over)', () => {
+    // A Target below the bare rig (Bar + 2 x collar) floors at the baseline; the achieved
+    // Total (25) is over the typed Target (22) by 3. Per the handoff the pill states that
+    // plainly -- the collared baseline still drives the Total, just not a bespoke note.
     const el = mountConsole();
     el.collarKg = 2.5; // baseline 25 on the default 20 kg Bar
     type(el, '22'); // below the 25 kg floor
     expect(total(el)).toContain('25');
-    const note = delta(el);
-    expect(note.hidden).toBe(false);
-    expect(note.textContent).toContain('25'); // the collared baseline, not 20
-    expect(note.textContent!.toLowerCase()).toContain('collars');
+    expect(statusKind(el)).toBe('over');
+    expect(statusText(el)).toBe('3 kg over');
   });
 
   it('re-reads the Total but keeps a hand-built loadout when the Collar changes in Encode', () => {
@@ -742,14 +753,15 @@ describe('<rack-console> display unit toggle (RBAR-17, ADR-0010)', () => {
     expect(secondaryEl(el2).textContent).toContain('Show'); // stays hidden
   });
 
-  it('keys the under-target note off the DISPLAYED pounds, not the raw kg delta', () => {
+  it('keys the status pill off the DISPLAYED pounds, not the raw kg delta', () => {
     // 311 lb decodes to a 141 kg bar that reads back as 311 lb -- displayed-exact, even
-    // though it is 0.15 lb under in raw kg. The note and the round-up must both hide.
+    // though it is 0.15 lb under in raw kg. The pill reads Exact and the round-up hides.
     const el = mountConsole();
     unitBtn(el, 'lb').click();
     type(el, '311');
     expect(total(el)).toBe('311 lb');
-    expect(delta(el).hidden).toBe(true);
+    expect(statusKind(el)).toBe('exact');
+    expect(statusText(el)).toBe('Exact');
     expect(over(el).hidden).toBe(true);
   });
 
@@ -771,17 +783,15 @@ describe('<rack-console> display unit toggle (RBAR-17, ADR-0010)', () => {
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
   });
 
-  it('shows a pounds under-target note when the displayed pounds really miss', () => {
+  it('reads "N lb short" on the pill when the displayed pounds really miss', () => {
     const el = mountConsole();
     unitBtn(el, 'lb').click();
     // 310 lb = 140.6 kg; nearest Eleiko at-or-under is 140 kg, which reads 309 lb -- a
     // real 1 lb miss in displayed pounds (not a sub-display-unit rounding miss).
     type(el, '310');
     expect(total(el)).toBe('309 lb');
-    const note = delta(el);
-    expect(note.hidden).toBe(false);
-    expect(note.textContent).toContain('lb');
-    expect(note.textContent!.toLowerCase()).toContain('under');
+    expect(statusKind(el)).toBe('short');
+    expect(statusText(el)).toBe('1 lb short');
     // and the round-up to the next pound is offered
     expect(over(el).hidden).toBe(false);
     expect(over(el).textContent!.toLowerCase()).toContain('round up');
@@ -1038,5 +1048,82 @@ describe('<rack-console> (Fullscreen rack card)', () => {
       .shadowRoot!.querySelector<HTMLButtonElement>('[data-close]')!
       .click();
     expect(fsCard(el).hidden).toBe(true);
+  });
+});
+
+// -- Total status pill (RBAR-28, handoff 4a) ----------------------------------------
+// The pure deriver keys purely off the DISPLAYED numbers (ADR-0010) plus the physical
+// sleeve-capacity flag, so every state can be asserted in both units without a DOM.
+describe('statusPill deriver (RBAR-28)', () => {
+  it('reads equal displayed numbers as Exact in either unit', () => {
+    expect(statusPill(100, 100, 'kg', false)).toEqual({ kind: 'exact', label: 'Exact' });
+    expect(statusPill(220, 220, 'lb', false)).toEqual({ kind: 'exact', label: 'Exact' });
+  });
+
+  it('reads a Total above the Target as "N over" in either unit', () => {
+    expect(statusPill(101, 100.5, 'kg', false)).toEqual({ kind: 'over', label: '0.5 kg over' });
+    expect(statusPill(225, 220, 'lb', false)).toEqual({ kind: 'over', label: '5 lb over' });
+  });
+
+  it('reads a Total below the Target as "N short" in either unit', () => {
+    expect(statusPill(100, 100.5, 'kg', false)).toEqual({ kind: 'short', label: '0.5 kg short' });
+    expect(statusPill(309, 310, 'lb', false)).toEqual({ kind: 'short', label: '1 lb short' });
+  });
+
+  it('reads a short Side that is physically full as "Bar at capacity" in either unit', () => {
+    // The capacity flag only overrides the SHORT case -- an over/exact Total is unaffected.
+    expect(statusPill(720, 720.3, 'kg', true)).toEqual({ kind: 'capacity', label: 'Bar at capacity' });
+    expect(statusPill(1598, 1600, 'lb', true)).toEqual({ kind: 'capacity', label: 'Bar at capacity' });
+    // capacity never masks an over or exact reading
+    expect(statusPill(101, 100, 'kg', true).kind).toBe('over');
+    expect(statusPill(100, 100, 'kg', true).kind).toBe('exact');
+  });
+});
+
+describe('<rack-console> status pill wiring (RBAR-28)', () => {
+  it('renders the Exact pill (kind exact) for an exactly achievable Target', () => {
+    const el = mountConsole();
+    type(el, '100');
+    expect(statusKind(el)).toBe('exact');
+    expect(statusText(el)).toBe('Exact');
+  });
+
+  it('renders an over pill in lb when parked on the round-up loadout', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    type(el, '310'); // 309 lb primary (short)
+    over(el).click(); // round up to the next pound -> 311 lb
+    expect(total(el)).toBe('311 lb');
+    expect(statusKind(el)).toBe('over');
+    expect(statusText(el)).toBe('1 lb over');
+  });
+
+  it('reads "Bar at capacity" and suppresses the round-up when the sleeve is full', () => {
+    // An extreme off-grid Target piles the (uncapped, ADR-0003) Side past the physical
+    // sleeve: 720.3 kg -> 14 x 25 per Side (812 mm > 415), 0.3 kg short. The miss cannot
+    // be closed -- no Plate fits -- so the pill reads capacity and the round-up hides.
+    const el = mountConsole();
+    type(el, '720.3');
+    expect(total(el)).toContain('720');
+    expect(statusKind(el)).toBe('capacity');
+    expect(statusText(el)).toBe('Bar at capacity');
+    expect(over(el).hidden).toBe(true);
+  });
+
+  it('reads "Bar at capacity" in lb too (same label, unit-independent)', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    type(el, '1600'); // ~725.7 kg -> a sleeve-full short, displayed in pounds
+    expect(statusKind(el)).toBe('capacity');
+    expect(statusText(el)).toBe('Bar at capacity');
+    expect(over(el).hidden).toBe(true);
+  });
+
+  it('sits beside the secondary readout in one status line (screenshot 01 layout)', () => {
+    const el = mountConsole();
+    type(el, '100.5');
+    const line = el.shadowRoot!.querySelector('.statusline')!;
+    expect(line.querySelector('[data-secondary]')).not.toBeNull();
+    expect(line.querySelector('[data-status]')).not.toBeNull();
   });
 });
