@@ -217,6 +217,34 @@ describe('<rack-entry>', () => {
     expect(seen).toHaveBeenLastCalledWith(100);
   });
 
+  it('re-opening the sheet on a typed value replaces it on the next key (handoff 5)', () => {
+    // "First keypress after opening replaces" -- tapping the value to reopen the pad
+    // treats the shown number as a fresh placeholder, so typing 5 yields 5, not 1005.
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    ['1', '0', '0'].forEach((k) => key(root, k)); // type 100 (no longer pristine)
+    expect(seen).toHaveBeenLastCalledWith(100);
+    tap(root, '[data-value]'); // reopen the sheet on the existing 100
+    key(root, '5'); // first key after opening
+    expect(seen).toHaveBeenLastCalledWith(5);
+    expect(root.querySelector('[data-value]')!.textContent).toBe('5');
+  });
+
+  it('re-opening a typed value and closing WITHOUT typing still commits it (not null)', () => {
+    // The replace-on-open flag must not corrupt the commit contract: a real typed value
+    // peeked and closed is still a Target the lifter chose, so it commits (only a genuine
+    // untouched seeded default carries null).
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    ['1', '0', '0'].forEach((k) => key(root, k)); // 100
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-value]'); // close without typing
+    expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
   it('Clear empties the field but keeps the sheet open', () => {
     // Clear (ghost footer) is an edit, not a dismiss -- the lifter keeps typing.
     const { el, root } = mountEntry();

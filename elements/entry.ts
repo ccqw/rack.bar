@@ -58,9 +58,9 @@ class RackEntry extends HTMLElement {
   private liveLoadEl!: HTMLElement;
 
   // The "on the bar" load line the sheet shows under the live value, e.g.
-  // "On the bar: 142 kg . 0.5 short" -- the actual loadable Total + its RBAR-28 status.
-  // The console owns decode (ADR-0005), so it computes this and pushes it down; null hides
-  // the line (an untouched default or empty field has nothing decoded yet).
+  // "On the bar: 142 kg (0.5 under)" -- the actual loadable Total + how far it lands from
+  // the Target. The console owns decode (ADR-0005), so it computes this and pushes it down;
+  // null hides the line (an untouched default or empty field has nothing decoded yet).
   private _loadLine: string | null = null;
 
   /** The console's decode status for the sheet's "on the bar" line (null hides it). */
@@ -132,9 +132,17 @@ class RackEntry extends HTMLElement {
   // (keypad/stepper/display). The Unit setter reformats FROM this so a Unit round-trip
   // is exact; it is not recomputed from the rounded draft on a Unit switch.
   private shownKg: number | null = null;
-  // True when `draft` holds an untouched seeded default (initial Bar weight or a value
-  // pushed in by display()). The next typed digit replaces it rather than appending.
+  // True when `draft` holds an untouched seeded default the lifter never chose (the initial
+  // Bar weight or a value pushed in by display()). Drives the keypadclose COMMIT contract:
+  // a pristine field carries null so an idle peek never litters Recents. Cleared by the
+  // first real edit (a keypress or a stepper nudge).
   private pristine = false;
+  // True when the next keypress should REPLACE the shown value rather than append to it.
+  // Set on a seed AND every time the sheet OPENS (handoff 5: "first keypress after opening
+  // replaces"), so reopening the pad on an existing Target and typing starts fresh (100 ->
+  // "5", not "1005"). Distinct from `pristine`: a reopened REAL value replaces-on-type but
+  // still commits on close, so this flag must not gate the commit.
+  private replaceNext = false;
 
   /**
    * Show `value` (canonical kg) in the field without emitting a `target` event (null
@@ -148,6 +156,7 @@ class RackEntry extends HTMLElement {
     this.draft = value === null ? '' : String(shownIn(value, this._unit));
     this.shownKg = value;
     this.pristine = true;
+    this.replaceNext = true;
     this.renderValue();
   }
 
@@ -321,6 +330,7 @@ class RackEntry extends HTMLElement {
     // event -- the console already renders the bare Bar). Pristine, so typing replaces it.
     this.draft = this.barShown();
     this.pristine = true;
+    this.replaceNext = true;
     this.renderValue();
   }
 
@@ -329,6 +339,10 @@ class RackEntry extends HTMLElement {
   private openKeypad(): void {
     this.sheet.hidden = false;
     this.valueEl.setAttribute('aria-expanded', 'true');
+    // Handoff 5: the first keypress after opening replaces the shown value, so reopening
+    // the pad on an existing Target and typing starts fresh (does NOT touch `pristine`, so
+    // a real value peeked and closed still commits).
+    this.replaceNext = true;
   }
 
   // Hide the keypad sheet and commit the Target: the console pushes it onto the Recent
@@ -351,10 +365,13 @@ class RackEntry extends HTMLElement {
   }
 
   // A keypad press mutates the draft string (in the display Unit), then emits the
-  // derived kg Target. A pristine default is replaced by the first typed digit/decimal
-  // rather than appended to.
+  // derived kg Target. A `replaceNext` value (a seeded default, or the value shown when
+  // the pad was reopened -- handoff 5) is replaced by the first typed digit/decimal rather
+  // than appended to. Any press also clears `pristine`: once the lifter types, the value
+  // is one they chose, so closing commits it.
   private press(k: string): void {
-    const fresh = this.pristine;
+    const fresh = this.replaceNext;
+    this.replaceNext = false;
     this.pristine = false;
     if (k === 'clear') {
       this.draft = '';
@@ -378,6 +395,9 @@ class RackEntry extends HTMLElement {
   // float fuzz. The shown value moves by stepFor(unit) -- 5 lb or 1 kg.
   private step(delta: number): void {
     this.pristine = false;
+    // A nudge is an explicit edit of the current value, so a following digit appends to
+    // the stepped number rather than replacing it.
+    this.replaceNext = false;
     const shownBar = shownIn(this._barKg, this._unit);
     const current = this.draft === '' ? shownBar : Number(this.draft);
     const base = Number.isNaN(current) ? shownBar : current;
