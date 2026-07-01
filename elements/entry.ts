@@ -370,20 +370,25 @@ class RackEntry extends HTMLElement {
   // than appended to. Any press also clears `pristine`: once the lifter types, the value
   // is one they chose, so closing commits it.
   private press(k: string): void {
-    const fresh = this.replaceNext;
+    const replace = this.replaceNext;
+    // `del` discards a whole value only when it is a genuine placeholder default (the bare
+    // Bar seed / a display() seed); on a real value -- including one the pad just reopened
+    // -- del edits a single character. So del keys off `pristine`, while typing a digit or
+    // a decimal keys off `replaceNext` (replace-on-open, handoff 5).
+    const discardOnDel = this.pristine;
     this.replaceNext = false;
     this.pristine = false;
     if (k === 'clear') {
       this.draft = '';
     } else if (k === 'del') {
-      this.draft = fresh ? '' : this.draft.slice(0, -1);
+      this.draft = discardOnDel ? '' : this.draft.slice(0, -1);
     } else if (k === '.') {
-      if (fresh) this.draft = '';
+      if (replace) this.draft = '';
       if (!this.draft.includes('.')) this.draft += this.draft === '' ? '0.' : '.';
     } else {
       // Drop a lone leading zero ("0" + "5" -> "5") so the shown draft matches the
       // Target it decodes to; a leading zero before a decimal is kept by the '.' branch.
-      const base = fresh ? '' : this.draft;
+      const base = replace ? '' : this.draft;
       this.draft = base === '0' ? k : base + k;
     }
     this.renderValue();

@@ -230,6 +230,19 @@ describe('<rack-entry>', () => {
     expect(root.querySelector('[data-value]')!.textContent).toBe('5');
   });
 
+  it('del after reopening a typed value deletes one char, not the whole field', () => {
+    // Regression guard: replace-on-open must not turn the first del into a full wipe of a
+    // real value -- del edits one character; only a genuine placeholder default (the bare
+    // Bar seed) is discarded wholesale by del.
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    ['1', '4', '2', '.', '5'].forEach((k) => key(root, k)); // 142.5
+    tap(root, '[data-value]'); // reopen the sheet on 142.5
+    key(root, 'del'); // first key after reopening
+    expect(root.querySelector('[data-value]')!.textContent).toBe('142.');
+    expect(seen).toHaveBeenLastCalledWith(142); // "142." parses to 142
+  });
+
   it('re-opening a typed value and closing WITHOUT typing still commits it (not null)', () => {
     // The replace-on-open flag must not corrupt the commit contract: a real typed value
     // peeked and closed is still a Target the lifter chose, so it commits (only a genuine
