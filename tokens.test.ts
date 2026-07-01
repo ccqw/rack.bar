@@ -62,6 +62,9 @@ describe('handoff palette is reconciled 1:1 (tokens.css)', () => {
     '--rack-plate-green': '#25a45a',
     '--rack-plate-white': '#eef0f2',
     '--rack-plate-iron': '#34383e',
+    // Setup plate-row swatch greys (RBAR-29, prototype PLATESETS training cols)
+    '--rack-swatch-iron': '#3a3f45',
+    '--rack-swatch-iron-deep': '#2c3036',
     // Radii
     '--rack-radius-pill': '999px',
     '--rack-radius-card': '14px',

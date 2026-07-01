@@ -179,3 +179,62 @@ describe('<rack-setup> Plates section (RBAR-17, ADR-0010)', () => {
     expect(ironTile.getAttribute('aria-pressed')).toBe('true');
   });
 });
+
+describe('<rack-setup> plate-set row swatches + selected check (RBAR-29)', () => {
+  function row(root: ShadowRoot, key: string): HTMLButtonElement {
+    return root.querySelector<HTMLButtonElement>(`[data-plateset="${key}"]`)!;
+  }
+
+  // Each swatch carries its fill as an inline style var(); the order is the render order.
+  function swatchFills(root: ShadowRoot, key: string): string[] {
+    return [...row(root, key).querySelectorAll<HTMLElement>('.swatch')].map(
+      (s) => s.getAttribute('style') ?? '',
+    );
+  }
+
+  it('the Competition row carries the four bumper swatches, heaviest-first', () => {
+    const { root } = mountSetup();
+    const fills = swatchFills(root, 'comp');
+    expect(fills).toHaveLength(4);
+    expect(fills[0]).toContain('var(--rack-plate-red)');
+    expect(fills[1]).toContain('var(--rack-plate-blue)');
+    expect(fills[2]).toContain('var(--rack-plate-yellow)');
+    expect(fills[3]).toContain('var(--rack-plate-green)');
+  });
+
+  it('the Training row alternates the two iron swatch greys', () => {
+    const { root } = mountSetup();
+    const fills = swatchFills(root, 'training');
+    expect(fills).toHaveLength(4);
+    expect(fills[0]).toContain('var(--rack-swatch-iron)');
+    expect(fills[1]).toContain('var(--rack-swatch-iron-deep)');
+    expect(fills[2]).toContain('var(--rack-swatch-iron)');
+    expect(fills[3]).toContain('var(--rack-swatch-iron-deep)');
+  });
+
+  it('swatches and the check are decorative; the row still announces the set + unit', () => {
+    const { root } = mountSetup();
+    for (const key of ['comp', 'training']) {
+      const r = row(root, key);
+      expect(r.querySelector('.swatches')!.getAttribute('aria-hidden')).toBe('true');
+      expect(r.querySelector('.check')!.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(row(root, 'comp').getAttribute('aria-label')).toContain('Competition plates');
+    expect(row(root, 'comp').getAttribute('aria-label')).toContain('kg');
+    expect(row(root, 'training').getAttribute('aria-label')).toContain('lb');
+  });
+
+  it('both rows carry a check whose visibility keys off the pressed row', () => {
+    const { el, root } = mountSetup();
+    expect(row(root, 'comp').querySelector('.check')).toBeTruthy();
+    expect(row(root, 'training').querySelector('.check')).toBeTruthy();
+    // The check shows/hides via CSS keyed on aria-pressed (happy-dom computes no
+    // styles, so lock the rule text)...
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toContain('.row[aria-pressed="true"] .check');
+    // ...and the pressed state follows the reflected plate set, so the check moves.
+    el.plateSet = 'training';
+    expect(row(root, 'training').getAttribute('aria-pressed')).toBe('true');
+    expect(row(root, 'comp').getAttribute('aria-pressed')).toBe('false');
+  });
+});
