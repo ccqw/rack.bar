@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import './console.ts';
-import { statusPill } from './console.ts';
+import { statusPill, onBarLine } from './console.ts';
 import { lbToKg } from '../lib/units.ts';
 
 type Console = HTMLElement & {
@@ -1151,6 +1151,61 @@ describe('statusPill deriver (RBAR-28)', () => {
     // capacity never masks an over or exact reading
     expect(statusPill(101, 100, 'kg', true).kind).toBe('over');
     expect(statusPill(100, 100, 'kg', true).kind).toBe('exact');
+  });
+});
+
+describe('onBarLine deriver (RBAR-22 keypad sheet)', () => {
+  // The loadable Total + delta, in the keypad's own wording ("under"/"over"/"exact"),
+  // keyed off the DISPLAYED numbers (ADR-0010). Args are canonical kg.
+  it('reads an exactly-achievable Target as "(exact)"', () => {
+    expect(onBarLine(100, 100, 'kg', false)).toBe('On the bar: 100 kg (exact)');
+  });
+
+  it('reads a Total below the Target as "(N under)" -- the keypad wording, not "short"', () => {
+    // Target 142.5, loadable 142 -> 0.5 under (the prototype's keypad line uses "under"
+    // where the status pill above says "short").
+    expect(onBarLine(142, 142.5, 'kg', false)).toBe('On the bar: 142 kg (0.5 under)');
+  });
+
+  it('reads a Total above the Target as "(N over)"', () => {
+    expect(onBarLine(101, 100.5, 'kg', false)).toBe('On the bar: 101 kg (0.5 over)');
+  });
+
+  it('reads a physically-full short Side as "(at capacity)"', () => {
+    expect(onBarLine(720, 720.3, 'kg', true)).toBe('On the bar: 720 kg (at capacity)');
+  });
+
+  it('keys off the displayed unit so it is honest in lb', () => {
+    // 100 kg -> 220 lb; an exact whole-lb Target reads exact in lb.
+    expect(onBarLine(100, 100, 'lb', false)).toBe('On the bar: 220 lb (exact)');
+  });
+});
+
+describe('<rack-console> feeds the keypad sheet its load line (RBAR-22)', () => {
+  function loadLineEl(el: HTMLElement): HTMLElement {
+    return entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live-load]')!;
+  }
+
+  it('pushes the on-the-bar line to the entry once a Target decodes', () => {
+    const el = mountConsole();
+    type(el, '100'); // exactly achievable
+    const line = loadLineEl(el);
+    expect(line.hidden).toBe(false);
+    expect(line.textContent).toBe('On the bar: 100 kg (exact)');
+  });
+
+  it('reads an off-grid Target as under (keypad wording)', () => {
+    const el = mountConsole();
+    type(el, '100.5'); // nearest at-or-under is 100
+    expect(loadLineEl(el).textContent).toBe('On the bar: 100 kg (0.5 under)');
+  });
+
+  it('hides the line when the field is emptied (nothing decoded)', () => {
+    const el = mountConsole();
+    type(el, '100');
+    expect(loadLineEl(el).hidden).toBe(false);
+    type(el, ''); // clear -> null Target
+    expect(loadLineEl(el).hidden).toBe(true);
   });
 });
 

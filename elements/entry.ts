@@ -22,7 +22,7 @@
 // lb -> kg round-trips without drift). The Bar (anchor) is given in kg and shown
 // converted. Defaults to kg, so the kg behavior is unchanged.
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
-import { shownIn, draftToKg, stepFor } from '../lib/units.ts';
+import { shownIn, draftToKg, stepFor, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
@@ -44,7 +44,33 @@ class RackEntry extends HTMLElement {
   private captionEl!: HTMLElement;
   private decBtn!: HTMLButtonElement;
   private incBtn!: HTMLButtonElement;
-  private keypad!: HTMLElement;
+  // The keypad bottom sheet (RBAR-22, handoff 5): a fixed bottom-docked sheet whose
+  // visibility IS the open/closed state. Deliberately NO dim scrim (the prototype keeps
+  // the bar/Total above bright and interactive -- Caitlin's fidelity call, overriding the
+  // ticket's "dim scrim" AC); it dismisses via Done or a value re-tap, not an outside tap.
+  // The sheet carries its own readout -- the field behind it is covered, so it shows the
+  // big live value, its secondary unit, and the live "on the bar" load line (fed down by
+  // the console, which owns decode).
+  private sheet!: HTMLElement;
+  private liveEl!: HTMLElement;
+  private liveUEl!: HTMLElement;
+  private liveSecEl!: HTMLElement;
+  private liveLoadEl!: HTMLElement;
+
+  // The "on the bar" load line the sheet shows under the live value, e.g.
+  // "On the bar: 142 kg (0.5 under)" -- the actual loadable Total + how far it lands from
+  // the Target. The console owns decode (ADR-0005), so it computes this and pushes it down;
+  // null hides the line (an untouched default or empty field has nothing decoded yet).
+  private _loadLine: string | null = null;
+
+  /** The console's decode status for the sheet's "on the bar" line (null hides it). */
+  set loadLine(text: string | null) {
+    this._loadLine = text;
+    if (this.liveLoadEl) this.renderLoadLine();
+  }
+  get loadLine(): string | null {
+    return this._loadLine;
+  }
 
   // The Bar weight the field anchors to (RBAR-15, ADR-0002/0007), canonical kg. The
   // lifter loads a bar UP from its own weight, so the seeded default, the empty-field
@@ -106,9 +132,17 @@ class RackEntry extends HTMLElement {
   // (keypad/stepper/display). The Unit setter reformats FROM this so a Unit round-trip
   // is exact; it is not recomputed from the rounded draft on a Unit switch.
   private shownKg: number | null = null;
-  // True when `draft` holds an untouched seeded default (initial Bar weight or a value
-  // pushed in by display()). The next typed digit replaces it rather than appending.
+  // True when `draft` holds an untouched seeded default the lifter never chose (the initial
+  // Bar weight or a value pushed in by display()). Drives the keypadclose COMMIT contract:
+  // a pristine field carries null so an idle peek never litters Recents. Cleared by the
+  // first real edit (a keypress or a stepper nudge).
   private pristine = false;
+  // True when the next keypress should REPLACE the shown value rather than append to it.
+  // Set on a seed AND every time the sheet OPENS (handoff 5: "first keypress after opening
+  // replaces"), so reopening the pad on an existing Target and typing starts fresh (100 ->
+  // "5", not "1005"). Distinct from `pristine`: a reopened REAL value replaces-on-type but
+  // still commits on close, so this flag must not gate the commit.
+  private replaceNext = false;
 
   /**
    * Show `value` (canonical kg) in the field without emitting a `target` event (null
@@ -122,6 +156,7 @@ class RackEntry extends HTMLElement {
     this.draft = value === null ? '' : String(shownIn(value, this._unit));
     this.shownKg = value;
     this.pristine = true;
+    this.replaceNext = true;
     this.renderValue();
   }
 
@@ -171,10 +206,48 @@ class RackEntry extends HTMLElement {
         }
         .value.empty { color: var(--rack-muted); } /* placeholder anchor */
         .value:focus-visible { outline: none; border-bottom-color: var(--rack-accent); }
-        .keypad[hidden] { display: none; }
+
+        /* The keypad is a bottom sheet (RBAR-22, handoff 5), not an inline grid: it is
+           fixed to the viewport bottom and slides up (sheetIn .2s), so opening it never
+           displaces the bar / Total / Recents behind it. Unlike the Setup/Share overlays
+           there is NO dim scrim -- the prototype keeps the bar bright above the sheet, so
+           the lifter watches the plates resolve live while typing (Caitlin's fidelity call,
+           overriding the ticket's "dim scrim" AC). Handoff SUNKEN fill (#101216), 1px top
+           border, 24px top corners; safe-area pad clears the home indicator. */
+        @keyframes rack-rise {
+          from { transform: translateY(100%); } to { transform: translateY(0); }
+        }
+        .sheet[hidden] { display: none; }
+        .sheet {
+          position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+          margin: 0 auto; width: 100%; max-width: 520px;
+          background: var(--rack-sunken);
+          border-top: 1px solid var(--rack-border);
+          border-radius: var(--rack-radius-sheet) var(--rack-radius-sheet) 0 0;
+          padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+          box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, .7);
+          animation: rack-rise .2s cubic-bezier(.2, .85, .25, 1);
+        }
+        /* The sheet's own readout: the big live value, its secondary unit, and the live
+           "on the bar" load line (the field behind the sheet is covered). */
+        .live { text-align: center; margin-bottom: 4px; }
+        .live-num {
+          font-family: var(--rack-font-num); font-size: 44px; font-weight: 700;
+          color: var(--rack-fg); letter-spacing: -.02em;
+        }
+        .live-num.empty { color: var(--rack-muted); }
+        .live-u { font-size: 16px; color: var(--rack-muted); margin-left: 4px; }
+        /* Secondary unit, then the "on the bar" status, stacked under the value (handoff 5):
+           the secondary in the other unit (muted), the load line in accent below it. */
+        .sub {
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          min-height: 18px; margin-bottom: 14px;
+          font-family: var(--rack-font-num); font-size: 13px; color: var(--rack-muted);
+        }
+        .sub .load { color: var(--rack-accent); }
+        .sub .load[hidden] { display: none; }
         .keypad {
           display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-          margin-top: 16px;
         }
         .key {
           min-height: 56px; /* big touch targets */
@@ -186,13 +259,23 @@ class RackEntry extends HTMLElement {
         .key[data-key="del"] { font-size: 16px; color: var(--rack-muted); }
         .key:active { background: var(--rack-line); }
         .key:focus-visible { outline: 2px solid var(--rack-accent); }
-        .clear {
-          grid-column: 1 / -1; min-height: 44px;
-          font: inherit; font-size: 14px; color: var(--rack-muted);
-          background: transparent; border: 1px solid var(--rack-line);
+        /* Footer: Clear (ghost, an edit) + Done (accent, the dismiss). */
+        .foot { display: flex; gap: 8px; margin-top: 14px; }
+        .clear, .done {
+          flex: 1; min-height: 48px; font: inherit; font-size: 15px;
           border-radius: var(--rack-radius); cursor: pointer;
         }
-        .clear:focus-visible { outline: 2px solid var(--rack-accent); }
+        .clear {
+          font-weight: 600; color: var(--rack-muted);
+          background: transparent; border: 1px solid var(--rack-line);
+        }
+        .done {
+          font-weight: 700; color: var(--rack-bg);
+          background: var(--rack-accent); border: none;
+        }
+        .clear:focus-visible, .done:focus-visible {
+          outline: 2px solid var(--rack-accent); outline-offset: 2px;
+        }
       </style>
       <!-- A decorative caption; the value button carries its own live aria-label. -->
       <div class="caption" data-caption>Target (kg)</div>
@@ -202,9 +285,22 @@ class RackEntry extends HTMLElement {
                 aria-haspopup="true" aria-expanded="false">${DEFAULT_BAR_KG}</button>
         <button type="button" class="step" data-step="inc" aria-label="Increase">+</button>
       </div>
-      <div class="keypad" data-keypad role="group" aria-label="Enter Target" hidden>
-        ${keys}
-        <button type="button" class="clear" data-key="clear">Clear</button>
+      <div class="sheet" data-sheet role="dialog" aria-modal="false" aria-label="Enter Target" hidden>
+        <div class="live">
+          <span class="live-num" data-live>${DEFAULT_BAR_KG}</span><span
+            class="live-u" data-live-u>kg</span>
+        </div>
+        <div class="sub">
+          <span data-live-sec></span>
+          <span class="load" data-live-load hidden></span>
+        </div>
+        <div class="keypad" data-keypad role="group" aria-label="Enter Target">
+          ${keys}
+        </div>
+        <div class="foot">
+          <button type="button" class="clear" data-key="clear">Clear</button>
+          <button type="button" class="done" data-done>Done</button>
+        </div>
       </div>
     `;
 
@@ -212,17 +308,18 @@ class RackEntry extends HTMLElement {
     this.captionEl = this.root.querySelector('[data-caption]')!;
     this.decBtn = this.root.querySelector('[data-step="dec"]')!;
     this.incBtn = this.root.querySelector('[data-step="inc"]')!;
-    this.keypad = this.root.querySelector('[data-keypad]')!;
+    this.sheet = this.root.querySelector('[data-sheet]')!;
+    this.liveEl = this.root.querySelector('[data-live]')!;
+    this.liveUEl = this.root.querySelector('[data-live-u]')!;
+    this.liveSecEl = this.root.querySelector('[data-live-sec]')!;
+    this.liveLoadEl = this.root.querySelector('[data-live-load]')!;
 
-    this.valueEl.addEventListener('click', () => {
-      const wasOpen = !this.keypad.hidden;
-      this.keypad.hidden = wasOpen;
-      this.valueEl.setAttribute('aria-expanded', String(!this.keypad.hidden));
-      // Closing the keypad commits the Target: the console pushes it onto the Recent
-      // row (RBAR-20, ADR-0009). Fire only on the open->closed edge, so opening the pad
-      // never commits and closing it does.
-      if (wasOpen) this.emitKeypadClose();
-    });
+    // Tapping the value toggles the sheet; the Done button closes it. There is no scrim,
+    // so no outside-tap dismissal (the prototype keeps the bar above bright + interactive).
+    this.valueEl.addEventListener('click', () =>
+      this.sheet.hidden ? this.openKeypad() : this.closeKeypad(),
+    );
+    this.root.querySelector('[data-done]')!.addEventListener('click', () => this.closeKeypad());
     this.incBtn.addEventListener('click', () => this.step(+stepFor(this._unit)));
     this.decBtn.addEventListener('click', () => this.step(-stepFor(this._unit)));
     this.root.querySelectorAll<HTMLButtonElement>('[data-key]').forEach((btn) =>
@@ -233,26 +330,65 @@ class RackEntry extends HTMLElement {
     // event -- the console already renders the bare Bar). Pristine, so typing replaces it.
     this.draft = this.barShown();
     this.pristine = true;
+    this.replaceNext = true;
     this.renderValue();
   }
 
+  // Show the keypad sheet. Reflect the open state on the value button so assistive tech
+  // announces the expanded pad.
+  private openKeypad(): void {
+    this.sheet.hidden = false;
+    this.valueEl.setAttribute('aria-expanded', 'true');
+    // Handoff 5: the first keypress after opening replaces the shown value, so reopening
+    // the pad on an existing Target and typing starts fresh (does NOT touch `pristine`, so
+    // a real value peeked and closed still commits).
+    this.replaceNext = true;
+  }
+
+  // Hide the keypad sheet and commit the Target: the console pushes it onto the Recent
+  // row (RBAR-20, ADR-0009). Guarded on the open->closed edge so only a real dismissal
+  // (Done or a value re-tap) commits -- an already-closed call is a no-op, so no path
+  // double-commits.
+  private closeKeypad(): void {
+    if (this.sheet.hidden) return;
+    this.sheet.hidden = true;
+    this.valueEl.setAttribute('aria-expanded', 'false');
+    this.emitKeypadClose();
+  }
+
+  // The sheet's "on the bar" load line: the console's decoded status, or hidden when there
+  // is nothing decoded (an untouched default / empty field).
+  private renderLoadLine(): void {
+    const text = this._loadLine ?? '';
+    this.liveLoadEl.textContent = text;
+    this.liveLoadEl.hidden = text === '';
+  }
+
   // A keypad press mutates the draft string (in the display Unit), then emits the
-  // derived kg Target. A pristine default is replaced by the first typed digit/decimal
-  // rather than appended to.
+  // derived kg Target. A `replaceNext` value (a seeded default, or the value shown when
+  // the pad was reopened -- handoff 5) is replaced by the first typed digit/decimal rather
+  // than appended to. Any press also clears `pristine`: once the lifter types, the value
+  // is one they chose, so closing commits it.
   private press(k: string): void {
-    const fresh = this.pristine;
+    const replace = this.replaceNext;
+    // `del` discards a whole value only when it is a genuine placeholder default (the bare
+    // Bar seed / a display() seed); on a real value -- including one the pad just reopened
+    // -- del edits a single character. So del keys off `pristine`, while typing a digit or
+    // a decimal keys off `replaceNext` (replace-on-open, handoff 5).
+    const discardOnDel = this.pristine;
+    this.replaceNext = false;
     this.pristine = false;
     if (k === 'clear') {
       this.draft = '';
     } else if (k === 'del') {
-      this.draft = fresh ? '' : this.draft.slice(0, -1);
+      this.draft = discardOnDel ? '' : this.draft.slice(0, -1);
     } else if (k === '.') {
-      if (fresh) this.draft = '';
+      if (replace) this.draft = '';
       if (!this.draft.includes('.')) this.draft += this.draft === '' ? '0.' : '.';
     } else {
       // Drop a lone leading zero ("0" + "5" -> "5") so the shown draft matches the
       // Target it decodes to; a leading zero before a decimal is kept by the '.' branch.
-      const base = fresh ? '' : this.draft;
+      const base = replace ? '' : this.draft;
       this.draft = base === '0' ? k : base + k;
     }
     this.renderValue();
@@ -264,6 +400,9 @@ class RackEntry extends HTMLElement {
   // float fuzz. The shown value moves by stepFor(unit) -- 5 lb or 1 kg.
   private step(delta: number): void {
     this.pristine = false;
+    // A nudge is an explicit edit of the current value, so a following digit appends to
+    // the stepped number rather than replacing it.
+    this.replaceNext = false;
     const shownBar = shownIn(this._barKg, this._unit);
     const current = this.draft === '' ? shownBar : Number(this.draft);
     const base = Number.isNaN(current) ? shownBar : current;
@@ -286,6 +425,15 @@ class RackEntry extends HTMLElement {
     const shown = empty ? this.barShown() : this.draft;
     rollText(this.valueEl, shown); // the Target value rolls up on change (numRoll, RBAR-30)
     this.valueEl.classList.toggle('empty', empty);
+    // The sheet's own live readout mirrors the same shown value + Unit (the field behind
+    // the sheet is covered while the pad is open), plus a secondary line in the OTHER unit
+    // (handoff 5). The secondary reads off the SAME canonical kg the value shows (the typed
+    // Target, or the Bar anchor when empty), so it never drifts from the big number.
+    this.liveEl.textContent = shown;
+    this.liveEl.classList.toggle('empty', empty);
+    this.liveUEl.textContent = this._unit;
+    const other: Unit = this._unit === 'kg' ? 'lb' : 'kg';
+    this.liveSecEl.textContent = format(this.currentTarget() ?? this._barKg, other);
     this.captionEl.textContent = `Target (${this._unit})`;
     const step = stepFor(this._unit);
     this.decBtn.setAttribute('aria-label', `Decrease by ${step} ${this._unit}`);

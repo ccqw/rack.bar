@@ -1,13 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import './entry.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
-import { lbToKg, shownIn } from '../lib/units.ts';
+import { lbToKg, shownIn, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 
 type Entry = HTMLElement & {
   display(value: number | null): void;
   barKg: number;
   unit: Unit;
+  loadLine: string | null;
 };
 
 function mountEntry(): { el: Entry; root: ShadowRoot } {
@@ -132,6 +133,28 @@ describe('<rack-entry>', () => {
     expect(value.getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('presents the keypad as a fixed bottom-docked sheet, out of document flow', () => {
+    // RBAR-22: the keypad is a bottom sheet (position: fixed) docked to the viewport
+    // bottom, NOT an inline grid -- so opening it never displaces the bar/Total/Recents.
+    // happy-dom can't measure layout, so text-lock the fixed positioning + nesting; the
+    // real no-displacement check is the browser pass.
+    const { root } = mountEntry();
+    const styleText = root.querySelector('style')!.textContent!;
+    expect(styleText).toMatch(/\.sheet\s*\{[^}]*position:\s*fixed/);
+    const sheet = root.querySelector<HTMLElement>('[data-sheet]')!;
+    expect(sheet).not.toBeNull();
+    // the keypad grid lives inside the sheet, not in the entry's normal flow
+    expect(sheet.querySelector('[data-keypad]')).not.toBeNull();
+  });
+
+  it('has no dim scrim -- the bar above stays bright (prototype fidelity)', () => {
+    // Caitlin's fidelity call: unlike Setup/Share, the keypad has no backdrop; the sheet
+    // is the only overlay element, so there is nothing to dim/occlude the bar or catch an
+    // outside tap.
+    const { root } = mountEntry();
+    expect(root.querySelector('[data-scrim]')).toBeNull();
+  });
+
   it('never steps the Target below zero', () => {
     const { el, root } = mountEntry();
     el.display(0);
@@ -156,12 +179,124 @@ describe('<rack-entry>', () => {
     expect(seen).toHaveBeenLastCalledWith(null);
   });
 
-  it('tapping the value opens the keypad', () => {
+  it('tapping the value opens the sheet; it starts closed', () => {
     const { root } = mountEntry();
-    const keypad = root.querySelector<HTMLElement>('[data-keypad]')!;
-    expect(keypad.hidden).toBe(true);
+    const sheet = root.querySelector<HTMLElement>('[data-sheet]')!;
+    expect(sheet.hidden).toBe(true);
     tap(root, '[data-value]');
-    expect(keypad.hidden).toBe(false);
+    expect(sheet.hidden).toBe(false);
+  });
+
+  it('the Done button closes the sheet and commits the Target (keypadclose)', () => {
+    // Done is the dismiss (there is no scrim); closing commits to Recents (RBAR-20).
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    ['1', '0', '0'].forEach((k) => key(root, k)); // type 100 (sheet still closed)
+    tap(root, '[data-value]'); // open
+    expect(seen).not.toHaveBeenCalled();
+    tap(root, '[data-done]'); // dismiss via Done
+    expect(root.querySelector<HTMLElement>('[data-sheet]')!.hidden).toBe(true);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
+  it('a value re-tap toggles the sheet closed and commits once', () => {
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    ['1', '0', '0'].forEach((k) => key(root, k));
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-value]'); // toggle closed
+    expect(root.querySelector<HTMLElement>('[data-sheet]')!.hidden).toBe(true);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
+  it('re-opening the sheet on a typed value replaces it on the next key (handoff 5)', () => {
+    // "First keypress after opening replaces" -- tapping the value to reopen the pad
+    // treats the shown number as a fresh placeholder, so typing 5 yields 5, not 1005.
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    ['1', '0', '0'].forEach((k) => key(root, k)); // type 100 (no longer pristine)
+    expect(seen).toHaveBeenLastCalledWith(100);
+    tap(root, '[data-value]'); // reopen the sheet on the existing 100
+    key(root, '5'); // first key after opening
+    expect(seen).toHaveBeenLastCalledWith(5);
+    expect(root.querySelector('[data-value]')!.textContent).toBe('5');
+  });
+
+  it('del after reopening a typed value deletes one char, not the whole field', () => {
+    // Regression guard: replace-on-open must not turn the first del into a full wipe of a
+    // real value -- del edits one character; only a genuine placeholder default (the bare
+    // Bar seed) is discarded wholesale by del.
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    ['1', '4', '2', '.', '5'].forEach((k) => key(root, k)); // 142.5
+    tap(root, '[data-value]'); // reopen the sheet on 142.5
+    key(root, 'del'); // first key after reopening
+    expect(root.querySelector('[data-value]')!.textContent).toBe('142.');
+    expect(seen).toHaveBeenLastCalledWith(142); // "142." parses to 142
+  });
+
+  it('re-opening a typed value and closing WITHOUT typing still commits it (not null)', () => {
+    // The replace-on-open flag must not corrupt the commit contract: a real typed value
+    // peeked and closed is still a Target the lifter chose, so it commits (only a genuine
+    // untouched seeded default carries null).
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    ['1', '0', '0'].forEach((k) => key(root, k)); // 100
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-value]'); // close without typing
+    expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
+  it('Clear empties the field but keeps the sheet open', () => {
+    // Clear (ghost footer) is an edit, not a dismiss -- the lifter keeps typing.
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    tap(root, '[data-value]'); // open
+    ['1', '0'].forEach((k) => key(root, k));
+    tap(root, '[data-key="clear"]');
+    expect(seen).toHaveBeenLastCalledWith(null);
+    expect(root.querySelector<HTMLElement>('[data-sheet]')!.hidden).toBe(false);
+  });
+
+  it('mirrors the live entry value inside the sheet as it is typed', () => {
+    // The sheet covers the value behind it, so it carries its own live readout.
+    const { root } = mountEntry();
+    tap(root, '[data-value]'); // open
+    ['4', '2'].forEach((k) => key(root, k));
+    expect(root.querySelector('[data-live]')!.textContent).toBe('42');
+  });
+
+  it('shows the typed value in the OTHER unit as a secondary line (handoff 5)', () => {
+    // 100 kg reads 220 lb; the secondary tracks the SAME canonical weight the big number
+    // shows, so it never drifts.
+    const { root } = mountEntry();
+    tap(root, '[data-value]');
+    ['1', '0', '0'].forEach((k) => key(root, k));
+    expect(root.querySelector('[data-live-sec]')!.textContent).toBe(format(100, 'lb')); // "220 lb"
+  });
+
+  it('renders the console-fed "on the bar" load line, and hides it when null', () => {
+    // The console owns decode (ADR-0005) and pushes the loadable-Total line down; null
+    // (nothing decoded) hides it.
+    const { el, root } = mountEntry();
+    const load = root.querySelector<HTMLElement>('[data-live-load]')!;
+    expect(load.hidden).toBe(true); // nothing fed yet
+    el.loadLine = 'On the bar: 142 kg (0.5 under)';
+    expect(load.hidden).toBe(false);
+    expect(load.textContent).toBe('On the bar: 142 kg (0.5 under)');
+    el.loadLine = null;
+    expect(load.hidden).toBe(true);
   });
 
   it('anchors the empty-field default and the steppers at the chosen Bar, not just 20', () => {

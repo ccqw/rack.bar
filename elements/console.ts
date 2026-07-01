@@ -45,6 +45,7 @@ type Entry = HTMLElement & {
   display(value: number | null): void;
   barKg: number;
   unit: Unit;
+  loadLine: string | null;
 };
 type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
 type Loaded = HTMLElement & { side: readonly Plate[] };
@@ -623,12 +624,16 @@ class RackConsole extends HTMLElement {
       const atCap = atSleeveCapacity(shown.side, this.inventory());
       this.renderStatus(shown, targetKg, unit, atCap);
       this.renderOver(over ?? null, primary, targetKg, unit, atCap);
+      // Feed the keypad sheet its "on the bar" line (RBAR-22): the loadable Total + delta,
+      // so the sheet reads self-contained without the (bright, un-scrimmed) Total behind it.
+      this.entry.loadLine = onBarLine(shown.total, targetKg, unit, atCap);
     } else {
       this.status.hidden = true;
       this.status.className = 'status'; // drop any prior state class/label while hidden
       this.statusLabel.textContent = '';
       this.over.hidden = true;
       this.over.textContent = '';
+      this.entry.loadLine = null; // nothing decoded -> the keypad sheet hides the line
     }
   }
 
@@ -756,6 +761,32 @@ export function statusPill(
   if (shownTotal > shownTarget) return { kind: 'over', label: `${mag} ${unit} over` };
   if (atCapacity) return { kind: 'capacity', label: 'Bar at capacity' };
   return { kind: 'short', label: `${mag} ${unit} short` };
+}
+
+/**
+ * The keypad sheet's "on the bar" one-liner (RBAR-22, handoff 5): the actual loadable
+ * Total plus how far it lands from the Target, so the keypad sheet is self-contained
+ * (the lifter never has to read the Total behind it). Like statusPill it keys off the
+ * DISPLAYED numbers (ADR-0010) so it is honest in kg and lb; `totalKg`/`targetKg` are
+ * canonical kg. Mirrors the prototype's keypad wording ("under"/"over"/"exact"), which
+ * deliberately differs from the status pill above ("short"). The prototype separates the
+ * two facts with a middle dot; kept ASCII here as a parenthetical (a bare hyphen would
+ * read as a minus in a weight readout).
+ */
+export function onBarLine(
+  totalKg: number,
+  targetKg: number,
+  unit: Unit,
+  atCapacity: boolean,
+): string {
+  const head = `On the bar: ${format(totalKg, unit)}`;
+  const shownTotal = shownIn(totalKg, unit);
+  const shownTarget = shownIn(targetKg, unit);
+  if (shownTotal === shownTarget) return `${head} (exact)`;
+  const mag = fmtNum(Math.abs(shownTotal - shownTarget));
+  if (shownTotal > shownTarget) return `${head} (${mag} over)`;
+  if (atCapacity) return `${head} (at capacity)`;
+  return `${head} (${mag} under)`;
 }
 
 customElements.define('rack-console', RackConsole);
