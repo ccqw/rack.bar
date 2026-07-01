@@ -132,6 +132,20 @@ describe('<rack-entry>', () => {
     expect(value.getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('presents the keypad as a fixed bottom-sheet scrim, out of document flow', () => {
+    // RBAR-22: the keypad is a bottom sheet (position: fixed) behind a scrim, NOT an
+    // inline grid -- so opening it never displaces the bar/Total/Recents behind it.
+    // happy-dom can't measure layout, so text-lock the fixed positioning + nesting; the
+    // real no-displacement check is the browser pass.
+    const { root } = mountEntry();
+    const styleText = root.querySelector('style')!.textContent!;
+    expect(styleText).toMatch(/\.scrim\s*\{[^}]*position:\s*fixed/);
+    const scrim = root.querySelector<HTMLElement>('[data-scrim]')!;
+    expect(scrim).not.toBeNull();
+    // the keypad grid lives inside the scrim overlay, not in the entry's normal flow
+    expect(scrim.querySelector('[data-keypad]')).not.toBeNull();
+  });
+
   it('never steps the Target below zero', () => {
     const { el, root } = mountEntry();
     el.display(0);
@@ -156,12 +170,69 @@ describe('<rack-entry>', () => {
     expect(seen).toHaveBeenLastCalledWith(null);
   });
 
-  it('tapping the value opens the keypad', () => {
+  it('tapping the value opens the sheet; scrim starts closed', () => {
     const { root } = mountEntry();
-    const keypad = root.querySelector<HTMLElement>('[data-keypad]')!;
-    expect(keypad.hidden).toBe(true);
+    const scrim = root.querySelector<HTMLElement>('[data-scrim]')!;
+    expect(scrim.hidden).toBe(true);
     tap(root, '[data-value]');
-    expect(keypad.hidden).toBe(false);
+    expect(scrim.hidden).toBe(false);
+  });
+
+  it('a scrim tap closes the sheet and commits the Target (keypadclose)', () => {
+    // The scrim dismisses like Setup/Share; closing commits to Recents (RBAR-20).
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    ['1', '0', '0'].forEach((k) => key(root, k)); // type 100 (sheet still closed)
+    tap(root, '[data-value]'); // open
+    expect(seen).not.toHaveBeenCalled();
+    tap(root, '[data-scrim]'); // dismiss via scrim
+    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(true);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
+  it('the Done button closes the sheet and commits the Target (keypadclose)', () => {
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    ['1', '0', '0'].forEach((k) => key(root, k));
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-done]'); // dismiss via Done
+    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(true);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveBeenLastCalledWith(100);
+  });
+
+  it('a tap inside the sheet panel does not dismiss it', () => {
+    // Only the scrim / Done / value re-tap close; a stray tap on the panel must not.
+    const { root } = mountEntry();
+    tap(root, '[data-value]'); // open
+    root.querySelector<HTMLElement>('[data-panel]')!.click();
+    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(false);
+  });
+
+  it('Clear empties the field but keeps the sheet open', () => {
+    // Clear (ghost footer) is an edit, not a dismiss -- the lifter keeps typing.
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    tap(root, '[data-value]'); // open
+    ['1', '0'].forEach((k) => key(root, k));
+    tap(root, '[data-key="clear"]');
+    expect(seen).toHaveBeenLastCalledWith(null);
+    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(false);
+  });
+
+  it('mirrors the live entry value inside the sheet as it is typed', () => {
+    // The sheet dims the value behind it, so it carries its own live readout.
+    const { root } = mountEntry();
+    tap(root, '[data-value]'); // open
+    ['4', '2'].forEach((k) => key(root, k));
+    expect(root.querySelector('[data-live]')!.textContent).toBe('42');
   });
 
   it('anchors the empty-field default and the steppers at the chosen Bar, not just 20', () => {
