@@ -22,7 +22,7 @@
 // lb -> kg round-trips without drift). The Bar (anchor) is given in kg and shown
 // converted. Defaults to kg, so the kg behavior is unchanged.
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
-import { shownIn, draftToKg, stepFor } from '../lib/units.ts';
+import { shownIn, draftToKg, stepFor, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
@@ -44,12 +44,33 @@ class RackEntry extends HTMLElement {
   private captionEl!: HTMLElement;
   private decBtn!: HTMLButtonElement;
   private incBtn!: HTMLButtonElement;
-  // The keypad bottom sheet (RBAR-22): the fixed scrim overlay whose visibility IS the
-  // open/closed state, and the live value readout the sheet carries (the field behind it
-  // is dimmed by the scrim, so the sheet shows what's being typed).
-  private scrim!: HTMLElement;
+  // The keypad bottom sheet (RBAR-22, handoff 5): a fixed bottom-docked sheet whose
+  // visibility IS the open/closed state. Deliberately NO dim scrim (the prototype keeps
+  // the bar/Total above bright and interactive -- Caitlin's fidelity call, overriding the
+  // ticket's "dim scrim" AC); it dismisses via Done or a value re-tap, not an outside tap.
+  // The sheet carries its own readout -- the field behind it is covered, so it shows the
+  // big live value, its secondary unit, and the live "on the bar" load line (fed down by
+  // the console, which owns decode).
+  private sheet!: HTMLElement;
   private liveEl!: HTMLElement;
   private liveUEl!: HTMLElement;
+  private liveSecEl!: HTMLElement;
+  private liveLoadEl!: HTMLElement;
+
+  // The "on the bar" load line the sheet shows under the live value, e.g.
+  // "On the bar: 142 kg . 0.5 short" -- the actual loadable Total + its RBAR-28 status.
+  // The console owns decode (ADR-0005), so it computes this and pushes it down; null hides
+  // the line (an untouched default or empty field has nothing decoded yet).
+  private _loadLine: string | null = null;
+
+  /** The console's decode status for the sheet's "on the bar" line (null hides it). */
+  set loadLine(text: string | null) {
+    this._loadLine = text;
+    if (this.liveLoadEl) this.renderLoadLine();
+  }
+  get loadLine(): string | null {
+    return this._loadLine;
+  }
 
   // The Bar weight the field anchors to (RBAR-15, ADR-0002/0007), canonical kg. The
   // lifter loads a bar UP from its own weight, so the seeded default, the empty-field
@@ -178,25 +199,19 @@ class RackEntry extends HTMLElement {
         .value:focus-visible { outline: none; border-bottom-color: var(--rack-accent); }
 
         /* The keypad is a bottom sheet (RBAR-22, handoff 5), not an inline grid: it is
-           fixed to the viewport bottom behind a dim scrim, so opening it never displaces
-           the bar / Total / Recents behind it. Same overlay family as the Setup sheet
-           (ADR-0007) -- reusing its rack-fade / rack-rise keyframes -- but the handoff
-           gives the keypad its own SUNKEN fill (#101216) distinct from the sheets' overlay
-           tier. */
-        @keyframes rack-fade { from { opacity: 0; } to { opacity: 1; } }
+           fixed to the viewport bottom and slides up (sheetIn .2s), so opening it never
+           displaces the bar / Total / Recents behind it. Unlike the Setup/Share overlays
+           there is NO dim scrim -- the prototype keeps the bar bright above the sheet, so
+           the lifter watches the plates resolve live while typing (Caitlin's fidelity call,
+           overriding the ticket's "dim scrim" AC). Handoff SUNKEN fill (#101216), 1px top
+           border, 24px top corners; safe-area pad clears the home indicator. */
         @keyframes rack-rise {
           from { transform: translateY(100%); } to { transform: translateY(0); }
         }
-        .scrim[hidden] { display: none; }
-        .scrim {
-          position: fixed; inset: 0; z-index: 50;
-          background: var(--rack-scrim);
-          display: flex; align-items: flex-end; justify-content: center;
-          animation: rack-fade .16s ease-out;
-        }
-        /* The sheet rises from the bottom edge; safe-area pad clears the home indicator. */
+        .sheet[hidden] { display: none; }
         .sheet {
-          width: 100%; max-width: 520px;
+          position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+          margin: 0 auto; width: 100%; max-width: 520px;
           background: var(--rack-sunken);
           border-top: 1px solid var(--rack-border);
           border-radius: var(--rack-radius-sheet) var(--rack-radius-sheet) 0 0;
@@ -204,14 +219,24 @@ class RackEntry extends HTMLElement {
           box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, .7);
           animation: rack-rise .2s cubic-bezier(.2, .85, .25, 1);
         }
-        /* The sheet's own live entry readout (the field behind the scrim is dimmed). */
-        .live { text-align: center; margin-bottom: 14px; }
+        /* The sheet's own readout: the big live value, its secondary unit, and the live
+           "on the bar" load line (the field behind the sheet is covered). */
+        .live { text-align: center; margin-bottom: 4px; }
         .live-num {
-          font-family: var(--rack-font-num); font-size: 40px; font-weight: 700;
-          color: var(--rack-fg);
+          font-family: var(--rack-font-num); font-size: 44px; font-weight: 700;
+          color: var(--rack-fg); letter-spacing: -.02em;
         }
         .live-num.empty { color: var(--rack-muted); }
-        .live-u { font-size: 15px; color: var(--rack-muted); margin-left: 4px; }
+        .live-u { font-size: 16px; color: var(--rack-muted); margin-left: 4px; }
+        /* Secondary unit, then the "on the bar" status, stacked under the value (handoff 5):
+           the secondary in the other unit (muted), the load line in accent below it. */
+        .sub {
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          min-height: 18px; margin-bottom: 14px;
+          font-family: var(--rack-font-num); font-size: 13px; color: var(--rack-muted);
+        }
+        .sub .load { color: var(--rack-accent); }
+        .sub .load[hidden] { display: none; }
         .keypad {
           display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
         }
@@ -251,19 +276,21 @@ class RackEntry extends HTMLElement {
                 aria-haspopup="true" aria-expanded="false">${DEFAULT_BAR_KG}</button>
         <button type="button" class="step" data-step="inc" aria-label="Increase">+</button>
       </div>
-      <div class="scrim" data-scrim hidden>
-        <div class="sheet" data-panel role="dialog" aria-modal="true" aria-label="Enter Target">
-          <div class="live">
-            <span class="live-num" data-live>${DEFAULT_BAR_KG}</span><span
-              class="live-u" data-live-u>kg</span>
-          </div>
-          <div class="keypad" data-keypad role="group" aria-label="Enter Target">
-            ${keys}
-          </div>
-          <div class="foot">
-            <button type="button" class="clear" data-key="clear">Clear</button>
-            <button type="button" class="done" data-done>Done</button>
-          </div>
+      <div class="sheet" data-sheet role="dialog" aria-modal="false" aria-label="Enter Target" hidden>
+        <div class="live">
+          <span class="live-num" data-live>${DEFAULT_BAR_KG}</span><span
+            class="live-u" data-live-u>kg</span>
+        </div>
+        <div class="sub">
+          <span data-live-sec></span>
+          <span class="load" data-live-load hidden></span>
+        </div>
+        <div class="keypad" data-keypad role="group" aria-label="Enter Target">
+          ${keys}
+        </div>
+        <div class="foot">
+          <button type="button" class="clear" data-key="clear">Clear</button>
+          <button type="button" class="done" data-done>Done</button>
         </div>
       </div>
     `;
@@ -272,20 +299,17 @@ class RackEntry extends HTMLElement {
     this.captionEl = this.root.querySelector('[data-caption]')!;
     this.decBtn = this.root.querySelector('[data-step="dec"]')!;
     this.incBtn = this.root.querySelector('[data-step="inc"]')!;
-    this.scrim = this.root.querySelector('[data-scrim]')!;
+    this.sheet = this.root.querySelector('[data-sheet]')!;
     this.liveEl = this.root.querySelector('[data-live]')!;
     this.liveUEl = this.root.querySelector('[data-live-u]')!;
+    this.liveSecEl = this.root.querySelector('[data-live-sec]')!;
+    this.liveLoadEl = this.root.querySelector('[data-live-load]')!;
 
-    // Tapping the value toggles the sheet. A scrim tap or the Done button also close it;
-    // a tap inside the panel must not (it would bubble to the scrim), so the panel stops
-    // it -- the same dismissal contract as <rack-setup>.
+    // Tapping the value toggles the sheet; the Done button closes it. There is no scrim,
+    // so no outside-tap dismissal (the prototype keeps the bar above bright + interactive).
     this.valueEl.addEventListener('click', () =>
-      this.scrim.hidden ? this.openKeypad() : this.closeKeypad(),
+      this.sheet.hidden ? this.openKeypad() : this.closeKeypad(),
     );
-    this.scrim.addEventListener('click', () => this.closeKeypad());
-    this.root
-      .querySelector('[data-panel]')!
-      .addEventListener('click', (e) => e.stopPropagation());
     this.root.querySelector('[data-done]')!.addEventListener('click', () => this.closeKeypad());
     this.incBtn.addEventListener('click', () => this.step(+stepFor(this._unit)));
     this.decBtn.addEventListener('click', () => this.step(-stepFor(this._unit)));
@@ -303,19 +327,27 @@ class RackEntry extends HTMLElement {
   // Show the keypad sheet. Reflect the open state on the value button so assistive tech
   // announces the expanded pad.
   private openKeypad(): void {
-    this.scrim.hidden = false;
+    this.sheet.hidden = false;
     this.valueEl.setAttribute('aria-expanded', 'true');
   }
 
   // Hide the keypad sheet and commit the Target: the console pushes it onto the Recent
   // row (RBAR-20, ADR-0009). Guarded on the open->closed edge so only a real dismissal
-  // (scrim tap, Done, or a value re-tap) commits -- an already-closed call is a no-op, so
-  // no path double-commits.
+  // (Done or a value re-tap) commits -- an already-closed call is a no-op, so no path
+  // double-commits.
   private closeKeypad(): void {
-    if (this.scrim.hidden) return;
-    this.scrim.hidden = true;
+    if (this.sheet.hidden) return;
+    this.sheet.hidden = true;
     this.valueEl.setAttribute('aria-expanded', 'false');
     this.emitKeypadClose();
+  }
+
+  // The sheet's "on the bar" load line: the console's decoded status, or hidden when there
+  // is nothing decoded (an untouched default / empty field).
+  private renderLoadLine(): void {
+    const text = this._loadLine ?? '';
+    this.liveLoadEl.textContent = text;
+    this.liveLoadEl.hidden = text === '';
   }
 
   // A keypad press mutates the draft string (in the display Unit), then emits the
@@ -369,10 +401,14 @@ class RackEntry extends HTMLElement {
     rollText(this.valueEl, shown); // the Target value rolls up on change (numRoll, RBAR-30)
     this.valueEl.classList.toggle('empty', empty);
     // The sheet's own live readout mirrors the same shown value + Unit (the field behind
-    // the scrim is dimmed while the pad is open).
+    // the sheet is covered while the pad is open), plus a secondary line in the OTHER unit
+    // (handoff 5). The secondary reads off the SAME canonical kg the value shows (the typed
+    // Target, or the Bar anchor when empty), so it never drifts from the big number.
     this.liveEl.textContent = shown;
     this.liveEl.classList.toggle('empty', empty);
     this.liveUEl.textContent = this._unit;
+    const other: Unit = this._unit === 'kg' ? 'lb' : 'kg';
+    this.liveSecEl.textContent = format(this.currentTarget() ?? this._barKg, other);
     this.captionEl.textContent = `Target (${this._unit})`;
     const step = stepFor(this._unit);
     this.decBtn.setAttribute('aria-label', `Decrease by ${step} ${this._unit}`);

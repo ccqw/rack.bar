@@ -1,13 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import './entry.ts';
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
-import { lbToKg, shownIn } from '../lib/units.ts';
+import { lbToKg, shownIn, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 
 type Entry = HTMLElement & {
   display(value: number | null): void;
   barKg: number;
   unit: Unit;
+  loadLine: string | null;
 };
 
 function mountEntry(): { el: Entry; root: ShadowRoot } {
@@ -132,18 +133,26 @@ describe('<rack-entry>', () => {
     expect(value.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('presents the keypad as a fixed bottom-sheet scrim, out of document flow', () => {
-    // RBAR-22: the keypad is a bottom sheet (position: fixed) behind a scrim, NOT an
-    // inline grid -- so opening it never displaces the bar/Total/Recents behind it.
+  it('presents the keypad as a fixed bottom-docked sheet, out of document flow', () => {
+    // RBAR-22: the keypad is a bottom sheet (position: fixed) docked to the viewport
+    // bottom, NOT an inline grid -- so opening it never displaces the bar/Total/Recents.
     // happy-dom can't measure layout, so text-lock the fixed positioning + nesting; the
     // real no-displacement check is the browser pass.
     const { root } = mountEntry();
     const styleText = root.querySelector('style')!.textContent!;
-    expect(styleText).toMatch(/\.scrim\s*\{[^}]*position:\s*fixed/);
-    const scrim = root.querySelector<HTMLElement>('[data-scrim]')!;
-    expect(scrim).not.toBeNull();
-    // the keypad grid lives inside the scrim overlay, not in the entry's normal flow
-    expect(scrim.querySelector('[data-keypad]')).not.toBeNull();
+    expect(styleText).toMatch(/\.sheet\s*\{[^}]*position:\s*fixed/);
+    const sheet = root.querySelector<HTMLElement>('[data-sheet]')!;
+    expect(sheet).not.toBeNull();
+    // the keypad grid lives inside the sheet, not in the entry's normal flow
+    expect(sheet.querySelector('[data-keypad]')).not.toBeNull();
+  });
+
+  it('has no dim scrim -- the bar above stays bright (prototype fidelity)', () => {
+    // Caitlin's fidelity call: unlike Setup/Share, the keypad has no backdrop; the sheet
+    // is the only overlay element, so there is nothing to dim/occlude the bar or catch an
+    // outside tap.
+    const { root } = mountEntry();
+    expect(root.querySelector('[data-scrim]')).toBeNull();
   });
 
   it('never steps the Target below zero', () => {
@@ -170,16 +179,16 @@ describe('<rack-entry>', () => {
     expect(seen).toHaveBeenLastCalledWith(null);
   });
 
-  it('tapping the value opens the sheet; scrim starts closed', () => {
+  it('tapping the value opens the sheet; it starts closed', () => {
     const { root } = mountEntry();
-    const scrim = root.querySelector<HTMLElement>('[data-scrim]')!;
-    expect(scrim.hidden).toBe(true);
+    const sheet = root.querySelector<HTMLElement>('[data-sheet]')!;
+    expect(sheet.hidden).toBe(true);
     tap(root, '[data-value]');
-    expect(scrim.hidden).toBe(false);
+    expect(sheet.hidden).toBe(false);
   });
 
-  it('a scrim tap closes the sheet and commits the Target (keypadclose)', () => {
-    // The scrim dismisses like Setup/Share; closing commits to Recents (RBAR-20).
+  it('the Done button closes the sheet and commits the Target (keypadclose)', () => {
+    // Done is the dismiss (there is no scrim); closing commits to Recents (RBAR-20).
     const { el, root } = mountEntry();
     const seen = vi.fn();
     el.addEventListener('keypadclose', (e) =>
@@ -188,13 +197,13 @@ describe('<rack-entry>', () => {
     ['1', '0', '0'].forEach((k) => key(root, k)); // type 100 (sheet still closed)
     tap(root, '[data-value]'); // open
     expect(seen).not.toHaveBeenCalled();
-    tap(root, '[data-scrim]'); // dismiss via scrim
-    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(true);
+    tap(root, '[data-done]'); // dismiss via Done
+    expect(root.querySelector<HTMLElement>('[data-sheet]')!.hidden).toBe(true);
     expect(seen).toHaveBeenCalledTimes(1);
     expect(seen).toHaveBeenLastCalledWith(100);
   });
 
-  it('the Done button closes the sheet and commits the Target (keypadclose)', () => {
+  it('a value re-tap toggles the sheet closed and commits once', () => {
     const { el, root } = mountEntry();
     const seen = vi.fn();
     el.addEventListener('keypadclose', (e) =>
@@ -202,18 +211,10 @@ describe('<rack-entry>', () => {
     );
     ['1', '0', '0'].forEach((k) => key(root, k));
     tap(root, '[data-value]'); // open
-    tap(root, '[data-done]'); // dismiss via Done
-    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(true);
+    tap(root, '[data-value]'); // toggle closed
+    expect(root.querySelector<HTMLElement>('[data-sheet]')!.hidden).toBe(true);
     expect(seen).toHaveBeenCalledTimes(1);
     expect(seen).toHaveBeenLastCalledWith(100);
-  });
-
-  it('a tap inside the sheet panel does not dismiss it', () => {
-    // Only the scrim / Done / value re-tap close; a stray tap on the panel must not.
-    const { root } = mountEntry();
-    tap(root, '[data-value]'); // open
-    root.querySelector<HTMLElement>('[data-panel]')!.click();
-    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(false);
   });
 
   it('Clear empties the field but keeps the sheet open', () => {
@@ -224,15 +225,37 @@ describe('<rack-entry>', () => {
     ['1', '0'].forEach((k) => key(root, k));
     tap(root, '[data-key="clear"]');
     expect(seen).toHaveBeenLastCalledWith(null);
-    expect(root.querySelector<HTMLElement>('[data-scrim]')!.hidden).toBe(false);
+    expect(root.querySelector<HTMLElement>('[data-sheet]')!.hidden).toBe(false);
   });
 
   it('mirrors the live entry value inside the sheet as it is typed', () => {
-    // The sheet dims the value behind it, so it carries its own live readout.
+    // The sheet covers the value behind it, so it carries its own live readout.
     const { root } = mountEntry();
     tap(root, '[data-value]'); // open
     ['4', '2'].forEach((k) => key(root, k));
     expect(root.querySelector('[data-live]')!.textContent).toBe('42');
+  });
+
+  it('shows the typed value in the OTHER unit as a secondary line (handoff 5)', () => {
+    // 100 kg reads 220 lb; the secondary tracks the SAME canonical weight the big number
+    // shows, so it never drifts.
+    const { root } = mountEntry();
+    tap(root, '[data-value]');
+    ['1', '0', '0'].forEach((k) => key(root, k));
+    expect(root.querySelector('[data-live-sec]')!.textContent).toBe(format(100, 'lb')); // "220 lb"
+  });
+
+  it('renders the console-fed "on the bar" load line, and hides it when null', () => {
+    // The console owns decode (ADR-0005) and pushes the loadable-Total line down; null
+    // (nothing decoded) hides it.
+    const { el, root } = mountEntry();
+    const load = root.querySelector<HTMLElement>('[data-live-load]')!;
+    expect(load.hidden).toBe(true); // nothing fed yet
+    el.loadLine = 'On the bar: 142 kg (0.5 under)';
+    expect(load.hidden).toBe(false);
+    expect(load.textContent).toBe('On the bar: 142 kg (0.5 under)');
+    el.loadLine = null;
+    expect(load.hidden).toBe(true);
   });
 
   it('anchors the empty-field default and the steppers at the chosen Bar, not just 20', () => {
