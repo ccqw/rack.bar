@@ -97,6 +97,12 @@
   /* The plain-iron training set (RBAR-17): one dark finish, distinguished by its
      stamped lb label rather than color. Needs light ink on the disc/palette key. */
   --rack-plate-iron: #34383e;    /* 45, 35, 25, 10, 5, 2.5 lb */
+  /* Setup plate-row swatch greys (RBAR-29, handoff section 6). The Training row's
+     decorative swatches alternate these two iron tones (the prototype inlines them);
+     captured here so the sheet styles through tokens (ADR-0001), like the sleeve
+     chrome greys above. */
+  --rack-swatch-iron: #3a3f45;
+  --rack-swatch-iron-deep: #2c3036;
 
   /* Bar chrome greys (RBAR-24, handoff section 3 "Bar visualizer"). The sleeve shaft,
      collars, and end cap that frame the loaded discs, plus the dashed empty-state box.

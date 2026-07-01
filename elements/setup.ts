@@ -54,11 +54,38 @@ export function isOfferedCollar(kg: number): kg is CollarKg {
   return (COLLAR_OPTIONS as readonly number[]).includes(kg);
 }
 
-// A one-line descriptor for each plate-set tile (the family + its native Unit).
+// A one-line descriptor for each plate-set row (the family + its native Unit).
+// Handoff prototype copy, middots rendered as ASCII hyphens (RBAR-22 precedent).
 const PLATE_SET_SUB: Record<PlateSetKey, string> = {
-  comp: 'Eleiko - kg',
-  training: 'Iron - lb',
+  comp: 'Eleiko - color-coded - kg',
+  training: 'Plain black iron - lb',
 };
+
+// The decorative swatch fills per plate-set row (RBAR-29, prototype PLATESETS cols):
+// Competition previews the four bumper hues heaviest-first; Training alternates the
+// two iron greys (one dark finish -- the alternation is texture, not four plates).
+const PLATE_SET_SWATCHES: Record<PlateSetKey, readonly string[]> = {
+  comp: [
+    'var(--rack-plate-red)',
+    'var(--rack-plate-blue)',
+    'var(--rack-plate-yellow)',
+    'var(--rack-plate-green)',
+  ],
+  training: [
+    'var(--rack-swatch-iron)',
+    'var(--rack-swatch-iron-deep)',
+    'var(--rack-swatch-iron)',
+    'var(--rack-swatch-iron-deep)',
+  ],
+};
+
+// The selected-row check, an inline SVG per the handoff's icon convention (the
+// prototype's literal check glyph is non-ASCII). Visibility is CSS, keyed on the
+// row's aria-pressed, so the visual check and the accessible state cannot drift.
+const CHECK_SVG = `<svg class="check" aria-hidden="true" viewBox="0 0 16 16" width="15" height="15">
+  <path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor"
+        stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
 
 class RackSetup extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -119,20 +146,23 @@ class RackSetup extends HTMLElement {
     this.hidden = true; // a sheet is closed until opened
 
     // The Collar tiles: None (no weight) or a Standard 2.5 kg-per-Side competition
-    // collar. None shows a plain label; the Standard tile reads its per-Side weight with
-    // a "per side" subtitle (the Total adds it twice -- ADR-0008).
+    // collar, in the handoff ConfigSheet copy (RBAR-29 fold): a named headline
+    // ("None" / "Standard") over a mono sub ("bare sleeve" / the both-unit weight).
+    // The visible sub dropped the old "per side" note, so the accessible name keeps
+    // that fact -- the Total still adds the Collar twice (ADR-0008).
     const collarTiles = COLLAR_OPTIONS.map((kg) =>
       kg === 0
         ? `
         <button type="button" class="tile" data-collar="0" aria-pressed="false"
-                aria-label="No collars">
-          <span class="kg">None</span>
+                aria-label="No collars, bare sleeve">
+          <span class="word">None</span>
+          <span class="csub">bare sleeve</span>
         </button>`
         : `
         <button type="button" class="tile" data-collar="${kg}" aria-pressed="false"
-                aria-label="Standard ${kg} kg collars, per Side">
-          <span class="kg">${kg}<span class="u">kg</span></span>
-          <span class="sub">per side</span>
+                aria-label="Standard ${format(kg, 'kg')} collars (${format(kg, 'lb')}), per Side">
+          <span class="word">Standard</span>
+          <span class="csub">${format(kg, 'kg')} / ${format(kg, 'lb')}</span>
         </button>`,
     ).join('');
 
@@ -182,9 +212,9 @@ class RackSetup extends HTMLElement {
           margin-bottom: 8px;
         }
         /* Each selector row; the trailing margin separates a section from the next
-           section-label (the last row's margin sits inside the panel's bottom pad). */
+           section-label (the last section -- the plate rows -- sits flush on the
+           panel's bottom pad). */
         .tiles { display: flex; gap: 8px; margin-bottom: 18px; }
-        .tiles:last-of-type { margin-bottom: 0; }
         /* A selector tile: kg/lb headline + subtitle. Active = a raised, outlined fill;
            inactive = transparent with a hairline. 44px+ tall touch target. */
         .tile {
@@ -206,6 +236,46 @@ class RackSetup extends HTMLElement {
         .tile .sub {
           font-family: var(--rack-font-num); font-size: 12px; color: var(--rack-muted);
         }
+        /* The Collar tile labels (handoff ConfigSheet, RBAR-29 fold): a named
+           headline over a mono both-unit sub; the ink brightens on the selected
+           tile (the prototype dims an unselected Collar's whole label). */
+        .tile .word {
+          font-size: 14px; font-weight: 700; line-height: 1;
+          color: var(--rack-text-dim);
+        }
+        .tile .csub {
+          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
+          letter-spacing: .04em; margin-top: 1px; color: var(--rack-text-dim);
+        }
+        .tile[aria-pressed="true"] .word { color: var(--rack-text); }
+        .tile[aria-pressed="true"] .csub { color: var(--rack-text-muted); }
+        /* The plate-set rows (RBAR-29, handoff section 6): stacked full-width rows,
+           each swatch cluster + name/sub + check, unlike the side-by-side tiles above.
+           Selected = the active-row fill + active border ring (prototype tiers). */
+        .rows { display: flex; flex-direction: column; gap: 8px; }
+        .row {
+          display: flex; align-items: center; width: 100%; min-height: 56px;
+          padding: 11px 13px; cursor: pointer;
+          background: transparent; color: var(--rack-text);
+          border: 1px solid var(--rack-border); border-radius: var(--rack-radius-card);
+        }
+        .row[aria-pressed="true"] {
+          background: var(--rack-active); border-color: var(--rack-border-active);
+        }
+        .row:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        .swatches { display: flex; align-items: center; gap: 4px; }
+        .swatch {
+          display: block; width: 14px; height: 14px; border-radius: 4px;
+          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14);
+        }
+        .names {
+          display: flex; flex-direction: column; align-items: flex-start;
+          flex: 1; margin-left: 12px; gap: 1px;
+        }
+        .name { font-size: 14px; font-weight: 700; color: var(--rack-text); }
+        .row .sub { font-size: 12px; font-weight: 500; color: var(--rack-text-dim); }
+        .check { color: var(--rack-accent); opacity: 0; }
+        .row[aria-pressed="true"] .check { opacity: 1; }
       </style>
       <div class="scrim" data-scrim>
         <div class="panel" data-panel role="dialog" aria-modal="true" aria-label="Setup">
@@ -218,7 +288,7 @@ class RackSetup extends HTMLElement {
           <span class="section-label">Collars</span>
           <div class="tiles">${collarTiles}</div>
           <span class="section-label">Plates</span>
-          <div class="tiles" data-plateset-tiles></div>
+          <div class="rows" data-plateset-tiles></div>
         </div>
       </div>
     `;
@@ -266,14 +336,23 @@ class RackSetup extends HTMLElement {
     this.syncTiles();
   }
 
-  // Render the plate-set tiles (Competition / Training), each its name + family/Unit sub.
+  // Render the plate-set rows (Competition / Training): swatch cluster + name +
+  // family/Unit sub + selected check (RBAR-29, handoff section 6). The swatches and
+  // check are decorative (aria-hidden); the row's aria-label announces the set + Unit
+  // and aria-pressed carries the selected state.
   private renderPlatesetTiles(): void {
     this.platesetTilesEl.innerHTML = PLATE_SET_KEYS.map(
       (key) => `
-        <button type="button" class="tile" data-plateset="${key}" aria-pressed="false"
+        <button type="button" class="row" data-plateset="${key}" aria-pressed="false"
                 aria-label="${PLATE_SETS[key].label} plates (${PLATE_SET_SUB[key]})">
-          <span class="kg">${PLATE_SETS[key].label}</span>
-          <span class="sub">${PLATE_SET_SUB[key]}</span>
+          <span class="swatches" aria-hidden="true">${PLATE_SET_SWATCHES[key]
+            .map((fill) => `<span class="swatch" style="background:${fill}"></span>`)
+            .join('')}</span>
+          <span class="names">
+            <span class="name">${PLATE_SETS[key].label}</span>
+            <span class="sub">${PLATE_SET_SUB[key]}</span>
+          </span>
+          ${CHECK_SVG}
         </button>`,
     ).join('');
     this.platesetTiles =
@@ -337,7 +416,7 @@ class RackSetup extends HTMLElement {
     );
   }
 
-  // Mark the tile matching the current plate set as pressed; the rest released.
+  // Mark the row matching the current plate set as pressed; the rest released.
   private syncPlatesetTiles(): void {
     this.platesetTiles.forEach((t) =>
       t.setAttribute('aria-pressed', String(t.dataset.plateset === this._plateSetKey)),
