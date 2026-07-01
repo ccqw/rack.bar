@@ -400,7 +400,7 @@ class RackSetup extends HTMLElement {
     );
   }
 
-  // Mark the tile matching the current plate set as pressed; the rest released.
+  // Mark the row matching the current plate set as pressed; the rest released.
   private syncPlatesetTiles(): void {
     this.platesetTiles.forEach((t) =>
       t.setAttribute('aria-pressed', String(t.dataset.plateset === this._plateSetKey)),
