@@ -140,6 +140,19 @@ describe('<rack-setup> Collars section (RBAR-16, ADR-0008)', () => {
     collarTile(root, 0).click();
     expect(seen).toHaveBeenLastCalledWith(0);
   });
+
+  // The handoff ConfigSheet copy (RBAR-29 fold): None reads "bare sleeve", the
+  // Standard tile names itself and carries the both-unit weight sub.
+  it('the tiles carry the handoff copy: None / bare sleeve, Standard / 2.5 kg / 6 lb', () => {
+    const { root } = mountSetup();
+    expect(collarTile(root, 0).textContent).toContain('None');
+    expect(collarTile(root, 0).textContent).toContain('bare sleeve');
+    expect(collarTile(root, 2.5).textContent).toContain('Standard');
+    expect(collarTile(root, 2.5).textContent).toContain('2.5 kg');
+    expect(collarTile(root, 2.5).textContent).toContain('6 lb');
+    // the accessible name keeps the per-Side fact the visible sub dropped (ADR-0008)
+    expect(collarTile(root, 2.5).getAttribute('aria-label')).toContain('per Side');
+  });
 });
 
 describe('<rack-setup> Plates section (RBAR-17, ADR-0010)', () => {

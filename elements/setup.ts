@@ -146,20 +146,23 @@ class RackSetup extends HTMLElement {
     this.hidden = true; // a sheet is closed until opened
 
     // The Collar tiles: None (no weight) or a Standard 2.5 kg-per-Side competition
-    // collar. None shows a plain label; the Standard tile reads its per-Side weight with
-    // a "per side" subtitle (the Total adds it twice -- ADR-0008).
+    // collar, in the handoff ConfigSheet copy (RBAR-29 fold): a named headline
+    // ("None" / "Standard") over a mono sub ("bare sleeve" / the both-unit weight).
+    // The visible sub dropped the old "per side" note, so the accessible name keeps
+    // that fact -- the Total still adds the Collar twice (ADR-0008).
     const collarTiles = COLLAR_OPTIONS.map((kg) =>
       kg === 0
         ? `
         <button type="button" class="tile" data-collar="0" aria-pressed="false"
-                aria-label="No collars">
-          <span class="kg">None</span>
+                aria-label="No collars, bare sleeve">
+          <span class="word">None</span>
+          <span class="csub">bare sleeve</span>
         </button>`
         : `
         <button type="button" class="tile" data-collar="${kg}" aria-pressed="false"
-                aria-label="Standard ${kg} kg collars, per Side">
-          <span class="kg">${kg}<span class="u">kg</span></span>
-          <span class="sub">per side</span>
+                aria-label="Standard ${format(kg, 'kg')} collars (${format(kg, 'lb')}), per Side">
+          <span class="word">Standard</span>
+          <span class="csub">${format(kg, 'kg')} / ${format(kg, 'lb')}</span>
         </button>`,
     ).join('');
 
@@ -233,6 +236,19 @@ class RackSetup extends HTMLElement {
         .tile .sub {
           font-family: var(--rack-font-num); font-size: 12px; color: var(--rack-muted);
         }
+        /* The Collar tile labels (handoff ConfigSheet, RBAR-29 fold): a named
+           headline over a mono both-unit sub; the ink brightens on the selected
+           tile (the prototype dims an unselected Collar's whole label). */
+        .tile .word {
+          font-size: 14px; font-weight: 700; line-height: 1;
+          color: var(--rack-text-dim);
+        }
+        .tile .csub {
+          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
+          letter-spacing: .04em; margin-top: 1px; color: var(--rack-text-dim);
+        }
+        .tile[aria-pressed="true"] .word { color: var(--rack-text); }
+        .tile[aria-pressed="true"] .csub { color: var(--rack-text-muted); }
         /* The plate-set rows (RBAR-29, handoff section 6): stacked full-width rows,
            each swatch cluster + name/sub + check, unlike the side-by-side tiles above.
            Selected = the active-row fill + active border ring (prototype tiers). */
