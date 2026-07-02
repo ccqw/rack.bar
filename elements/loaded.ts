@@ -54,7 +54,7 @@ class RackLoaded extends HTMLElement {
         .head[hidden] { display: none; }
         .label {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-muted);
+          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
         }
         /* The Clear pill: a quiet uppercase mono control that empties the Side. Its
            hover/active goes danger-red per the handoff -- a destructive affordance, so it

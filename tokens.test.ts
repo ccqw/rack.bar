@@ -104,12 +104,31 @@ describe('legacy collapsed names survive only as aliases onto the scale', () => 
     '--rack-fg': 'var(--rack-text)',
     '--rack-muted': 'var(--rack-text-dim)',
     '--rack-line': 'var(--rack-border)',
-    '--rack-line-strong': 'var(--rack-border-active)',
+    // RBAR-34: line-strong meant "prominent border" (#23272c border-strong) at
+    // every call site, not the border-active selected-ring it aliased. All call
+    // sites now reference their explicit tier; the alias stays corrected here
+    // until the legacy block retires.
+    '--rack-line-strong': 'var(--rack-border-strong)',
     '--rack-radius': 'var(--rack-radius-card)',
   };
   for (const [name, want] of Object.entries(aliases)) {
     it(`${name} aliases ${want}`, () => {
       expect(squash(val(name))).toBe(squash(want));
+    });
+  }
+});
+
+describe('RBAR-34: prototype-inline hexes are captured as tokens', () => {
+  // These three live inline in docs/design-handoff/rack.bar.dc.html only (the
+  // README --rb-* list never named them), so the RBAR-26 reconcile missed them.
+  const captured: Record<string, string> = {
+    '--rack-popover-border': '#262b31',      // prototype L84
+    '--rack-popover-ink': '#c2c7cd',         // prototype L86-87 (body tier; strong stays --rack-text)
+    '--rack-sleeve-empty-glyph': '#3f454c',  // prototype L106 (the empty-box + glyph)
+  };
+  for (const [name, want] of Object.entries(captured)) {
+    it(`${name} === ${want}`, () => {
+      expect(val(name).toLowerCase()).toBe(want.toLowerCase());
     });
   }
 });

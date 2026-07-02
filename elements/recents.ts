@@ -50,7 +50,7 @@ class RackRecents extends HTMLElement {
         .label {
           display: block; text-align: center;
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-muted);
+          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
           margin-bottom: 8px;
         }
         /* The scroll viewport. The edge gradients are nudge cues that more chips sit
@@ -82,7 +82,7 @@ class RackRecents extends HTMLElement {
           color: var(--rack-fg); background: transparent; white-space: nowrap;
           border: 1px solid var(--rack-line); border-radius: 999px;
         }
-        .chip:hover { border-color: var(--rack-line-strong); }
+        .chip:hover { border-color: var(--rack-border-active); }
         .chip:active { background: var(--rack-line); }
         .chip:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
       </style>

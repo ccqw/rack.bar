@@ -188,7 +188,7 @@ class RackSetup extends HTMLElement {
         .panel {
           width: 100%; max-width: 520px;
           background: var(--rack-overlay);
-          border-top: 1px solid var(--rack-line-strong);
+          border-top: 1px solid var(--rack-border-strong);
           border-radius: var(--rack-radius-sheet) var(--rack-radius-sheet) 0 0;
           padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
           box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, .7);
@@ -209,7 +209,7 @@ class RackSetup extends HTMLElement {
         .section-label {
           display: block;
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-muted);
+          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
           margin-bottom: 8px;
         }
         /* Each selector row; the trailing margin separates a section from the next
@@ -226,7 +226,7 @@ class RackSetup extends HTMLElement {
           border: 1px solid var(--rack-line); border-radius: var(--rack-radius-tile);
         }
         .tile[aria-pressed="true"] {
-          background: var(--rack-selected); border-color: var(--rack-line-strong);
+          background: var(--rack-selected); border-color: var(--rack-border-active);
         }
         .tile:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .tile .kg {
