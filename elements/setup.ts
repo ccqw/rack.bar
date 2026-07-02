@@ -20,6 +20,7 @@ import {
   isOfferedPlateSet,
 } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 
 // The Competition Bar weights, heaviest-first (men's / women's / technique). The other
@@ -168,7 +169,7 @@ class RackSetup extends HTMLElement {
 
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}
+        ${BOX_SIZING}${BUTTON_FX}
         :host { display: block; }
         :host([hidden]) { display: none; }
         @keyframes rack-fade { from { opacity: 0; } to { opacity: 1; } }

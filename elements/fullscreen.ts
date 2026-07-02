@@ -20,6 +20,7 @@ import { format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { plateSetFor } from '../lib/platesets.ts';
 import type { Plate } from '../lib/plates.ts';
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 
@@ -82,7 +83,7 @@ class RackFullscreen extends HTMLElement {
 
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}${ROLL_CSS}
+        ${BOX_SIZING}${BUTTON_FX}${ROLL_CSS}
         :host { display: block; }
         :host([hidden]) { display: none; }
         @keyframes rack-fade { from { opacity: 0; } to { opacity: 1; } }
