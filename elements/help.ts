@@ -12,6 +12,7 @@
 // "By Plates", see <rack-console>), not the design handoff's prototype labels -- the help
 // must match what the lifter sees on screen. Copy uses glossary terms (Target, Plates,
 // Side; CONTEXT.md).
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 
 class RackHelp extends HTMLElement {
@@ -63,7 +64,7 @@ class RackHelp extends HTMLElement {
   connectedCallback(): void {
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}
+        ${BOX_SIZING}${BUTTON_FX}
         :host { position: relative; display: inline-flex; }
         @keyframes rack-pop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
         /* The circular help icon. Picks up the accent when open, mirroring the Setup pill. */

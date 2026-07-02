@@ -19,6 +19,7 @@ import {
 import type { LoadSummary } from '../lib/summary.ts';
 import { format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 
 // How long the Copy button reads "Copied" before reverting (ADR-0011, handoff 1.6s).
@@ -71,7 +72,7 @@ class RackShare extends HTMLElement {
 
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}
+        ${BOX_SIZING}${BUTTON_FX}
         :host { display: block; }
         :host([hidden]) { display: none; }
         @keyframes rack-fade { from { opacity: 0; } to { opacity: 1; } }

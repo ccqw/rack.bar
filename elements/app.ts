@@ -20,6 +20,7 @@ import './setup.ts';
 import './help.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
@@ -65,7 +66,7 @@ class RackApp extends HTMLElement {
     // the queries) lands on already-connected elements, not inert ones.
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}
+        ${BOX_SIZING}${BUTTON_FX}
         :host { display: flex; flex-direction: column; flex: 1; width: 100%; }
         header {
           display: flex; align-items: center; justify-content: space-between;
