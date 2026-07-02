@@ -82,6 +82,30 @@ describe('removePlate (a pure Side Load transform)', () => {
   });
 });
 
+describe('addPlate honors the sleeve cap (RBAR-31, ADR-0012)', () => {
+  it('refuses a Plate that no longer fits the sleeve (fresh unchanged copy)', () => {
+    const seven = side(25, 25, 25, 25, 25, 25, 25); // 7 x 58 = 406 mm
+    const result = addPlate(seven, p(25)); // 464 mm > 415: no room
+    expect(result.map((x) => x.kg)).toEqual(seven.map((x) => x.kg));
+    expect(result).not.toBe(seven); // a fresh array, like removePlate's no-op shape
+  });
+
+  it('refuses even the narrowest Plate on a full Side', () => {
+    const seven = side(25, 25, 25, 25, 25, 25, 25); // 406 mm; a 2.5 needs 15 more
+    expect(addPlate(seven, p(2.5)).map((x) => x.kg)).toEqual(seven.map((x) => x.kg));
+  });
+
+  it('accepts a Plate that lands exactly on the sleeve boundary', () => {
+    // 25 (58 mm) + 20 (50 mm) on a 108 mm sleeve: exactly full is still rackable.
+    expect(addPlate(side(25), p(20), 108).map((x) => x.kg)).toEqual([25, 20]);
+  });
+
+  it('honors a custom sleeveMm (parameterized like decode, ADR-0012)', () => {
+    expect(addPlate(side(25), p(15), 97).map((x) => x.kg)).toEqual([25, 15]); // 97 fits
+    expect(addPlate(side(25), p(15), 96).map((x) => x.kg)).toEqual([25]); // 97 > 96
+  });
+});
+
 describe('add/remove round-trip with encode', () => {
   it('tapping plates on then reading the Total agrees with encode', () => {
     let s: readonly Plate[] = [];

@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { decode } from './decode.ts';
-import { ELEIKO_KG, IRON_LB, totalKg, barWithCollars } from './plates.ts';
+import {
+  ELEIKO_KG,
+  IRON_LB,
+  SLEEVE_MM,
+  totalKg,
+  sideLoadKg,
+  sideWidthMm,
+  atSleeveCapacity,
+  barWithCollars,
+} from './plates.ts';
 import { lbToKg, toLbWhole } from './units.ts';
 
 describe('decode (at-or-under loading core, ADR-0003)', () => {
@@ -43,8 +52,13 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
         const { primary } = decode(target);
         expect(primary.total).toBeLessThanOrEqual(target + 1e-9);
         expect(primary.delta).toBeLessThanOrEqual(1e-9);
-        // The miss is always smaller than the 1 kg grid step.
-        expect(primary.delta).toBeGreaterThan(-1);
+        // The miss is smaller than the 1 kg grid step -- UNLESS the sleeve is full
+        // (ADR-0012; first binds at Target 349 on the default rig), where the miss
+        // is whatever physically fits. The capped band is pinned by the RBAR-31
+        // describe below, DP oracle included.
+        if (!atSleeveCapacity(primary.side, ELEIKO_KG)) {
+          expect(primary.delta, `target ${target}`).toBeGreaterThan(-1);
+        }
       }
     });
   });
@@ -81,12 +95,15 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
       expect(primary.delta).toBe(10);
     });
 
-    it('handles a very heavy Target from the unlimited set', () => {
-      // 500 -> 240 per Side -> 25 x 9 + 15. Total exactly 500.
+    it('caps a very heavy Target at the sleeve, not an unrackable Total (ADR-0012)', () => {
+      // 500 used to decode "exactly" via 9 x 25 + 15 per Side -- 561 mm of plates on
+      // a 415 mm sleeve. The capped core (RBAR-31) loads the widest fitting Side
+      // instead: 7 x 25 (406 mm), Total 370, honestly 130 short.
       const { primary } = decode(500);
-      expect(primary.total).toBe(500);
-      expect(primary.delta).toBe(0);
-      expect(totalKg(primary.side)).toBe(500);
+      expect(primary.side.map((p) => p.kg)).toEqual([25, 25, 25, 25, 25, 25, 25]);
+      expect(primary.total).toBe(370);
+      expect(primary.delta).toBe(-130);
+      expect(totalKg(primary.side)).toBe(370);
     });
 
     it('degrades a non-finite Target to the bare Bar instead of looping forever', () => {
@@ -266,6 +283,14 @@ describe('decode on the iron training set (RBAR-17, ADR-0010)', () => {
     }
   });
 
+  it('caps on the iron sleeve too (one constant for every Bar, ADR-0012)', () => {
+    // 10 x 45 lb per Side is 500 mm of iron on a 415 mm sleeve: the cap holds it at
+    // 8 (400 mm), then fills narrower -- the same guard as the kg set, no per-set fork.
+    const { primary } = decode(lbToKg(945), bar, IRON_LB);
+    expect(sideWidthMm(primary.side)).toBeLessThanOrEqual(SLEEVE_MM);
+    expect(primary.side.filter((p) => p.label === '45').length).toBeLessThanOrEqual(8);
+  });
+
   it('is the GREATEST achievable Total at or under Target (greedy is optimal -- iron is canonical)', () => {
     // Independent oracle: DP for the best coin sum <= budget, iron lb x2 to stay
     // integer ([45,35,25,10,5,2.5] lb -> [90,70,50,20,10,5]). If greedy ever lost to
@@ -282,6 +307,98 @@ describe('decode on the iron training set (RBAR-17, ADR-0010)', () => {
       const decodeSideLbX2 = primary.side.reduce((s, p) => s + Number(p.label) * 2, 0);
       const optimalSideLbX2 = best[totalLb - 45];
       expect(decodeSideLbX2).toBe(optimalSideLbX2);
+    }
+  });
+});
+
+describe('the sleeve caps decode (RBAR-31, ADR-0012)', () => {
+  it('never returns a Side Load wider than the sleeve, over included', () => {
+    for (let target = 20; target <= 800; target += 2.5) {
+      const { primary, over } = decode(target);
+      expect(sideWidthMm(primary.side)).toBeLessThanOrEqual(SLEEVE_MM + 1e-9);
+      expect(primary.total).toBeLessThanOrEqual(target + 1e-9); // never-overshoot holds capped
+      if (over) expect(sideWidthMm(over.side)).toBeLessThanOrEqual(SLEEVE_MM + 1e-9);
+    }
+  });
+
+  it('caps an overflowing Target at the widest fitting Side (7 reds, Total 370)', () => {
+    const { primary, over } = decode(1000);
+    expect(primary.side.map((p) => p.kg)).toEqual([25, 25, 25, 25, 25, 25, 25]);
+    expect(sideWidthMm(primary.side)).toBe(406);
+    expect(primary.total).toBe(370);
+    expect(primary.delta).toBe(-630);
+    expect(over).toBeUndefined(); // nothing heavier fits: no physical round-up
+  });
+
+  it('lands exactly on a boundary Target that nearly fills the sleeve', () => {
+    // 365 = 20 Bar + 2 x 172.5; greedy: 6 x 25 (348 mm) + 20 (398) + 2.5 (413).
+    // Exact hit with 2 mm to spare -- the cap must not turn a fitting stack away.
+    const { primary, over } = decode(365);
+    expect(primary.side.map((p) => p.kg)).toEqual([25, 25, 25, 25, 25, 25, 20, 2.5]);
+    expect(sideWidthMm(primary.side)).toBe(413);
+    expect(primary.total).toBe(365);
+    expect(primary.delta).toBe(0);
+    expect(over).toBeUndefined(); // exact: nothing to round up to
+  });
+
+  it('omits `over` in the CORE when a sleeve-full primary has no physical round-up', () => {
+    // 371: the capped primary is 370 (-1). The over step re-fills under the same cap
+    // and cannot exceed the Target, so the core carries no over at all -- the view no
+    // longer has to suppress one (ADR-0003 dated note).
+    const { primary, over } = decode(371);
+    expect(primary.total).toBe(370);
+    expect(primary.delta).toBe(-1);
+    expect(over).toBeUndefined();
+  });
+
+  it('keeps the round-up for off-grid Targets the sleeve does not bind (regression)', () => {
+    const { over } = decode(142.5);
+    expect(over?.total).toBe(143);
+    expect(over?.delta).toBe(0.5);
+  });
+
+  it('honors a custom sleeveMm (the parameterized length, ADR-0012)', () => {
+    // A 100 mm sleeve: 25 (58 mm) + 15 (39 mm) = 97 mm fits -> 100 lands exact.
+    const roomy = decode(100, 20, ELEIKO_KG, 100);
+    expect(roomy.primary.side.map((p) => p.kg)).toEqual([25, 15]);
+    expect(roomy.primary.total).toBe(100);
+    // A 58 mm sleeve holds a single red: capped at 70, and no physical round-up.
+    const tight = decode(100, 20, ELEIKO_KG, 58);
+    expect(tight.primary.side.map((p) => p.kg)).toEqual([25]);
+    expect(tight.primary.total).toBe(70);
+    expect(tight.over).toBeUndefined();
+  });
+
+  it('stays at-or-under-optimal within the width budget (DP oracle)', () => {
+    // Independent oracle: minWidth[k] = the narrowest stack summing to k (kg x 2 so
+    // the grid is integer). A Side sum is physically achievable iff its NARROWEST
+    // realization fits the sleeve; the optimum for a Target is then the greatest
+    // achievable sum at or under the weight budget. Greedy must match it across the
+    // region where the cap binds -- the regression guard ADR-0012 leans on, the same
+    // shape as the iron oracle above.
+    const kg2 = ELEIKO_KG.map((p) => Math.round(p.kg * 2));
+    const widths = ELEIKO_KG.map((p) => p.widthMm);
+    const MAX = 600; // side sums to 300 kg cover Targets to 620
+    const minWidth: number[] = new Array(MAX + 1).fill(Infinity);
+    minWidth[0] = 0;
+    for (let k = 1; k <= MAX; k++) {
+      for (let i = 0; i < kg2.length; i++) {
+        if (kg2[i] <= k && minWidth[k - kg2[i]] + widths[i] < minWidth[k]) {
+          minWidth[k] = minWidth[k - kg2[i]] + widths[i];
+        }
+      }
+    }
+    for (let target = 320; target <= 620; target += 0.5) {
+      const budget2 = Math.floor(((target - 20) / 2) * 2 + 1e-9);
+      let optimal2 = 0;
+      for (let k = Math.min(budget2, MAX); k >= 0; k--) {
+        if (minWidth[k] <= SLEEVE_MM) {
+          optimal2 = k;
+          break;
+        }
+      }
+      const { primary } = decode(target);
+      expect(Math.round(sideLoadKg(primary.side) * 2), `target ${target}`).toBe(optimal2);
     }
   });
 });

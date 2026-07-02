@@ -8,6 +8,7 @@ import {
   sideWidthMm,
   minPlateWidthMm,
   atSleeveCapacity,
+  plateFitsMm,
   totalKg,
   barWithCollars,
 } from './plates.ts';
@@ -165,6 +166,16 @@ describe('sleeve capacity (RBAR-28, view-layer physical cap)', () => {
     // every Side as full (mirrors decode.ts's empty-Inventory guard).
     expect(atSleeveCapacity([ELEIKO_KG[0]], [])).toBe(false);
     expect(minPlateWidthMm([])).toBe(Infinity); // documents the underlying trap
+  });
+
+  it('shares one fit comparison: plateFitsMm (RBAR-31, ADR-0012)', () => {
+    const red = ELEIKO_KG[0]; // 58 mm
+    // Landing exactly on the boundary is a fit; one millimetre past is not.
+    expect(plateFitsMm(SLEEVE_MM - 58, red)).toBe(true);
+    expect(plateFitsMm(SLEEVE_MM - 57, red)).toBe(false);
+    // The length is a parameter (the ADR-0012 per-Bar extension path).
+    expect(plateFitsMm(0, red, 58)).toBe(true);
+    expect(plateFitsMm(0, red, 57)).toBe(false);
   });
 
   it('flags a Side as full when not even the narrowest Plate would fit', () => {

@@ -23,6 +23,11 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 - **Collars** -- optional competition collars (None / 2.5 kg per Side) that count
   toward the Total, chosen in the Setup sheet (RBAR-16).
 - Unlimited standard Inventory (modeled as finite-ready, finite UI deferred).
+- **Sleeve-capped solver** -- the core never proposes a Side Load that outruns the
+  Bar's loadable sleeve; a full sleeve reads "Bar at capacity" with no phantom
+  round-up, and Encode refuses a Plate that will not fit (RBAR-31, ADR-0012).
+  Pulled into v1 on 2026-07-02 -- goes beyond strict handoff parity, whose engine
+  only flags capacity.
 - Decode (Target -> Side Load) primary; Encode (tap plates -> Total) secondary.
 - One unified screen, obvious mode toggle, shared interface.
 - Hybrid weight entry: value + steppers, tap-to-type exact.
