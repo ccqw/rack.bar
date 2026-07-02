@@ -150,8 +150,13 @@ class RackConsole extends HTMLElement {
     if (k === this._plateSetKey) return;
     this._plateSetKey = k;
     if (this.palette) this.palette.inventory = this.inventory(); // swap the Encode palette
+    // Iron and Eleiko Plates are different objects -- no carry across sets (ADR-0010).
+    // Drop the Side in EVERY mode, not just Encode: a Side carried into By Weight with
+    // nothing decoded used to slip past a mode-gated clear and leak old-set Plates onto
+    // the new rig (RBAR-32). A live Decode Target is unaffected -- reconfigure() below
+    // re-solves it on the new rig, rebuilding the Side from the new Inventory.
+    this.side = [];
     if (this.mode === 'encode') {
-      this.side = []; // iron and Eleiko Plates are different objects -- no carry across sets
       this.decoded = null;
       this.showingOver = false;
     }

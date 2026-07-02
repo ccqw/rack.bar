@@ -938,6 +938,24 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
     expect(discs(el).length).toBe(0);
     expect(total(el)).toBe('45 lb'); // bare 45 lb iron Bar, no Plates
   });
+
+  it('clears a CARRIED hand-built loadout too: set switch while in By Weight (RBAR-32)', () => {
+    // The escape path the RBAR-31 audit found: build in By Plates, switch to By
+    // Weight (the Side is carried, ADR-0005; nothing decoded yet), THEN switch the
+    // set. The mode gate used to skip the clear, leaking Eleiko Plates onto the
+    // iron rig when switching back to By Plates.
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 20); // an Eleiko loadout
+    modeBtn(el, 'decode').click(); // carried, decoded === null
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    modeBtn(el, 'encode').click();
+    expect(discs(el).length).toBe(0); // no Eleiko Plates on the iron rig
+    expect(loadedChips(el).length).toBe(0);
+    expect(total(el)).toBe('45 lb'); // bare 45 lb iron Bar
+  });
 });
 
 // The share card (RBAR-19, ADR-0011): the console owns the card, snapshots its current
