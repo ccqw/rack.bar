@@ -7,9 +7,11 @@
 //
 // A naive greedy heaviest-first pass is both minimal-Plate AND greatest-at-or-under
 // for the standard Eleiko set, because it is a canonical coin system
-// (25,20,15,10,5 = 5x{5,4,3,2,1}; the change Plates mirror that at 0.5x), so no
-// search/backtracking is needed. A future non-canonical Inventory (finite home-gym
-// counts) would revisit this -- out of scope here (RBAR-6).
+// (25,20,15,10,5 = 5x{5,4,3,2,1}; the change Plates mirror that at 0.5x) -- so no
+// search is needed for the UNCAPPED problem. The sleeve cap breaks that optimality
+// in a narrow extreme band, where a bounded exact search takes over (see fillSide/
+// searchFill and ADR-0012). A future non-canonical Inventory (finite home-gym
+// counts) would revisit the loader -- out of scope here (RBAR-6).
 import {
   ELEIKO_KG,
   DEFAULT_BAR_KG,

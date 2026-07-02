@@ -129,10 +129,13 @@ export function minPlateWidthMm(plates: readonly Plate[]): number {
 }
 
 /**
- * Whether one Side is physically full: no Plate of `set` would fit within SLEEVE_MM
- * on top of the current Side (RBAR-28). Since the core itself caps the fill
- * (RBAR-31, ADR-0012) this reads "the miss cannot be closed" for the status pill,
- * rather than describing an overflow after the fact.
+ * Whether one Side is physically full to ADDS: no Plate of `set` fits within
+ * SLEEVE_MM on top of the current Side (RBAR-28). NOTE this is strictly about
+ * adding to the given Side -- it cannot see that a RESHUFFLED heavier stack might
+ * still fit, which is why the status pill's "Bar at capacity" keys off the capped
+ * core's own signal (over absent while short, ADR-0012) rather than this helper.
+ * Kept as the pure physical-fullness reading (test-locked); a future consumer must
+ * grow a `sleeveMm` parameter if the ADR-0012 per-Bar path is ever wired.
  */
 export function atSleeveCapacity(
   side: readonly Plate[],

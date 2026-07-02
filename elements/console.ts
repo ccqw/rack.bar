@@ -23,12 +23,7 @@ import './share.ts';
 import './fullscreen.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
-import {
-  DEFAULT_BAR_KG,
-  barWithCollars,
-  atSleeveCapacity,
-  sideWidthMm,
-} from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
@@ -629,7 +624,13 @@ class RackConsole extends HTMLElement {
       const { primary, over } = this.decoded;
       const shown = this.showingOver && over ? over : primary;
       const targetKg = primary.total - primary.delta;
-      const atCap = atSleeveCapacity(shown.side, this.inventory());
+      // "At capacity" is the CORE's own signal (ADR-0012): the capped solver omits
+      // `over` exactly when no physical round-up exists, so short-with-no-over means
+      // the miss cannot be closed. A per-side room check (atSleeveCapacity) would
+      // contradict the offer here: a capped-short side can be full to ADDS while a
+      // RESHUFFLED heavier stack still fits (Target 346.8 -> primary 346 at 414 mm,
+      // over 347 at 413 mm) -- there the honest pairing is "short" + the round-up.
+      const atCap = over === undefined;
       this.renderStatus(shown, targetKg, unit, atCap);
       this.renderOver(over ?? null, primary, targetKg, unit);
       // Feed the keypad sheet its "on the bar" line (RBAR-22): the loadable Total + delta,

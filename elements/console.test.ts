@@ -1242,6 +1242,20 @@ describe('<rack-console> status pill wiring (RBAR-28)', () => {
     expect(over(el).hidden).toBe(true);
   });
 
+  it('reads "short" WITH the round-up when a reshuffled over still fits (no contradiction)', () => {
+    // 346.8: the primary side (414 mm) has no room to ADD, but the core reshuffles a
+    // fitting 347 as `over` -- so the miss CAN be closed and the pill must read
+    // "short" beside the offer, never "Bar at capacity" above a working round-up.
+    // Capacity keys off the core's own signal (over absent while short, ADR-0012).
+    const el = mountConsole();
+    type(el, '346.8');
+    expect(total(el)).toBe('346 kg');
+    expect(statusKind(el)).toBe('short');
+    expect(statusText(el)).toBe('0.8 kg short');
+    expect(over(el).hidden).toBe(false);
+    expect(over(el).textContent).toContain('347');
+  });
+
   it('reads "Bar at capacity" in lb too (same label, unit-independent)', () => {
     const el = mountConsole();
     unitBtn(el, 'lb').click();

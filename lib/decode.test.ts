@@ -341,6 +341,18 @@ describe('the sleeve caps decode (RBAR-31, ADR-0012)', () => {
     expect(over).toBeUndefined(); // exact: nothing to round up to
   });
 
+  it('finds a RESHUFFLED over when a heavier stack fits where the primary cannot grow', () => {
+    // 346.8: the capped primary is 346 (163/side, 414 mm) -- nothing can be ADDED to
+    // that side. But the over step re-solves and reshuffles into 163.5/side within
+    // 413 mm (5 x 25 + 20 + 15 + 2.5 + 1), so a physical round-up DOES exist. The
+    // "at capacity" reading must come from over's absence, not from whether the
+    // primary side itself has room (the RBAR-31 audit's contradiction case).
+    const { primary, over } = decode(346.8);
+    expect(primary.total).toBe(346);
+    expect(over?.total).toBe(347);
+    expect(sideWidthMm(over!.side)).toBeLessThanOrEqual(SLEEVE_MM);
+  });
+
   it('omits `over` in the CORE when a sleeve-full primary has no physical round-up', () => {
     // 371: the capped primary is 370 (-1). The over step re-fills under the same cap
     // and cannot exceed the Target, so the core carries no over at all -- the view no

@@ -65,7 +65,7 @@ unlimited v1 set a non-empty Inventory can always exceed the Target, so `over` a
 for every off-grid Target. A finite Inventory that is non-empty yet still cannot exceed
 the Target is not specially handled here (a finite-Inventory concern deferred past v1).
 
-## 2026-07-02 -- the sleeve caps "achievable" (RBAR-31)
+## 2026-07-01 -- the sleeve caps "achievable" (RBAR-31)
 
 "Greatest achievable Total" now means buildable from the Inventory AND physically
 fitting the sleeve; the never-overshoot invariant is unchanged. `over` is present

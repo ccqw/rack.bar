@@ -23,7 +23,7 @@ skeleton, deepened in RBAR-6); Encode is a separate pair of Side Load transforms
 ADR records -- a parameterized core with deferred Bar/Inventory UI -- is unchanged;
 only the name `solve` is superseded by `decode` for the Decode direction.
 
-## 2026-07-02 -- "unlimited" now means counts, not length (RBAR-31)
+## 2026-07-01 -- "unlimited" now means counts, not length (RBAR-31)
 
 The unlimited Inventory contract narrowed: pair COUNTS stay unlimited, but the
 solver now stops at the Bar's loadable sleeve length (`decode`/`addPlate` gained an

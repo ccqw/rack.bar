@@ -26,7 +26,7 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 - **Sleeve-capped solver** -- the core never proposes a Side Load that outruns the
   Bar's loadable sleeve; a full sleeve reads "Bar at capacity" with no phantom
   round-up, and Encode refuses a Plate that will not fit (RBAR-31, ADR-0012).
-  Pulled into v1 on 2026-07-02 -- goes beyond strict handoff parity, whose engine
+  Pulled into v1 on 2026-07-01 -- goes beyond strict handoff parity, whose engine
   only flags capacity.
 - Decode (Target -> Side Load) primary; Encode (tap plates -> Total) secondary.
 - One unified screen, obvious mode toggle, shared interface.
