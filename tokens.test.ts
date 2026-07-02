@@ -104,10 +104,10 @@ describe('legacy collapsed names survive only as aliases onto the scale', () => 
     '--rack-fg': 'var(--rack-text)',
     '--rack-muted': 'var(--rack-text-dim)',
     '--rack-line': 'var(--rack-border)',
-    // RBAR-34: line-strong meant "prominent border" (#23272c border-strong) at
-    // every call site, not the border-active selected-ring it aliased. All call
-    // sites now reference their explicit tier; the alias stays corrected here
-    // until the legacy block retires.
+    // RBAR-34: line-strong names the "prominent border" tier (#23272c
+    // border-strong), not the border-active selected-ring it aliased. All call
+    // sites now reference their explicit tier (the ring sites use border-active
+    // directly); the alias stays corrected here until the legacy block retires.
     '--rack-line-strong': 'var(--rack-border-strong)',
     '--rack-radius': 'var(--rack-radius-card)',
   };

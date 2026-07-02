@@ -161,10 +161,10 @@
   --rack-fg: var(--rack-text);
   --rack-muted: var(--rack-text-dim);
   --rack-line: var(--rack-border);
-  /* RBAR-34: this meant "prominent border" everywhere it was written, and the
-     handoff specs that as border-strong #23272c; it was misrouted to border-active
-     (#3a4047, the selected-control ring). Call sites that genuinely mean the active
-     ring reference --rack-border-active directly now. */
+  /* RBAR-34: the name means "prominent border", which the handoff specs as
+     border-strong #23272c; it was misrouted to border-active (#3a4047, the
+     selected-control ring). All call sites reference their explicit tier now --
+     the ones that wanted the ring use --rack-border-active directly. */
   --rack-line-strong: var(--rack-border-strong);
   --rack-radius: var(--rack-radius-card);
 }
