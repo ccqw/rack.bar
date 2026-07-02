@@ -40,6 +40,13 @@ One end of the Bar. The lifter physically loads a single Side; the other is its
 mirror image.
 _Avoid_: end.
 
+**Sleeve**:
+The loadable length of one Side of the Bar -- the room the Plates actually have.
+A Side Load that would run past the Sleeve cannot be racked, no matter how many
+Plates the Inventory holds; the solver never proposes one (ADR-0012). One length
+for every Bar in v1 (415 mm, the design handoff's model).
+_Avoid_: shaft, loadable zone.
+
 **Side Load**:
 The total Plate weight on one Side (not counting the Bar).
 _Avoid_: per-side weight (descriptive, not canonical).

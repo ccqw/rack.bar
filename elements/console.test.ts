@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import './console.ts';
 import { statusPill, onBarLine } from './console.ts';
+import { ELEIKO_KG } from '../lib/plates.ts';
 import { lbToKg } from '../lib/units.ts';
 
 type Console = HTMLElement & {
@@ -1227,16 +1228,32 @@ describe('<rack-console> status pill wiring (RBAR-28)', () => {
     expect(statusText(el)).toBe('1 lb over');
   });
 
-  it('reads "Bar at capacity" and suppresses the round-up when the sleeve is full', () => {
-    // An extreme off-grid Target piles the (uncapped, ADR-0003) Side past the physical
-    // sleeve: 720.3 kg -> 14 x 25 per Side (812 mm > 415), 0.3 kg short. The miss cannot
-    // be closed -- no Plate fits -- so the pill reads capacity and the round-up hides.
+  it('reads "Bar at capacity" over the CAPPED Total, with no round-up (ADR-0012)', () => {
+    // An extreme Target: the capped core (RBAR-31) loads the widest fitting Side --
+    // 7 x 25 (406 mm), Total 370 -- instead of an unrackable 720. The miss cannot be
+    // closed (no Plate fits), so the pill reads capacity; the core carries no `over`,
+    // so the round-up control is genuinely gone, not merely view-suppressed.
     const el = mountConsole();
     type(el, '720.3');
-    expect(total(el)).toContain('720');
+    expect(total(el)).toBe('370 kg');
+    expect(discs(el)).toHaveLength(7);
     expect(statusKind(el)).toBe('capacity');
     expect(statusText(el)).toBe('Bar at capacity');
     expect(over(el).hidden).toBe(true);
+  });
+
+  it('reads "short" WITH the round-up when a reshuffled over still fits (no contradiction)', () => {
+    // 346.8: the primary side (414 mm) has no room to ADD, but the core reshuffles a
+    // fitting 347 as `over` -- so the miss CAN be closed and the pill must read
+    // "short" beside the offer, never "Bar at capacity" above a working round-up.
+    // Capacity keys off the core's own signal (over absent while short, ADR-0012).
+    const el = mountConsole();
+    type(el, '346.8');
+    expect(total(el)).toBe('346 kg');
+    expect(statusKind(el)).toBe('short');
+    expect(statusText(el)).toBe('0.8 kg short');
+    expect(over(el).hidden).toBe(false);
+    expect(over(el).textContent).toContain('347');
   });
 
   it('reads "Bar at capacity" in lb too (same label, unit-independent)', () => {
@@ -1254,6 +1271,44 @@ describe('<rack-console> status pill wiring (RBAR-28)', () => {
     const line = el.shadowRoot!.querySelector('.statusline')!;
     expect(line.querySelector('[data-secondary]')).not.toBeNull();
     expect(line.querySelector('[data-status]')).not.toBeNull();
+  });
+});
+
+describe('<rack-console> Encode respects the sleeve cap (RBAR-31, ADR-0012)', () => {
+  it('stops adding Plates once the sleeve is full (core refusal, Total unchanged)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    for (let i = 0; i < 7; i++) tapAdd(el, 25); // 406 mm -- every tap still fits
+    expect(total(el)).toBe('370 kg');
+    expect(discs(el)).toHaveLength(7);
+    // An 8th red cannot fit. The key is disabled, and even a synthetic addplate
+    // event is refused by the pure core (the shell holds no second gate).
+    palette(el).dispatchEvent(
+      new CustomEvent('addplate', {
+        detail: { plate: ELEIKO_KG[0] },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    expect(total(el)).toBe('370 kg');
+    expect(discs(el)).toHaveLength(7);
+  });
+
+  it('disables palette keys that no longer fit, re-enabling as room frees', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    for (let i = 0; i < 6; i++) tapAdd(el, 25);
+    tapAdd(el, 20); // 398 mm used, 17 mm of room
+    const fits = (kg: number) =>
+      !palette(el).shadowRoot!.querySelector<HTMLButtonElement>(
+        `.key[data-kg="${kg}"]`,
+      )!.disabled;
+    expect(fits(2.5)).toBe(true); // 15 mm -> 413
+    expect(fits(0.5)).toBe(true); // 16 mm -> 414
+    expect(fits(25)).toBe(false); // 58 mm -> 456
+    expect(fits(5)).toBe(false); // 20 mm -> 418
+    tapDisc(el, 0); // remove a 25: 340 mm used, wide keys fit again
+    expect(fits(25)).toBe(true);
   });
 });
 

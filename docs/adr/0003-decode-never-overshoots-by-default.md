@@ -64,3 +64,14 @@ non-empty Inventory -- an *empty* Inventory (no denomination to step up by). For
 unlimited v1 set a non-empty Inventory can always exceed the Target, so `over` appears
 for every off-grid Target. A finite Inventory that is non-empty yet still cannot exceed
 the Target is not specially handled here (a finite-Inventory concern deferred past v1).
+
+## 2026-07-01 -- the sleeve caps "achievable" (RBAR-31)
+
+"Greatest achievable Total" now means buildable from the Inventory AND physically
+fitting the sleeve; the never-overshoot invariant is unchanged. `over` is present
+only when a PHYSICAL round-up exists: the over step is re-filled under the same
+sleeve cap and included only if it still lands strictly above the Target -- so a
+sleeve-full shortfall carries no `over`, in the core rather than hidden by the view
+(which is how RBAR-28 handled it over the uncapped core). So the RBAR-11 "always
+offer the round-up when under" rule reads: always offer it when one physically
+exists. See ADR-0012.

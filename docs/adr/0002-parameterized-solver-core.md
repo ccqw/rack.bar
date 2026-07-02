@@ -22,3 +22,9 @@ skeleton, deepened in RBAR-6); Encode is a separate pair of Side Load transforms
 (`addPlate`/`removePlate`, RBAR-7), not a second arg to `solve`. The decision this
 ADR records -- a parameterized core with deferred Bar/Inventory UI -- is unchanged;
 only the name `solve` is superseded by `decode` for the Decode direction.
+
+## 2026-07-01 -- "unlimited" now means counts, not length (RBAR-31)
+
+The unlimited Inventory contract narrowed: pair COUNTS stay unlimited, but the
+solver now stops at the Bar's loadable sleeve length (`decode`/`addPlate` gained an
+optional trailing `sleeveMm` parameter, default `SLEEVE_MM`). See ADR-0012.

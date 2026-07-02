@@ -7,7 +7,13 @@
 // owns, and these transforms swap it wholesale -- they never mutate their input and
 // always return a fresh heaviest-first array (the load order CONTEXT.md fixes for a
 // Side Load, the same order the sleeve draws).
-import { DEFAULT_BAR_KG, totalKg } from './plates.ts';
+import {
+  DEFAULT_BAR_KG,
+  SLEEVE_MM,
+  plateFitsMm,
+  sideWidthMm,
+  totalKg,
+} from './plates.ts';
 import type { Plate } from './plates.ts';
 
 /**
@@ -24,10 +30,19 @@ export function encode(
 
 /**
  * Tap a Plate onto a Side Load: a new heaviest-first Side Load with `plate` added.
- * Sorts a copy by kg so the result is heaviest-first wherever the Plate slots in (the
- * canonical set has no kg ties), and the input is left untouched (ADR-0005).
+ * A Plate that no longer fits the sleeve (ADR-0012) is REFUSED: the result is an
+ * unchanged fresh copy, mirroring removePlate's not-found no-op -- so Encode respects
+ * the same physical limit as the Decode fill (the palette additionally disables
+ * unfittable keys so the refusal is visible before the tap). Sorts a copy by kg so
+ * the result is heaviest-first wherever the Plate slots in (the canonical set has no
+ * kg ties), and the input is left untouched (ADR-0005).
  */
-export function addPlate(side: readonly Plate[], plate: Plate): readonly Plate[] {
+export function addPlate(
+  side: readonly Plate[],
+  plate: Plate,
+  sleeveMm: number = SLEEVE_MM,
+): readonly Plate[] {
+  if (!plateFitsMm(sideWidthMm(side), plate, sleeveMm)) return [...side];
   return [...side, plate].sort((a, b) => b.kg - a.kg);
 }
 

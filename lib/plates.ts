@@ -92,16 +92,31 @@ export const DEFAULT_BAR_KG = 20;
 
 /**
  * Usable sleeve length per Side, in millimetres (handoff engine.js). A real Bar runs
- * out of room before it runs out of Plates, so this is the physical cap the view reads
- * to flag "Bar at capacity" (RBAR-28). The decode core (ADR-0003) is deliberately
- * UNLIMITED -- it never enforces this -- so the cap is a pure view-layer derivation,
- * exactly like the prototype's `vm()`. A future sleeve-capped solver would consume it.
+ * out of room before it runs out of Plates. One length for every Bar (ADR-0012, where
+ * the per-Bar extension path is recorded). Since RBAR-31 the CORE enforces it --
+ * decode's fill and Encode's addPlate take it as an optional trailing parameter
+ * defaulting to this -- and the view still reads it for the "Bar at capacity" pill
+ * (RBAR-28) and the palette's key disabling.
  */
 export const SLEEVE_MM = 415;
 
 // A hair of tolerance on the width comparison so a future fractional Plate can't be
 // defeated by floating-point drift (mirrors decode's EPS).
 const WIDTH_EPS = 1e-9;
+
+/**
+ * The one sleeve-fit comparison (ADR-0012): whether `plate` still fits when `usedMm`
+ * of the sleeve is already taken. Landing exactly on the boundary is a fit. Shared by
+ * decode's capped fill, addPlate's guard, the palette's key disabling, and
+ * atSleeveCapacity -- one comparison source, so the solver and every view agree.
+ */
+export function plateFitsMm(
+  usedMm: number,
+  plate: Plate,
+  sleeveMm: number = SLEEVE_MM,
+): boolean {
+  return usedMm + plate.widthMm <= sleeveMm + WIDTH_EPS;
+}
 
 /** Total Plate thickness on one Side, in millimetres -- the sleeve-cap measure. */
 export function sideWidthMm(side: readonly Plate[]): number {
@@ -114,21 +129,25 @@ export function minPlateWidthMm(plates: readonly Plate[]): number {
 }
 
 /**
- * Whether one Side is physically full: not even the narrowest Plate of `set` would fit
- * within SLEEVE_MM on top of the current Side (RBAR-28). A pure check on the rendered
- * widths -- the decode core does not cap, so the view reads this to show "Bar at
- * capacity" in place of an unclosable "N short".
+ * Whether one Side is physically full to ADDS: no Plate of `set` fits within
+ * SLEEVE_MM on top of the current Side (RBAR-28). NOTE this is strictly about
+ * adding to the given Side -- it cannot see that a RESHUFFLED heavier stack might
+ * still fit, which is why the status pill's "Bar at capacity" keys off the capped
+ * core's own signal (over absent while short, ADR-0012) rather than this helper.
+ * Kept as the pure physical-fullness reading (test-locked); a future consumer must
+ * grow a `sleeveMm` parameter if the ADR-0012 per-Bar path is ever wired.
  */
 export function atSleeveCapacity(
   side: readonly Plate[],
   set: readonly Plate[],
 ): boolean {
-  // An empty set has no Plate to add at all, which is not a sleeve-room problem -- and
-  // guarding it keeps minPlateWidthMm's Math.min() from returning Infinity and reporting
-  // every Side as "full" (the same empty-Inventory trap decode.ts guards). A future
-  // custom Inventory (ADR-0002) can reach this; today's hard-coded sets never do.
+  // An empty set has no Plate to add at all, which is not a sleeve-room problem --
+  // guarding it keeps a custom empty Inventory (ADR-0002) from reporting every Side
+  // as "full" (the same empty-Inventory trap decode.ts guards). A future custom
+  // Inventory can reach this; today's hard-coded sets never do.
   if (set.length === 0) return false;
-  return sideWidthMm(side) + minPlateWidthMm(set) > SLEEVE_MM + WIDTH_EPS;
+  const used = sideWidthMm(side);
+  return !set.some((p) => plateFitsMm(used, p));
 }
 
 /** Total weight of a Side Load — the Plates on one Side — in kilograms. */

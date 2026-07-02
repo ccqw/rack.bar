@@ -3,7 +3,7 @@ import './palette.ts';
 import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 
-type Palette = HTMLElement & { inventory: readonly Plate[] };
+type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
 
 function mountPalette(): Palette {
   const el = document.createElement('rack-palette') as Palette;
@@ -45,6 +45,42 @@ describe('<rack-palette> (the Encode add-affordance)', () => {
     keys(el)[4].click(); // the 5 kg key
     expect(seen).toHaveBeenCalledTimes(1);
     document.removeEventListener('addplate', seen);
+  });
+
+  describe('sleeve-fit key disabling (RBAR-31, ADR-0012)', () => {
+    it('disables keys whose Plate no longer fits the used sleeve width', () => {
+      const el = mountPalette();
+      el.sideMm = 398; // 6 x 25 + a 20 loaded: 17 mm of room left
+      const enabled = keys(el)
+        .filter((k) => !k.disabled)
+        .map((k) => k.dataset.kg);
+      expect(enabled).toEqual(['2.5', '0.5']); // 15 and 16 mm still fit; 20 mm+ do not
+    });
+
+    it('re-enables keys as room frees up', () => {
+      const el = mountPalette();
+      el.sideMm = 398;
+      el.sideMm = 0;
+      expect(keys(el).every((k) => !k.disabled)).toBe(true);
+    });
+
+    it('treats an exact boundary fit as room (iron 2.5 lb onto 398 mm)', () => {
+      const el = mountPalette();
+      el.inventory = IRON_LB;
+      el.sideMm = 398; // the 17 mm iron 2.5 lands exactly on 415
+      const enabled = keys(el)
+        .filter((k) => !k.disabled)
+        .map((k) => k.textContent);
+      expect(enabled).toEqual(['2.5']);
+    });
+
+    it('keeps the fit state across an inventory re-render', () => {
+      const el = mountPalette();
+      el.sideMm = 398;
+      el.inventory = IRON_LB; // re-render must not forget the used width
+      const enabled = keys(el).filter((k) => !k.disabled);
+      expect(enabled.map((k) => k.textContent)).toEqual(['2.5']);
+    });
   });
 
   describe('the iron training Inventory (RBAR-17, ADR-0010)', () => {

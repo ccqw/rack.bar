@@ -6,14 +6,18 @@
 //
 // The Inventory is set by the console from the active plate set (RBAR-17, ADR-0010):
 // the kg Eleiko set renders 5 columns of color keys; the lb iron set renders 3 columns
-// of dark keys stamped with their lb label. Defaults to Eleiko.
-import { ELEIKO_KG } from '../lib/plates.ts';
+// of dark keys stamped with their lb label. Defaults to Eleiko. Keys whose Plate no
+// longer fits the sleeve are disabled (RBAR-31, ADR-0012): the console feeds the used
+// width via `sideMm`, and the fit check is the same plateFitsMm the core refuses
+// with -- so the affordance and the refusal cannot disagree.
+import { ELEIKO_KG, plateFitsMm } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 
 class RackPalette extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private _inventory: readonly Plate[] = ELEIKO_KG;
+  private _sideMm = 0;
 
   /** The denominations to offer (the active set's Inventory). Assigning re-renders. */
   set inventory(plates: readonly Plate[]) {
@@ -22,6 +26,19 @@ class RackPalette extends HTMLElement {
   }
   get inventory(): readonly Plate[] {
     return this._inventory;
+  }
+
+  /**
+   * The Side's used sleeve width (mm). Assigning re-syncs which keys are enabled --
+   * a sync, not a re-render, so tapping a key never rebuilds the grid under the
+   * lifter's finger.
+   */
+  set sideMm(mm: number) {
+    this._sideMm = mm;
+    if (this.isConnected) this.syncFit();
+  }
+  get sideMm(): number {
+    return this._sideMm;
   }
 
   connectedCallback(): void {
@@ -64,12 +81,24 @@ class RackPalette extends HTMLElement {
         .key[data-color="green"],
         .key[data-color="iron"] { color: #fff; }
         .key:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* A key whose Plate no longer fits the sleeve (ADR-0012): visibly out of
+           play, not tappable. */
+        .key:disabled { opacity: .35; cursor: default; }
       </style>
       <div class="keys">${keys}</div>
     `;
     this.root.querySelectorAll<HTMLButtonElement>('.key').forEach((key, i) => {
       const plate = this._inventory[i];
       key.addEventListener('click', () => this.emit(plate));
+    });
+    this.syncFit();
+  }
+
+  // Disable the keys whose Plate would overrun the sleeve (ADR-0012). Same key order
+  // as the Inventory (the render just mapped it), mirroring the click wiring above.
+  private syncFit(): void {
+    this.root.querySelectorAll<HTMLButtonElement>('.key').forEach((key, i) => {
+      key.disabled = !plateFitsMm(this._sideMm, this._inventory[i]);
     });
   }
 

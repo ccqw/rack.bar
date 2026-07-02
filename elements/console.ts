@@ -23,7 +23,7 @@ import './share.ts';
 import './fullscreen.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
-import { DEFAULT_BAR_KG, barWithCollars, atSleeveCapacity } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
@@ -49,7 +49,7 @@ type Entry = HTMLElement & {
 };
 type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
 type Loaded = HTMLElement & { side: readonly Plate[] };
-type Palette = HTMLElement & { inventory: readonly Plate[] };
+type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
 type Share = HTMLElement & { load: LoadSummary; open(): void };
 type Fullscreen = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
 type Mode = 'decode' | 'encode';
@@ -605,6 +605,9 @@ class RackConsole extends HTMLElement {
     // there is something to show (the row also self-hides when empty -- ADR-0009).
     this.recentsRow.hidden = this.mode !== 'decode' || this.recents.length === 0;
     this.palette.hidden = this.mode !== 'encode';
+    // Feed the palette the Side's used sleeve width so it can disable the keys that
+    // no longer fit (RBAR-31, ADR-0012) -- the visible face of addPlate's refusal.
+    this.palette.sideMm = sideWidthMm(this.side);
     // The "On the bar" chips + Clear are By-Plates only; the row stays visible there even
     // when empty (it shows its own "Tap to add a pair" hint), so it toggles by mode alone.
     this.loadedRow.hidden = this.mode !== 'encode';
@@ -621,9 +624,15 @@ class RackConsole extends HTMLElement {
       const { primary, over } = this.decoded;
       const shown = this.showingOver && over ? over : primary;
       const targetKg = primary.total - primary.delta;
-      const atCap = atSleeveCapacity(shown.side, this.inventory());
+      // "At capacity" is the CORE's own signal (ADR-0012): the capped solver omits
+      // `over` exactly when no physical round-up exists, so short-with-no-over means
+      // the miss cannot be closed. A per-side room check (atSleeveCapacity) would
+      // contradict the offer here: a capped-short side can be full to ADDS while a
+      // RESHUFFLED heavier stack still fits (Target 346.8 -> primary 346 at 414 mm,
+      // over 347 at 413 mm) -- there the honest pairing is "short" + the round-up.
+      const atCap = over === undefined;
       this.renderStatus(shown, targetKg, unit, atCap);
-      this.renderOver(over ?? null, primary, targetKg, unit, atCap);
+      this.renderOver(over ?? null, primary, targetKg, unit);
       // Feed the keypad sheet its "on the bar" line (RBAR-22): the loadable Total + delta,
       // so the sheet reads self-contained without the (bright, un-scrimmed) Total behind it.
       this.entry.loadLine = onBarLine(shown.total, targetKg, unit, atCap);
@@ -694,24 +703,20 @@ class RackConsole extends HTMLElement {
   // no path back (the ADR-0003 invariant). Offers: round up while on primary, back to
   // primary while on over -- so the lifter can step either way.
   //
-  // `atCapacity` suppresses the round-up OFFER (not the way back): when the primary Side
-  // is physically full the status pill reads "Bar at capacity", and our uncapped decode
-  // (ADR-0003) would still hand back an `over` that can't actually be loaded -- offering
-  // "round up" beside a "Bar at capacity" pill would contradict it. The handoff engine
-  // omits `over` at the cap for the same reason; we drop it in the view, since our core
-  // does not cap.
+  // No capacity suppression here any more: the core itself caps (RBAR-31, ADR-0012)
+  // and carries an `over` only when it is physically loadable, so an offer that
+  // reaches this method is always honest -- the RBAR-28 view-side stopgap retired.
   private renderOver(
     over: Loadout | null,
     primary: Loadout,
     targetKg: number,
     unit: Unit,
-    atCapacity: boolean,
   ): void {
     const dTarget = shownIn(targetKg, unit);
     const dPrimary = shownIn(primary.total, unit);
     const dOver = over ? shownIn(over.total, unit) : dPrimary;
     const noRoundUpToOffer = dPrimary === dTarget || dOver === dPrimary;
-    if (over === null || (!this.showingOver && (noRoundUpToOffer || atCapacity))) {
+    if (over === null || (!this.showingOver && noRoundUpToOffer)) {
       this.over.hidden = true;
       this.over.textContent = '';
       return;
