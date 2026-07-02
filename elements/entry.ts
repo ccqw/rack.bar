@@ -24,6 +24,7 @@
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
 import { shownIn, draftToKg, stepFor, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 
@@ -176,7 +177,7 @@ class RackEntry extends HTMLElement {
 
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}${ROLL_CSS}
+        ${BOX_SIZING}${BUTTON_FX}${ROLL_CSS}
         :host { display: block; }
         .caption {
           display: block; text-align: center;

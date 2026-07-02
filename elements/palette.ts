@@ -12,6 +12,7 @@
 // with -- so the affordance and the refusal cannot disagree.
 import { ELEIKO_KG, plateFitsMm } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 
 class RackPalette extends HTMLElement {
@@ -62,7 +63,7 @@ class RackPalette extends HTMLElement {
       .join('');
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}
+        ${BOX_SIZING}${BUTTON_FX}
         :host { display: block; }
         .keys {
           display: grid; grid-template-columns: repeat(${columns}, 1fr);

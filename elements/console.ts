@@ -27,6 +27,7 @@ import { DEFAULT_BAR_KG, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
+import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
@@ -203,7 +204,7 @@ class RackConsole extends HTMLElement {
   connectedCallback(): void {
     this.root.innerHTML = `
       <style>
-        ${BUTTON_FX}${ROLL_CSS}
+        ${BOX_SIZING}${BUTTON_FX}${ROLL_CSS}
         :host { display: block; width: 100%; max-width: 520px; }
         .stack {
           display: flex; flex-direction: column; gap: 24px; align-items: stretch;
