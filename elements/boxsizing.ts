@@ -7,8 +7,8 @@
 //
 // Interpolated FIRST into every element's <style> block, same idiom as BUTTON_FX
 // (one string, eleven roots, no drift; adoptedStyleSheets declined in RBAR-21).
-// `*` inside a shadow tree does not reach pseudo-elements, so ::before/::after are
-// named explicitly.
+// `*` never matches pseudo-elements, so ::before/::after are named explicitly
+// (index.html's light-DOM reset omits them; this deliberately goes further).
 export const BOX_SIZING = `
   *, *::before, *::after { box-sizing: border-box; }
 `;

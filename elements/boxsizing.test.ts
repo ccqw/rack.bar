@@ -21,8 +21,10 @@ import './sleeve.ts';
 //
 // happy-dom has no layout engine (it cannot measure the 416px), so the regression
 // is pinned at the level it broke: every shadow root must carry the shared reset.
-// The rendered-width AC (sheet <= viewport at 320/384/430px) is covered by the
-// real-browser pass in the PR test plan.
+// The rendered ACs -- sheet <= viewport at 320/384/430px, plus an eyeball sweep of
+// the other roots whose min-height + padding controls shrink to their authored
+// touch-target sizes under border-box (setup, share, recents, help, header pill)
+// -- are covered by the real-browser pass in the PR test plan.
 
 const TAGS = [
   'rack-app',
@@ -38,8 +40,8 @@ const TAGS = [
   'rack-sleeve',
 ] as const;
 
-// The reset must cover pseudo-elements too (the prototype's `*` reaches them via
-// UA cascade; in a shadow root they need naming). Whitespace-insensitive match.
+// `*` never matches pseudo-elements, so the reset must name ::before/::after
+// explicitly to cover them. Whitespace-insensitive match.
 const RESET = /\*\s*,\s*\*::before\s*,\s*\*::after\s*\{\s*box-sizing:\s*border-box\s*;?\s*\}/;
 
 describe('every shadow root carries the border-box reset (RBAR-33)', () => {
