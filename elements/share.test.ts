@@ -175,3 +175,44 @@ describe('<rack-share>', () => {
     });
   });
 });
+
+describe('<rack-share> (numeric typography, RBAR-39)', () => {
+  // Prototype L291: the share total is Hanken 800 52px -.03em tnum with an 18px/700
+  // text-dim unit suffix. happy-dom computes no layout, so text-lock the rule bodies;
+  // the rendered check is the browser pass.
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('sets the card total in Hanken 800 52px -.03em with tabular figures', () => {
+    const { root } = mount();
+    const total = rule(root, '.total {');
+    expect(total).toContain('var(--rack-font)');
+    expect(total).not.toContain('var(--rack-font-num)');
+    expect(total).toContain('font-weight: 800');
+    expect(total).toContain('font-size: 52px');
+    expect(total).toContain('letter-spacing: -.03em');
+    expect(total).toContain('tabular-nums');
+  });
+
+  it('splits the total into a value and a small dim unit suffix (18px/700)', () => {
+    const { el, root } = mount();
+    el.open();
+    // LOADED: 20 Bar + 2 x (25+25+15+2.5) = 155 kg
+    expect(root.querySelector('[data-total-num]')!.textContent).toBe('155');
+    expect(root.querySelector('[data-total-unit]')!.textContent).toBe(' kg');
+    const tu = rule(root, '.total .tu');
+    expect(tu).toContain('font-size: 18px');
+    expect(tu).toContain('font-weight: 700');
+    expect(tu).toContain('var(--rack-text-dim)');
+  });
+
+  it('renders the suffix in the display Unit (lb load reads " lb")', () => {
+    const { el, root } = mount({ ...LOADED, unit: 'lb' });
+    el.open();
+    expect(root.querySelector('[data-total-unit]')!.textContent).toBe(' lb');
+  });
+});

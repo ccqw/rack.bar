@@ -73,7 +73,8 @@ class RackConsole extends HTMLElement {
   private sleeve!: Sleeve;
   private share!: Share;
   private fullscreen!: Fullscreen;
-  private total!: HTMLElement;
+  private totalNum!: HTMLElement;
+  private totalUnit!: HTMLElement;
   private secondary!: HTMLButtonElement;
   private status!: HTMLElement;
   private statusLabel!: HTMLElement;
@@ -262,12 +263,20 @@ class RackConsole extends HTMLElement {
         /* The big Total (handoff 4a): Hanken 800 / 54px / -.025em with tabular figures.
            Hanken is proportional, so tnum must be explicit -- it "stayed on" only while
            the Total was monospace JetBrains Mono; now that it is Hanken the digits would
-           jitter on change without it. Rolls up on change (numRoll, via rollText). */
+           jitter on change without it. 54/384 = 14.0625vw hits the spec 54px exactly at
+           the 384px design frame (RBAR-39; 13vw fell ~4px short there), the floor still
+           covers narrower phones. Rolls up on change (numRoll, via rollText). */
         .readout output {
           display: block; font-family: var(--rack-font); font-weight: 800;
-          font-size: clamp(40px, 13vw, 54px); letter-spacing: -.025em;
+          font-size: clamp(40px, 14.0625vw, 54px); letter-spacing: -.025em;
           font-variant-numeric: tabular-nums;
           color: var(--rack-fg); margin-top: 4px;
+        }
+        /* The unit rides the Total as a small dim suffix (prototype L135: 21px/600
+           text-dim), not full-size in the 54px ink -- so "142 kg" reads value-first.
+           Only the value span rolls; the suffix would flicker pointlessly. */
+        .readout output .tu {
+          font-size: 21px; font-weight: 600; color: var(--rack-text-dim);
         }
         /* The Secondary readout: the same Total in the other unit, tap to hide/show
            (ADR-0006/0010). A quiet line under the prominent Total. */
@@ -360,7 +369,8 @@ class RackConsole extends HTMLElement {
               <button type="button" data-unit="lb" aria-pressed="false">lb</button>
             </div>
           </div>
-          <output data-total>${DEFAULT_BAR_KG} kg</output>
+          <output data-total><span data-total-num>${DEFAULT_BAR_KG}</span><span
+            class="tu" data-total-unit> kg</span></output>
           <div class="statusline">
             <button type="button" class="secondary" data-secondary></button>
             <span class="status" data-status hidden
@@ -398,7 +408,8 @@ class RackConsole extends HTMLElement {
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
     this.share = this.root.querySelector('rack-share') as Share;
     this.fullscreen = this.root.querySelector('rack-fullscreen') as Fullscreen;
-    this.total = this.root.querySelector('[data-total]')!;
+    this.totalNum = this.root.querySelector('[data-total-num]')!;
+    this.totalUnit = this.root.querySelector('[data-total-unit]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
@@ -603,7 +614,10 @@ class RackConsole extends HTMLElement {
     this.sleeve.interactive = this.mode === 'encode';
     this.entry.unit = unit;
     this.recentsRow.unit = unit;
-    rollText(this.total, format(encode(this.side, this.baselineKg()), unit));
+    // Value and suffix split (RBAR-39): only the value rolls; the suffix just tracks
+    // the active unit. Together they still read "142 kg" (format's shape).
+    rollText(this.totalNum, String(shownIn(encode(this.side, this.baselineKg()), unit)));
+    this.totalUnit.textContent = ` ${unit}`;
     this.renderUnitToggle(unit);
     this.renderSecondary(unit);
     this.entry.hidden = this.mode !== 'decode';

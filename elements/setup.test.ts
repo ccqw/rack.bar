@@ -251,3 +251,34 @@ describe('<rack-setup> plate-set row swatches + selected check (RBAR-29)', () =>
     expect(row(root, 'comp').getAttribute('aria-pressed')).toBe('false');
   });
 });
+
+describe('<rack-setup> (Bar-tile typography, RBAR-39)', () => {
+  // Prototype L863: the Bar-tile headline is Hanken 700 14px, textPrimary on the
+  // active tile and text-dim otherwise -- the same treatment the Collar tiles'
+  // .word/.csub already carry, so the Bar tiles reuse those classes.
+  it('renders the Bar headline as word + csub (the Collar tiles dim pattern)', () => {
+    const { root } = mountSetup();
+    expect(tile(root, 20).querySelector('.word')!.textContent).toBe('20 kg');
+    expect(tile(root, 20).querySelector('.csub')!.textContent).toBe('44 lb');
+    expect(tile(root, 15).querySelector('.word')!.textContent).toBe('15 kg');
+  });
+
+  it('sets the headline in Hanken 700 14px (buttons do not inherit fonts)', () => {
+    const { root } = mountSetup();
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf('.tile .word');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const word = css.slice(start, css.indexOf('}', start));
+    expect(word).toContain('var(--rack-font)');
+    expect(word).toContain('font-weight: 700');
+    expect(word).toContain('font-size: 14px');
+    expect(word).toContain('var(--rack-text-dim)'); // inactive dims like the Collars
+    // the active tile brightens the headline (the dimming half of the contract)
+    expect(css).toContain('.tile[aria-pressed="true"] .word');
+  });
+
+  it('keeps no always-bright mono headline on the Bar tiles', () => {
+    const { root } = mountSetup();
+    expect(root.querySelector('[data-bar="20"] .kg')).toBeNull(); // the old 20px mono span
+  });
+});

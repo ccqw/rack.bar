@@ -20,8 +20,8 @@ function mountConsole(): Console {
 // anchor; this test needs to read it to prove it follows the Bar).
 function entryAnchorText(el: HTMLElement): string {
   return (
-    entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value]')!.textContent ??
-    ''
+    entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value-num]')!
+      .textContent ?? ''
   );
 }
 
@@ -93,7 +93,9 @@ function clearBtn(el: HTMLElement): HTMLButtonElement {
 // An empty draft renders the muted Bar-weight anchor; report that as '' (no Target).
 function entryValue(el: HTMLElement): string {
   const v = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value]')!;
-  return v.classList.contains('empty') ? '' : v.textContent ?? '';
+  return v.classList.contains('empty')
+    ? ''
+    : v.querySelector<HTMLElement>('[data-value-num]')!.textContent ?? '';
 }
 
 // Tap a denomination key on the Encode palette (by kg).
@@ -800,10 +802,10 @@ describe('<rack-console> display unit toggle (RBAR-17, ADR-0010)', () => {
     unitBtn(el, 'lb').click();
     expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true');
     expect(total(el)).toBe('44 lb'); // a bare 20 kg Bar reads 44 lb
-    // the entry caption follows the unit
+    // the entry's unit suffix follows (RBAR-39: the unit rides the value, not the caption)
     expect(
-      entry(el).shadowRoot!.querySelector('[data-caption]')!.textContent,
-    ).toBe('Target (lb)');
+      entry(el).shadowRoot!.querySelector('[data-value-unit]')!.textContent,
+    ).toBe(' lb');
   });
 
   it('persists the Primary unit and restores it on init', () => {
@@ -1345,11 +1347,40 @@ describe('<rack-console> (big Total typography + numRoll, RBAR-30)', () => {
     expect(readout).toContain('tabular-nums');
   });
 
-  it('arms the Total roll (numRoll marker) when the Total changes', () => {
+  it('sizes the Total to hit the spec 54px at the 384px design frame (RBAR-39)', () => {
+    // The old clamp(40px, 13vw, 54px) computed ~50px at 384px; 54/384 = 14.0625vw
+    // reaches the cap exactly at the design width (the floor still covers narrower
+    // phones). happy-dom computes no vw, so text-lock the clamp; the rendered 54px
+    // check is the browser pass.
     const el = mountConsole();
-    const out = el.shadowRoot!.querySelector('[data-total]')!;
+    const css = el.shadowRoot!.querySelector('style')!.textContent!;
+    const start = css.indexOf('.readout output');
+    const readout = css.slice(start, css.indexOf('}', start));
+    expect(readout).toMatch(/clamp\(40px,\s*14\.0625vw,\s*54px\)/);
+  });
+
+  it('splits the Total into a value and a small dim unit suffix (RBAR-39)', () => {
+    // Prototype L135: the 54px/800 number carries a separate 21px/600 text-dim
+    // suffix span -- the unit must not render huge and bright.
+    const el = mountConsole();
+    const root = el.shadowRoot!;
+    expect(root.querySelector('[data-total-num]')!.textContent).toBe('20');
+    expect(root.querySelector('[data-total-unit]')!.textContent).toBe(' kg');
+    expect(total(el)).toBe('20 kg'); // the whole readout still reads value + unit
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf('.readout output .tu');
+    const tu = css.slice(start, css.indexOf('}', start));
+    expect(tu).toContain('font-size: 21px');
+    expect(tu).toContain('font-weight: 600');
+    expect(tu).toContain('var(--rack-text-dim)');
+  });
+
+  it('arms the Total roll (numRoll marker) on the value, never the suffix', () => {
+    const el = mountConsole();
+    const root = el.shadowRoot!;
     modeBtn(el, 'encode').click();
     tapAdd(el, 25); // Total moves 20 -> 70: the roll arms
-    expect(out.classList.contains('roll')).toBe(true);
+    expect(root.querySelector('[data-total-num]')!.classList.contains('roll')).toBe(true);
+    expect(root.querySelector('[data-total-unit]')!.classList.contains('roll')).toBe(false);
   });
 });

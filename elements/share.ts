@@ -17,7 +17,7 @@ import {
   loadTotalKg,
 } from '../lib/summary.ts';
 import type { LoadSummary } from '../lib/summary.ts';
-import { format } from '../lib/units.ts';
+import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
@@ -28,6 +28,8 @@ const COPIED_MS = 1600;
 class RackShare extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private totalEl!: HTMLElement;
+  private totalNumEl!: HTMLElement;
+  private totalUnitEl!: HTMLElement;
   private secondaryEl!: HTMLElement;
   private chipsEl!: HTMLElement;
   private captionEl!: HTMLElement;
@@ -108,10 +110,15 @@ class RackShare extends HTMLElement {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
           letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
         }
+        /* The card total (RBAR-39, prototype L291): Hanken 800 52px -.03em with
+           explicit tabular figures -- the display-number treatment, not mono. */
         .total {
-          font-family: var(--rack-font-num); font-size: 40px; font-weight: 700;
-          color: var(--rack-fg); line-height: 1.05;
+          font-family: var(--rack-font); font-size: 52px; font-weight: 800;
+          letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+          color: var(--rack-text); line-height: 1;
         }
+        /* The unit rides the total as a small dim suffix (18px/700, text-dim). */
+        .total .tu { font-size: 18px; font-weight: 700; color: var(--rack-text-dim); }
         .secondary {
           font-family: var(--rack-font-num); font-size: 14px; color: var(--rack-muted);
         }
@@ -153,7 +160,8 @@ class RackShare extends HTMLElement {
         <div class="card" data-card role="dialog" aria-modal="true" aria-label="Loading card">
           <span class="wordmark">rack<span class="dot">.</span>bar</span>
           <span class="label">Loading card</span>
-          <span class="total" data-total></span>
+          <span class="total" data-total><span data-total-num></span><span
+            class="tu" data-total-unit></span></span>
           <span class="secondary" data-secondary></span>
           <div class="chips" data-chips></div>
           <span class="caption" data-caption></span>
@@ -166,6 +174,8 @@ class RackShare extends HTMLElement {
     `;
 
     this.totalEl = this.root.querySelector('[data-total]')!;
+    this.totalNumEl = this.root.querySelector('[data-total-num]')!;
+    this.totalUnitEl = this.root.querySelector('[data-total-unit]')!;
     this.secondaryEl = this.root.querySelector('[data-secondary]')!;
     this.chipsEl = this.root.querySelector('[data-chips]')!;
     this.captionEl = this.root.querySelector('[data-caption]')!;
@@ -190,7 +200,9 @@ class RackShare extends HTMLElement {
     const { side, barKg, collarKg, unit } = this._load;
     const other: Unit = unit === 'kg' ? 'lb' : 'kg';
     const total = loadTotalKg(this._load);
-    this.totalEl.textContent = format(total, unit);
+    // Value + small dim unit suffix (RBAR-39); together they still read "155 kg".
+    this.totalNumEl.textContent = String(shownIn(total, unit));
+    this.totalUnitEl.textContent = ` ${unit}`;
     this.secondaryEl.textContent = format(total, other);
 
     // Chips (loaded) or the bare-bar line (empty) -- one assignment, no dead markup.

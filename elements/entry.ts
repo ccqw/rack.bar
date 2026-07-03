@@ -42,7 +42,8 @@ const KEY_ARIA: Record<string, string> = { del: 'Delete', '.': 'Decimal point' }
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private valueEl!: HTMLButtonElement;
-  private captionEl!: HTMLElement;
+  private valueNumEl!: HTMLElement;
+  private valueUnitEl!: HTMLElement;
   private decBtn!: HTMLButtonElement;
   private incBtn!: HTMLButtonElement;
   // The keypad bottom sheet (RBAR-22, handoff 5): a fixed bottom-docked sheet whose
@@ -197,16 +198,23 @@ class RackEntry extends HTMLElement {
         }
         .step:active { background: var(--rack-line); }
         .step:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* The Target value (RBAR-39, prototype L150): Hanken 700 30px with explicit
+           tabular figures (Hanken is proportional -- without tnum the digits jitter as
+           the value changes). Mono is reserved for labels/plate numerals/unit toggles. */
         .value {
           flex: 1; min-width: 0; text-align: center;
-          font-family: var(--rack-font-num);
-          font-size: clamp(36px, 14vw, 56px); font-weight: 600;
-          color: var(--rack-fg); background: transparent;
+          font-family: var(--rack-font);
+          font-size: 30px; font-weight: 700; line-height: 1.2;
+          font-variant-numeric: tabular-nums;
+          color: var(--rack-text); background: transparent;
           border: none; border-bottom: 2px solid var(--rack-line);
           padding: 6px 0; cursor: pointer;
         }
-        .value.empty { color: var(--rack-muted); } /* placeholder anchor */
+        .value.empty { color: var(--rack-text-dim); } /* placeholder anchor */
         .value:focus-visible { outline: none; border-bottom-color: var(--rack-accent); }
+        /* The unit rides the value as a small dim suffix (15px/600, text-dim) -- it
+           moved out of the caption (RBAR-39), so the caption reads just "Target". */
+        .value .vu { font-size: 15px; font-weight: 600; color: var(--rack-text-dim); }
 
         /* The keypad is a bottom sheet (RBAR-22, handoff 5), not an inline grid: it is
            fixed to the viewport bottom and slides up (sheetIn .2s), so opening it never
@@ -232,12 +240,19 @@ class RackEntry extends HTMLElement {
         /* The sheet's own readout: the big live value, its secondary unit, and the live
            "on the bar" load line (the field behind the sheet is covered). */
         .live { text-align: center; margin-bottom: 4px; }
+        /* The sheet's live number (RBAR-39, prototype L231): Hanken 800 46px -.02em,
+           tnum for the same no-jitter reason as the Target value above. Rolls on
+           change (numRoll) like every display number. */
         .live-num {
-          font-family: var(--rack-font-num); font-size: 44px; font-weight: 700;
-          color: var(--rack-fg); letter-spacing: -.02em;
+          font-family: var(--rack-font); font-size: 46px; font-weight: 800;
+          line-height: 1; font-variant-numeric: tabular-nums;
+          color: var(--rack-text); letter-spacing: -.02em;
         }
-        .live-num.empty { color: var(--rack-muted); }
-        .live-u { font-size: 16px; color: var(--rack-muted); margin-left: 4px; }
+        .live-num.empty { color: var(--rack-text-dim); }
+        .live-u {
+          font-size: 18px; font-weight: 700;
+          color: var(--rack-text-dim); margin-left: 4px;
+        }
         /* Secondary unit, then the "on the bar" status, stacked under the value (handoff 5):
            the secondary in the other unit (muted), the load line in accent below it. */
         .sub {
@@ -278,12 +293,15 @@ class RackEntry extends HTMLElement {
           outline: 2px solid var(--rack-accent); outline-offset: 2px;
         }
       </style>
-      <!-- A decorative caption; the value button carries its own live aria-label. -->
-      <div class="caption" data-caption>Target (kg)</div>
+      <!-- A decorative caption; the value button carries its own live aria-label.
+           Static "Target" -- the unit rides the value's suffix span (RBAR-39). -->
+      <div class="caption" data-caption>Target</div>
       <div class="row">
         <button type="button" class="step" data-step="dec" aria-label="Decrease">-</button>
         <button type="button" class="value" data-value
-                aria-haspopup="true" aria-expanded="false">${DEFAULT_BAR_KG}</button>
+                aria-haspopup="true" aria-expanded="false"><span
+            data-value-num>${DEFAULT_BAR_KG}</span><span
+            class="vu" data-value-unit> kg</span></button>
         <button type="button" class="step" data-step="inc" aria-label="Increase">+</button>
       </div>
       <div class="sheet" data-sheet role="dialog" aria-modal="false" aria-label="Enter Target" hidden>
@@ -306,7 +324,8 @@ class RackEntry extends HTMLElement {
     `;
 
     this.valueEl = this.root.querySelector('[data-value]')!;
-    this.captionEl = this.root.querySelector('[data-caption]')!;
+    this.valueNumEl = this.root.querySelector('[data-value-num]')!;
+    this.valueUnitEl = this.root.querySelector('[data-value-unit]')!;
     this.decBtn = this.root.querySelector('[data-step="dec"]')!;
     this.incBtn = this.root.querySelector('[data-step="inc"]')!;
     this.sheet = this.root.querySelector('[data-sheet]')!;
@@ -424,18 +443,21 @@ class RackEntry extends HTMLElement {
   private renderValue(): void {
     const empty = this.draft === '';
     const shown = empty ? this.barShown() : this.draft;
-    rollText(this.valueEl, shown); // the Target value rolls up on change (numRoll, RBAR-30)
+    // The value rolls up on change (numRoll, RBAR-30); the unit is a small dim suffix
+    // beside it (RBAR-39) that just tracks the active Unit -- it never rolls.
+    rollText(this.valueNumEl, shown);
+    this.valueUnitEl.textContent = ` ${this._unit}`;
     this.valueEl.classList.toggle('empty', empty);
     // The sheet's own live readout mirrors the same shown value + Unit (the field behind
     // the sheet is covered while the pad is open), plus a secondary line in the OTHER unit
     // (handoff 5). The secondary reads off the SAME canonical kg the value shows (the typed
     // Target, or the Bar anchor when empty), so it never drifts from the big number.
-    this.liveEl.textContent = shown;
+    // The live number rolls too (RBAR-39 -- the prototype animates both via one binding).
+    rollText(this.liveEl, shown);
     this.liveEl.classList.toggle('empty', empty);
     this.liveUEl.textContent = this._unit;
     const other: Unit = this._unit === 'kg' ? 'lb' : 'kg';
     this.liveSecEl.textContent = format(this.currentTarget() ?? this._barKg, other);
-    this.captionEl.textContent = `Target (${this._unit})`;
     const step = stepFor(this._unit);
     this.decBtn.setAttribute('aria-label', `Decrease by ${step} ${this._unit}`);
     this.incBtn.setAttribute('aria-label', `Increase by ${step} ${this._unit}`);
