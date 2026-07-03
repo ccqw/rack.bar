@@ -112,6 +112,15 @@
   --rack-sleeve-collar: #8b9199;  /* the bright inner collar face */
   --rack-sleeve-end: #5c636b;     /* the outer end collar */
   --rack-sleeve-empty: #2f343a;   /* the dashed empty-state box outline (a bare Bar) */
+  --rack-sleeve-empty-glyph: #3f454c; /* the + glyph inside it (prototype L106; RBAR-34 --
+                                         between text-disabled 41464c and sleeve-empty) */
+
+  /* Help popover (RBAR-34, prototype L84-L87). Its border and body ink sit between
+     the named border/text tiers, inlined in the prototype only -- captured here per
+     ADR-0001. Body text is two-tier: --rack-popover-ink for the running copy, plain
+     --rack-text (#f4f4f5) for the <strong> lead-ins. */
+  --rack-popover-border: #262b31;
+  --rack-popover-ink: #c2c7cd;
 
   /* Disc-fill convention (handoff "Plate palette"): a disc is not a flat fill but a
      soft top-lit gradient over its plate hex, with the disc shadow below. The bar
@@ -152,6 +161,10 @@
   --rack-fg: var(--rack-text);
   --rack-muted: var(--rack-text-dim);
   --rack-line: var(--rack-border);
-  --rack-line-strong: var(--rack-border-active);
+  /* RBAR-34: the name means "prominent border", which the handoff specs as
+     border-strong #23272c; it was misrouted to border-active (#3a4047, the
+     selected-control ring). All call sites reference their explicit tier now --
+     the ones that wanted the ring use --rack-border-active directly. */
+  --rack-line-strong: var(--rack-border-strong);
   --rack-radius: var(--rack-radius-card);
 }

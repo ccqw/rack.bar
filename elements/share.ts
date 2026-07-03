@@ -92,7 +92,7 @@ class RackShare extends HTMLElement {
           width: 100%; max-width: 300px;
           display: flex; flex-direction: column; align-items: stretch; gap: 14px;
           background: var(--rack-overlay);
-          border: 1px solid var(--rack-line-strong);
+          border: 1px solid var(--rack-border-strong);
           border-radius: 26px;
           padding: 22px 22px calc(22px + env(safe-area-inset-bottom));
           box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .7);
@@ -106,7 +106,7 @@ class RackShare extends HTMLElement {
         .wordmark .dot { color: var(--rack-accent); }
         .label {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-muted);
+          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
         }
         .total {
           font-family: var(--rack-font-num); font-size: 40px; font-weight: 700;

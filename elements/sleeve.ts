@@ -163,7 +163,7 @@ class RackSleeve extends HTMLElement {
           flex: none; width: 34px; height: 120px; margin-left: 5px;
           display: flex; align-items: center; justify-content: center;
           border: 1.5px dashed var(--rack-sleeve-empty); border-radius: 6px;
-          color: var(--rack-text-disabled);
+          color: var(--rack-sleeve-empty-glyph);
           font-family: var(--rack-font-num); font-size: 20px; font-weight: 600;
         }
         /* Real side-on sizing: height from diameter, width from thickness, both under one

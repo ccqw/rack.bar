@@ -87,7 +87,7 @@ class RackHelp extends HTMLElement {
           position: absolute; top: 100%; left: 0; margin-top: 9px; z-index: 30;
           width: 248px; padding: 13px 14px;
           background: var(--rack-overlay);
-          border: 1px solid var(--rack-line);
+          border: 1px solid var(--rack-popover-border);
           border-radius: var(--rack-radius-tile);
           box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .7);
           display: flex; flex-direction: column; gap: 9px;
@@ -97,18 +97,20 @@ class RackHelp extends HTMLElement {
         .popover[hidden] { display: none; }
         .heading {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .14em; text-transform: uppercase; color: var(--rack-muted);
+          letter-spacing: .14em; text-transform: uppercase; color: var(--rack-text-muted);
         }
         .step { display: flex; gap: 8px; align-items: baseline; }
         .step .n {
           flex: none; font-family: var(--rack-font-num); font-size: 11px;
           font-weight: 700; color: var(--rack-accent);
         }
+        /* Two-tier body ink (prototype L86-87): the running copy sits a step below
+           the <strong> lead-ins, which carry the full text white. */
         .step .body {
           font-family: var(--rack-font); font-size: 12px; font-weight: 500;
-          line-height: 1.4; color: var(--rack-fg);
+          line-height: 1.4; color: var(--rack-popover-ink);
         }
-        .step .body strong { font-weight: 700; }
+        .step .body strong { font-weight: 700; color: var(--rack-text); }
       </style>
       <button type="button" class="toggle" data-help-toggle
               aria-controls="rack-help-popover" aria-expanded="false" aria-label="How it works">

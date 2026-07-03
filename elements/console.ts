@@ -292,8 +292,8 @@ class RackConsole extends HTMLElement {
           font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
           letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
           line-height: 1; border-radius: 999px; padding: 4px 10px;
-          color: var(--rack-muted);
-          background: transparent; border: 1px solid var(--rack-line-strong);
+          color: var(--rack-text-secondary);
+          background: transparent; border: 1px solid var(--rack-border-muted);
         }
         .status[hidden] { display: none; }
         .status .dot {
