@@ -75,7 +75,7 @@ describe('<rack-entry>', () => {
     // not 0 -- otherwise you would hold + just to reach the empty Bar.
     const { el, root } = mountEntry();
     const value = root.querySelector<HTMLElement>('[data-value]')!;
-    expect(value.textContent).toBe(String(DEFAULT_BAR_KG));
+    expect(value.querySelector('[data-value-num]')!.textContent).toBe(String(DEFAULT_BAR_KG));
     expect(value.classList.contains('empty')).toBe(false); // a real value, not a placeholder
     const seen = targetSpy(el);
     tap(root, '[data-step="inc"]');
@@ -106,7 +106,7 @@ describe('<rack-entry>', () => {
     key(root, '0');
     key(root, '5');
     expect(seen).toHaveBeenLastCalledWith(5);
-    expect(root.querySelector('[data-value]')!.textContent).toBe('5');
+    expect(root.querySelector('[data-value-num]')!.textContent).toBe('5');
   });
 
   it('steps cleanly from a fractional value without float fuzz', () => {
@@ -227,7 +227,7 @@ describe('<rack-entry>', () => {
     tap(root, '[data-value]'); // reopen the sheet on the existing 100
     key(root, '5'); // first key after opening
     expect(seen).toHaveBeenLastCalledWith(5);
-    expect(root.querySelector('[data-value]')!.textContent).toBe('5');
+    expect(root.querySelector('[data-value-num]')!.textContent).toBe('5');
   });
 
   it('del after reopening a typed value deletes one char, not the whole field', () => {
@@ -239,7 +239,7 @@ describe('<rack-entry>', () => {
     ['1', '4', '2', '.', '5'].forEach((k) => key(root, k)); // 142.5
     tap(root, '[data-value]'); // reopen the sheet on 142.5
     key(root, 'del'); // first key after reopening
-    expect(root.querySelector('[data-value]')!.textContent).toBe('142.');
+    expect(root.querySelector('[data-value-num]')!.textContent).toBe('142.');
     expect(seen).toHaveBeenLastCalledWith(142); // "142." parses to 142
   });
 
@@ -306,7 +306,7 @@ describe('<rack-entry>', () => {
     const { el, root } = mountEntry();
     el.barKg = 15;
     const value = root.querySelector<HTMLElement>('[data-value]')!;
-    expect(value.textContent).toBe('15');
+    expect(value.querySelector('[data-value-num]')!.textContent).toBe('15');
     expect(value.classList.contains('empty')).toBe(false); // a real seeded value
     const seen = targetSpy(el);
     tap(root, '[data-step="inc"]');
@@ -320,7 +320,7 @@ describe('<rack-entry>', () => {
     key(root, 'del'); // clear the pristine seed -> empty field
     expect(seen).toHaveBeenLastCalledWith(null);
     const value = root.querySelector<HTMLElement>('[data-value]')!;
-    expect(value.textContent).toBe('5'); // the muted anchor follows the Bar
+    expect(value.querySelector('[data-value-num]')!.textContent).toBe('5'); // the muted anchor follows the Bar
     expect(value.classList.contains('empty')).toBe(true);
     tap(root, '[data-step="inc"]'); // steps up from the 5 kg Bar
     expect(seen).toHaveBeenLastCalledWith(6);
@@ -333,7 +333,7 @@ describe('<rack-entry>', () => {
     ['1', '0', '0'].forEach((k) => key(root, k)); // typed 100
     el.barKg = 15;
     const value = root.querySelector<HTMLElement>('[data-value]')!;
-    expect(value.textContent).toBe('100');
+    expect(value.querySelector('[data-value-num]')!.textContent).toBe('100');
   });
 
   it('emits keypadclose with the current Target when the keypad closes (commit point)', () => {
@@ -407,14 +407,21 @@ describe('<rack-entry>', () => {
 
   describe('display Unit (RBAR-17, ADR-0010)', () => {
     function valueText(root: ShadowRoot): string {
-      return root.querySelector<HTMLElement>('[data-value]')!.textContent ?? '';
+      return root.querySelector<HTMLElement>('[data-value-num]')!.textContent ?? '';
     }
 
-    it('captions the field with the active Unit', () => {
+    it('captions the field "Target" -- the Unit moved into the value suffix (RBAR-39)', () => {
       const { el, root } = mountEntry();
-      expect(root.querySelector('[data-caption]')!.textContent).toBe('Target (kg)');
+      expect(root.querySelector('[data-caption]')!.textContent).toBe('Target');
       el.unit = 'lb';
-      expect(root.querySelector('[data-caption]')!.textContent).toBe('Target (lb)');
+      expect(root.querySelector('[data-caption]')!.textContent).toBe('Target');
+    });
+
+    it('renders the unit suffix in the active Unit (kg -> lb)', () => {
+      const { el, root } = mountEntry();
+      expect(root.querySelector('[data-value-unit]')!.textContent).toBe(' kg');
+      el.unit = 'lb';
+      expect(root.querySelector('[data-value-unit]')!.textContent).toBe(' lb');
     });
 
     it('shows the seeded Bar anchor in the active Unit (20 kg -> 44 lb)', () => {
@@ -462,5 +469,71 @@ describe('<rack-entry>', () => {
       el.display(lbToKg(225));
       expect(valueText(root)).toBe('225');
     });
+  });
+});
+
+describe('<rack-entry> (numeric typography, RBAR-39)', () => {
+  // The handoff sets every display number in Hanken (mono is reserved for labels,
+  // plate numerals, and unit toggles) with explicit tabular figures -- Hanken is
+  // proportional, so without tnum the digits jitter as the value changes. happy-dom
+  // computes no layout, so these text-lock the rule bodies; the rendered check is
+  // the browser pass.
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('sets the Target value in Hanken 700 30px with tabular figures (prototype L150)', () => {
+    const { root } = mountEntry();
+    const value = rule(root, '.value {');
+    expect(value).toContain('var(--rack-font)');
+    expect(value).not.toContain('var(--rack-font-num)');
+    expect(value).toContain('font-weight: 700');
+    expect(value).toContain('font-size: 30px');
+    expect(value).toContain('line-height: 1.2');
+    expect(value).toContain('tabular-nums');
+  });
+
+  it('renders the Target unit as a small dim suffix (15px/600, text-dim)', () => {
+    const { root } = mountEntry();
+    const vu = rule(root, '.value .vu');
+    expect(vu).toContain('font-size: 15px');
+    expect(vu).toContain('font-weight: 600');
+    expect(vu).toContain('var(--rack-text-dim)');
+  });
+
+  it('rolls the Target value on change, never the suffix', () => {
+    const { root } = mountEntry();
+    key(root, '5'); // 20 -> 5: a real change, the roll arms
+    expect(root.querySelector('[data-value-num]')!.classList.contains('roll')).toBe(true);
+    expect(root.querySelector('[data-value-unit]')!.classList.contains('roll')).toBe(false);
+  });
+
+  it('sets the keypad live number in Hanken 800 46px -.02em with tabular figures (prototype L231)', () => {
+    const { root } = mountEntry();
+    const live = rule(root, '.live-num {');
+    expect(live).toContain('var(--rack-font)');
+    expect(live).not.toContain('var(--rack-font-num)');
+    expect(live).toContain('font-weight: 800');
+    expect(live).toContain('font-size: 46px');
+    expect(live).toContain('letter-spacing: -.02em');
+    expect(live).toContain('tabular-nums');
+  });
+
+  it('sets the keypad live unit suffix small and dim (18px/700, text-dim)', () => {
+    const { root } = mountEntry();
+    const liveU = rule(root, '.live-u {');
+    expect(liveU).toContain('font-size: 18px');
+    expect(liveU).toContain('font-weight: 700');
+    expect(liveU).toContain('var(--rack-text-dim)');
+  });
+
+  it('rolls the keypad live number on change (numRoll, prototype entryNumStyle)', () => {
+    const { root } = mountEntry();
+    tap(root, '[data-value]'); // open the sheet
+    key(root, '4'); // 20 -> 4: the live readout rolls
+    expect(root.querySelector('[data-live]')!.classList.contains('roll')).toBe(true);
   });
 });

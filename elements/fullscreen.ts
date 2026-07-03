@@ -16,7 +16,7 @@
 import './sleeve.ts';
 import { configText, loadTotalKg } from '../lib/summary.ts';
 import type { LoadSummary } from '../lib/summary.ts';
-import { format } from '../lib/units.ts';
+import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { plateSetFor } from '../lib/platesets.ts';
 import type { Plate } from '../lib/plates.ts';
@@ -29,7 +29,8 @@ type Sleeve = HTMLElement & { sideLoad: readonly Plate[]; interactive: boolean }
 class RackFullscreen extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private overlay!: HTMLElement;
-  private totalEl!: HTMLElement;
+  private totalNumEl!: HTMLElement;
+  private totalUnitEl!: HTMLElement;
   private secondaryEl!: HTMLElement;
   private captionEl!: HTMLElement;
   private sleeve!: Sleeve;
@@ -125,6 +126,9 @@ class RackFullscreen extends HTMLElement {
           letter-spacing: -.03em; color: var(--rack-fg);
           font-variant-numeric: tabular-nums;
         }
+        /* The unit rides the huge Total as a small dim suffix (RBAR-39, prototype
+           L321: 22px/600 text-dim). Only the value span rolls. */
+        .total .tu { font-size: 22px; font-weight: 600; color: var(--rack-text-dim); }
         /* The secondary line: the same Total in the OTHER Unit + a per-side note. */
         .secondary {
           margin-top: 8px; font-family: var(--rack-font); font-weight: 500;
@@ -166,7 +170,8 @@ class RackFullscreen extends HTMLElement {
         </button>
         <div class="head">
           <span class="wordmark" data-wordmark>rack<span class="dot">.</span>bar</span>
-          <span class="total" data-total></span>
+          <span class="total" data-total><span data-total-num></span><span
+            class="tu" data-total-unit></span></span>
           <span class="secondary" data-secondary></span>
           <span class="caption" data-caption></span>
         </div>
@@ -179,7 +184,8 @@ class RackFullscreen extends HTMLElement {
     `;
 
     this.overlay = this.root.querySelector('[data-overlay]')!;
-    this.totalEl = this.root.querySelector('[data-total]')!;
+    this.totalNumEl = this.root.querySelector('[data-total-num]')!;
+    this.totalUnitEl = this.root.querySelector('[data-total-unit]')!;
     this.secondaryEl = this.root.querySelector('[data-secondary]')!;
     this.captionEl = this.root.querySelector('[data-caption]')!;
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
@@ -203,7 +209,9 @@ class RackFullscreen extends HTMLElement {
     const set = plateSetFor(this._plateSet);
     const other: Unit = unit === 'kg' ? 'lb' : 'kg';
     const total = loadTotalKg(this._load);
-    rollText(this.totalEl, format(total, unit));
+    // Value + small dim unit suffix (RBAR-39): only the value rolls (numRoll).
+    rollText(this.totalNumEl, String(shownIn(total, unit)));
+    this.totalUnitEl.textContent = ` ${unit}`;
     this.secondaryEl.textContent = `${format(total, other)} - per side`;
     this.captionEl.textContent = `${set.label} - ${configText(barKg, collarKg, set.unit)}`;
     this.sleeve.interactive = false;

@@ -157,3 +157,33 @@ describe('<rack-fullscreen>', () => {
     expect(sleeve(root).sideLoad).toEqual(LOADED.side);
   });
 });
+
+describe('<rack-fullscreen> (numeric typography, RBAR-39)', () => {
+  // Prototype L321: the fullscreen total carries a separate 22px/600 text-dim unit
+  // suffix; the value keeps the Hanken 800 / 58px-cap / tnum treatment it already had.
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('splits the huge total into a value and a small dim unit suffix (22px/600)', () => {
+    const { el, root } = mount();
+    el.open();
+    expect(root.querySelector('[data-total-num]')!.textContent).toBe('155');
+    expect(root.querySelector('[data-total-unit]')!.textContent).toBe(' kg');
+    const tu = rule(root, '.total .tu');
+    expect(tu).toContain('font-size: 22px');
+    expect(tu).toContain('font-weight: 600');
+    expect(tu).toContain('var(--rack-text-dim)');
+  });
+
+  it('arms the roll on the value, never the suffix, when the Total changes', () => {
+    const { el, root } = mount(BARE); // 20 kg
+    el.open();
+    el.load = LOADED; // 20 -> 155: a real change, the roll arms
+    expect(root.querySelector('[data-total-num]')!.classList.contains('roll')).toBe(true);
+    expect(root.querySelector('[data-total-unit]')!.classList.contains('roll')).toBe(false);
+  });
+});

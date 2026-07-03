@@ -12,7 +12,7 @@
 // a scrim tap or the Done button closes and emits `close`. A tap inside the panel does
 // not dismiss.
 import { DEFAULT_BAR_KG } from '../lib/plates.ts';
-import { shownIn, format } from '../lib/units.ts';
+import { format } from '../lib/units.ts';
 import {
   PLATE_SETS,
   PLATE_SET_KEYS,
@@ -229,20 +229,15 @@ class RackSetup extends HTMLElement {
           background: var(--rack-selected); border-color: var(--rack-border-active);
         }
         .tile:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
-        .tile .kg {
-          font-family: var(--rack-font-num); font-size: 20px; font-weight: 700;
-          display: inline-flex; align-items: baseline; gap: 2px;
-        }
-        .tile .u { font-size: 11px; font-weight: 600; color: var(--rack-muted); }
-        .tile .sub {
-          font-family: var(--rack-font-num); font-size: 12px; color: var(--rack-muted);
-        }
-        /* The Collar tile labels (handoff ConfigSheet, RBAR-29 fold): a named
-           headline over a mono both-unit sub; the ink brightens on the selected
-           tile (the prototype dims an unselected Collar's whole label). */
+        /* The tile labels (handoff ConfigSheet; RBAR-29 fold, RBAR-39): a named
+           headline over a mono sub; the ink brightens on the selected tile (the
+           prototype dims an unselected tile's whole label). Bar and Collar tiles
+           share the pattern -- prototype L863 sets the Bar headline in the same
+           Hanken 700 14px the Collar words carry. The font-family is explicit:
+           buttons do not inherit the document font. */
         .tile .word {
-          font-size: 14px; font-weight: 700; line-height: 1;
-          color: var(--rack-text-dim);
+          font-family: var(--rack-font); font-size: 14px; font-weight: 700;
+          line-height: 1; color: var(--rack-text-dim);
         }
         .tile .csub {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
@@ -316,7 +311,9 @@ class RackSetup extends HTMLElement {
 
   // Render the Bar tiles for the active plate set's Bars (ADR-0010). The headline reads
   // in the set's native Unit, the subtitle in the other Unit. data-bar carries the
-  // canonical kg, so the app validates and reflects against the same value.
+  // canonical kg, so the app validates and reflects against the same value. The labels
+  // reuse the Collar tiles' word/csub treatment (RBAR-39, prototype L863): Hanken 700
+  // 14px headline, dimming with the tile like the Collars do.
   private renderBarTiles(): void {
     const set = plateSetFor(this._plateSetKey);
     const other = set.unit === 'kg' ? 'lb' : 'kg';
@@ -325,8 +322,8 @@ class RackSetup extends HTMLElement {
         (kg) => `
         <button type="button" class="tile" data-bar="${kg}" aria-pressed="false"
                 aria-label="${format(kg, set.unit)} Bar (${format(kg, other)})">
-          <span class="kg">${shownIn(kg, set.unit)}<span class="u">${set.unit}</span></span>
-          <span class="sub">${format(kg, other)}</span>
+          <span class="word">${format(kg, set.unit)}</span>
+          <span class="csub">${format(kg, other)}</span>
         </button>`,
       )
       .join('');
