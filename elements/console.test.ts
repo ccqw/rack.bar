@@ -243,11 +243,11 @@ describe('<rack-console> (Decode: at-or-under + status pill)', () => {
       // The at-or-under primary renders by default -- over is never auto-selected.
       expect(total(el)).toContain('100');
       expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
-      // The opt-in control surfaces the over Total and its positive delta.
+      // The opt-in reads the handoff's resting copy verbatim (RBAR-38, prototype L812):
+      // the over Total it offers, arrow in the app's ASCII convention, no delta suffix.
       const opt = over(el);
       expect(opt.hidden).toBe(false);
-      expect(opt.textContent).toContain('101');
-      expect(opt.textContent).toContain('0.5');
+      expect(opt.textContent).toBe('Round up -> 101 kg');
     });
 
     it('renders the over Side Load and Total when the opt-in is chosen', () => {
@@ -258,6 +258,9 @@ describe('<rack-console> (Decode: at-or-under + status pill)', () => {
       expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15', '0.5']);
       expect(statusKind(el)).toBe('over');
       expect(statusText(el)).toBe('0.5 kg over');
+      // Applied state (RBAR-38, prototype L812): the control now offers the way back
+      // down as "Use NNN" -- the at-or-under primary Total, not a "Back to" label.
+      expect(over(el).textContent).toBe('Use 100 kg');
     });
 
     it('toggles back to the at-or-under primary from the over option', () => {
@@ -1019,30 +1022,46 @@ describe('<rack-console> (Share card)', () => {
     expect(shareText(el, '[data-secondary]')).toBe('100 kg');
   });
 
-  it('opening the card in By-Weight remembers the shown Target (RBAR-20 seam)', () => {
+  // Opening the card pushes the ACHIEVED on-Bar Total, in BOTH modes (RBAR-38,
+  // prototype openCard L947) -- what you are about to share is what you loaded, so
+  // that is the weight worth remembering. Dedupe/cap are the same pure-core path.
+  it('opening the card in By-Weight remembers the achieved Total (RBAR-20 seam)', () => {
     const el = mountConsole();
     type(el, '100'); // typed but keypad not closed -- not yet remembered
     expect(recentLabels(el)).toEqual([]);
     shareBtn(el).click();
-    expect(recentLabels(el)).toEqual([100]); // the open pushed it (kg-canonical)
+    expect(recentLabels(el)).toEqual([100]); // exact hit: achieved == Target (kg-canonical)
   });
 
-  it('opening the card in By-Plates remembers nothing (no Target there)', () => {
+  it('pushes the achieved Total, not the typed Target, when they differ (RBAR-38)', () => {
+    const el = mountConsole();
+    type(el, '100.5'); // off-grid: the primary lands at 100
+    shareBtn(el).click();
+    expect(recentLabels(el)).toEqual([100]); // what is ON the bar, not the 100.5 wish
+  });
+
+  it('opening the card in By-Plates pushes the achieved Total too (RBAR-38)', () => {
     const el = mountConsole();
     modeBtn(el, 'encode').click();
     tapAdd(el, 25);
     shareBtn(el).click();
-    expect(recentLabels(el)).toEqual([]);
+    expect(recentLabels(el)).toEqual([70]); // 20 Bar + 2 x 25 -- both modes push
   });
 
-  it('reflects the over-target loadout when shown, while remembering the typed Target', () => {
+  it('a bare-Bar card open records the bare rig Total (prototype openCard)', () => {
+    const el = mountConsole();
+    shareBtn(el).click();
+    expect(recentLabels(el)).toEqual([20]); // the empty 20 kg Bar is what is shared
+  });
+
+  it('reflects the over-target loadout when shown, remembering the over Total', () => {
     const el = mountConsole();
     type(el, '100.5'); // off-grid: primary 100 (under), round-up 101
     over(el).click(); // show the round-up loadout -- this.side becomes the over loadout
     shareBtn(el).click();
     expect(shareText(el, '[data-total]')).toBe('101 kg'); // the over Total, not the 100 primary
     expect(shareChips(el)).toEqual(['25', '15', '0.5']);
-    expect(recentLabels(el)).toEqual([100.5]); // the typed Target, not the over Total
+    expect(recentLabels(el)).toEqual([101]); // the achieved over Total (RBAR-38)
   });
 
   it('folds a fitted Collar into the card Total and caption', () => {

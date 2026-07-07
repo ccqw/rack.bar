@@ -120,6 +120,14 @@ class RackEntry extends HTMLElement {
     } else {
       this.draft = this.shownKg === null ? '' : String(shownIn(this.shownKg, u));
     }
+    // A switch re-pristines the draft (RBAR-38, prototype setUnit L561-567): the
+    // converted number is a REFORMAT of a weight the lifter already chose, not a fresh
+    // entry -- so the next digit replaces it (not "2203" from typing 3 over 220) and del
+    // discards it whole. Marking it pristine also extends the pristine-close no-push
+    // guard: an idle peek-and-close after a toggle re-presents the same Target, so it
+    // commits nothing new to Recents.
+    this.pristine = true;
+    this.replaceNext = true;
     if (this.valueEl) this.renderValue();
   }
   get unit(): Unit {
@@ -340,8 +348,8 @@ class RackEntry extends HTMLElement {
       this.sheet.hidden ? this.openKeypad() : this.closeKeypad(),
     );
     this.root.querySelector('[data-done]')!.addEventListener('click', () => this.closeKeypad());
-    this.incBtn.addEventListener('click', () => this.step(+stepFor(this._unit)));
-    this.decBtn.addEventListener('click', () => this.step(-stepFor(this._unit)));
+    this.incBtn.addEventListener('click', () => this.step(1));
+    this.decBtn.addEventListener('click', () => this.step(-1));
     this.root.querySelectorAll<HTMLButtonElement>('[data-key]').forEach((btn) =>
       btn.addEventListener('click', () => this.press(btn.dataset.key!)),
     );
@@ -416,17 +424,33 @@ class RackEntry extends HTMLElement {
   }
 
   // A stepper nudge in the display Unit: an empty field anchors at the Bar (you load up
-  // from the Bar), add the delta, clamp at 0 (Target is never negative), and round off
-  // float fuzz. The shown value moves by stepFor(unit) -- 5 lb or 1 kg.
-  private step(delta: number): void {
+  // from the Bar), snap to the step grid, clamp at 0 (Target is never negative), and
+  // round off float fuzz. The grid is stepFor(unit) -- 5 lb or 1 kg (RBAR-38, prototype
+  // step() L574-591): a nudge lands on the NEXT multiple of the grid rather than carrying
+  // an off-grid fraction along, so 142.5 steps to 143 / 142 and re-aligns for good. An
+  // on-grid value moves a whole step. The epsilon absorbs float fuzz in the quotient so
+  // a nominally-on-grid value (e.g. an lb draft's conversion residue) is not treated as
+  // off-grid and half-stepped.
+  private step(dir: 1 | -1): void {
     this.pristine = false;
     // A nudge is an explicit edit of the current value, so a following digit appends to
     // the stepped number rather than replacing it.
     this.replaceNext = false;
+    const grid = stepFor(this._unit);
     const shownBar = shownIn(this._barKg, this._unit);
     const current = this.draft === '' ? shownBar : Number(this.draft);
     const base = Number.isNaN(current) ? shownBar : current;
-    const next = Math.max(0, Number((base + delta).toFixed(2)));
+    const q = base / grid;
+    const onGrid = Math.abs(q - Math.round(q)) < 1e-9;
+    const steps =
+      dir > 0
+        ? onGrid
+          ? Math.round(q) + 1
+          : Math.ceil(q - 1e-9)
+        : onGrid
+          ? Math.round(q) - 1
+          : Math.floor(q + 1e-9);
+    const next = Math.max(0, Number((steps * grid).toFixed(2)));
     this.draft = String(next);
     this.renderValue();
     this.emit();

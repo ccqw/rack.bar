@@ -547,13 +547,13 @@ class RackConsole extends HTMLElement {
 
   // Open the loading card (RBAR-19, ADR-0011): snapshot the current load -- the achieved
   // Total, the Side Load, the bare Bar + per-Side Collar, and the active display Unit --
-  // and hand it to the card. Opening in By-Weight (Decode) with a committed Target also
-  // remembers it (the third recents push site, closing the RBAR-20 seam from ADR-0009);
-  // By-Plates (Encode) has no Target, so it pushes nothing.
+  // and hand it to the card. Opening also remembers the ACHIEVED on-Bar Total, in BOTH
+  // modes (RBAR-38, prototype openCard L947; the third recents push site, ADR-0009):
+  // what you are about to share is what you loaded, so that -- not the typed wish -- is
+  // the weight worth a chip. On a bare Bar this records the bare rig Total, exactly as
+  // the prototype does.
   private openShare(): void {
-    if (this.mode === 'decode' && this.decoded) {
-      this.rememberTarget(this.decoded.primary.total - this.decoded.primary.delta);
-    }
+    this.rememberTarget(encode(this.side, this.baselineKg()));
     // The card derives the Total from these (loadTotalKg), so no separate Total is
     // passed -- nothing to drift from the Plates.
     this.share.load = {
@@ -741,10 +741,16 @@ class RackConsole extends HTMLElement {
       this.over.textContent = '';
       return;
     }
+    // The handoff's two-state copy verbatim (RBAR-38, prototype L812): the resting offer
+    // "Round up -> NNN", the applied state "Use NNN" (the way back to the at-or-under
+    // primary). No delta suffix -- the status pill beside the Total already reads it.
+    // Arrow in the app's ASCII convention (cf. onBarLine's parenthetical for the
+    // prototype's middle dot). Wording is Caitlin's plain-language call -- flagged on
+    // the PR (RBAR-38 copy note).
     this.over.hidden = false;
     this.over.textContent = this.showingOver
-      ? `Back to ${format(primary.total, unit)}`
-      : `Round up to ${format(over.total, unit)} (+${fmtNum(dOver - dTarget)})`;
+      ? `Use ${format(primary.total, unit)}`
+      : `Round up -> ${format(over.total, unit)}`;
   }
 }
 
