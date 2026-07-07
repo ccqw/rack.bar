@@ -964,8 +964,8 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
 });
 
 // The share card (RBAR-19, ADR-0011): the console owns the card, snapshots its current
-// load, and feeds it. Opening the card in By-Weight mode also remembers the shown Target
-// (the third recents push site -- closes the RBAR-20 deferred seam, ADR-0009/0011).
+// load, and feeds it. Opening the card also remembers the achieved on-Bar Total, in both
+// modes (RBAR-38, amending ADR-0011; the third recents push site -- ADR-0009).
 function shareCard(el: HTMLElement): HTMLElement {
   return el.shadowRoot!.querySelector<HTMLElement>('rack-share')!;
 }
@@ -1071,6 +1071,9 @@ describe('<rack-console> (Share card)', () => {
     shareBtn(el).click();
     expect(shareText(el, '[data-total]')).toBe('105 kg'); // 25 + 2 x (25 + 15) folded baseline
     expect(shareText(el, '[data-caption]')).toContain('collars 2.5 kg');
+    // The push folds the Collar too: the achieved Total reads off baselineKg(), the same
+    // folded baseline the card shows -- a bare-Bar encode here would mis-record 100.
+    expect(recentLabels(el)).toEqual([105]);
   });
 
   it('reads iron faces and lb through the card on the Training set', () => {
@@ -1081,6 +1084,23 @@ describe('<rack-console> (Share card)', () => {
     shareBtn(el).click();
     expect(shareText(el, '[data-total]')).toBe('135 lb');
     expect(shareChips(el)).toEqual(['45']); // the stamped lb face, not a kg mass
+    // The lb-mode push stores canonically in kg (ADR-0006), to stored precision --
+    // guards a future shownIn() slip at the push site writing display-unit numbers.
+    expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([
+      Number(lbToKg(135).toFixed(2)),
+    ]);
+  });
+
+  it('type -> Unit toggle -> keypad close still commits the typed Target (RBAR-38)', () => {
+    // The kg|lb toggle is live while the sheet is open (no scrim); toggling mid-entry
+    // must not swallow the commit, and the chip is the canonical 100 -- not a
+    // re-parse of the rounded "220" lb draft (~99.79).
+    const el = mountConsole();
+    type(el, '100');
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    valueBtn(el).click(); // open
+    valueBtn(el).click(); // close -> commit
+    expect(recentLabels(el)).toEqual([100]);
   });
 
   it('closing the card from within dismisses it', () => {

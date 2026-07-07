@@ -572,11 +572,41 @@ describe('<rack-entry>', () => {
         expect(root.querySelector('[data-value]')!.classList.contains('empty')).toBe(true);
       });
 
-      it('keypadclose after an idle Unit switch carries null (nothing newly chosen)', () => {
-        // The re-pristined draft extends the pristine-close no-push guard: a Unit toggle
-        // re-presents the SAME Target, so a peek-and-close commits nothing new to Recents.
+      it('keypadclose after a Unit switch commits the canonical Target, drift-free', () => {
+        // The lifter typed this weight; the toggle only re-dressed it -- so type ->
+        // toggle -> Done must still commit (the prototype's close pushes srcKg
+        // regardless of pristine). And it commits the CANONICAL kg: 100, never the
+        // re-parsed rounded draft (draftToKg("220", lb) ~ 99.79).
         const { el, root } = mountEntry();
         ['1', '0', '0'].forEach((k) => key(root, k));
+        el.unit = 'lb'; // shows 220
+        const seen = vi.fn();
+        el.addEventListener('keypadclose', (e) =>
+          seen((e as CustomEvent<{ target: number | null }>).detail.target),
+        );
+        tap(root, '[data-value]'); // open
+        tap(root, '[data-value]'); // close untouched
+        expect(seen).toHaveBeenLastCalledWith(100);
+      });
+
+      it('keypadclose after toggling a SEEDED default still carries null', () => {
+        // The re-pristine must not make a seed committable: the Bar anchor reformatted
+        // to lb is still a weight the lifter never chose.
+        const { el, root } = mountEntry();
+        el.unit = 'lb'; // the pristine 20 kg seed re-dresses to 44
+        const seen = vi.fn();
+        el.addEventListener('keypadclose', (e) =>
+          seen((e as CustomEvent<{ target: number | null }>).detail.target),
+        );
+        tap(root, '[data-value]'); // open
+        tap(root, '[data-value]'); // close untouched
+        expect(seen).toHaveBeenLastCalledWith(null);
+      });
+
+      it('keypadclose after toggling a display()-seeded value still carries null', () => {
+        // A mode-switch carry (display()) stays an idle peek across a Unit toggle.
+        const { el, root } = mountEntry();
+        el.display(120);
         el.unit = 'lb';
         const seen = vi.fn();
         el.addEventListener('keypadclose', (e) =>
@@ -585,6 +615,27 @@ describe('<rack-entry>', () => {
         tap(root, '[data-value]'); // open
         tap(root, '[data-value]'); // close untouched
         expect(seen).toHaveBeenLastCalledWith(null);
+      });
+
+      it('a Bar change does not stomp a toggled TYPED Target that matches the anchor', () => {
+        // Typed 20 on the 20 kg Bar, toggled to lb: the field reads "44" -- the same
+        // text as the Bar anchor. Picking another Bar must not mistake it for a seed
+        // and re-seed the field while the Target stands.
+        const { el, root } = mountEntry();
+        ['2', '0'].forEach((k) => key(root, k)); // a deliberate empty-bar Target
+        el.unit = 'lb'; // shows 44, same as the anchor text
+        el.barKg = 15;
+        expect(valueText(root)).toBe('44'); // the typed Target survives
+      });
+
+      it('a decimal point as the first key after a Unit switch starts a fresh draft', () => {
+        const { el, root } = mountEntry();
+        ['1', '0', '0'].forEach((k) => key(root, k));
+        el.unit = 'lb'; // 220, re-pristined
+        const seen = targetSpy(el);
+        key(root, '.');
+        expect(valueText(root)).toBe('0.'); // replaced, not "220."
+        expect(seen).toHaveBeenLastCalledWith(0);
       });
 
       it('a stepper nudge after a Unit switch makes the value real again (commits on close)', () => {

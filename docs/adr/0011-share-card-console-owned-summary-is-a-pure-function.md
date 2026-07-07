@@ -48,6 +48,15 @@ in By-Weight (Decode) mode with a committed Target -- the third push site the
 handoff names (keypad-close, chip-apply, share-open). By-Plates (Encode) has no
 Target, so opening the card there pushes nothing.
 
+**Amended 2026-07-06 (RBAR-38):** the 2026-07-01 live-vs-handoff audit found this
+diverged from the prototype, whose `openCard` pushes the achieved on-Bar TOTAL in
+BOTH modes (`pushRecent(f, totalKgVal)`, prototype L947). `openShare` now pushes
+`encode(side, baselineKg())` unconditionally -- what you are about to share is
+what you loaded. Consequences: an Encode card open records the hand-built Total,
+a Decode open records the achieved (possibly rounded-up) Total rather than the
+typed Target, and a bare-Bar open records the bare rig Total, exactly as the
+prototype does. Dedupe/cap are unchanged (same pure-core `pushRecent`).
+
 ## Scope: built thin
 
 The Copy button confirms with a transient "Copied" only on a successful clipboard

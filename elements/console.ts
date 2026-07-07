@@ -743,10 +743,10 @@ class RackConsole extends HTMLElement {
     }
     // The handoff's two-state copy verbatim (RBAR-38, prototype L812): the resting offer
     // "Round up -> NNN", the applied state "Use NNN" (the way back to the at-or-under
-    // primary). No delta suffix -- the status pill beside the Total already reads it.
-    // Arrow in the app's ASCII convention (cf. onBarLine's parenthetical for the
-    // prototype's middle dot). Wording is Caitlin's plain-language call -- flagged on
-    // the PR (RBAR-38 copy note).
+    // primary). No delta suffix, per the prototype -- once applied, the status pill
+    // beside the Total reads the overshoot. Arrow in the app's ASCII convention (cf.
+    // onBarLine's parenthetical for the prototype's middle dot). Wording is Caitlin's
+    // plain-language call -- flagged on the PR (RBAR-38 copy note).
     this.over.hidden = false;
     this.over.textContent = this.showingOver
       ? `Use ${format(primary.total, unit)}`
