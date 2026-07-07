@@ -93,7 +93,11 @@ class RackEntry extends HTMLElement {
    * emits a target.
    */
   set barKg(kg: number) {
-    const seededDefault = this.pristine && this.draft === this.barShown();
+    // `!reformatted` (RBAR-38): a Unit-reformatted TYPED Target whose converted text
+    // happens to equal the Bar anchor (typed 20 kg on the 20 kg Bar, toggled to "44")
+    // must not read as a seed here, or a Bar change would stomp it.
+    const seededDefault =
+      this.pristine && !this.reformatted && this.draft === this.barShown();
     this._barKg = kg;
     if (seededDefault) this.draft = this.barShown();
     if (this.valueEl) this.renderValue(); // no-op before connect; connectedCallback renders
@@ -120,6 +124,15 @@ class RackEntry extends HTMLElement {
     } else {
       this.draft = this.shownKg === null ? '' : String(shownIn(this.shownKg, u));
     }
+    // A switch re-pristines the draft (RBAR-38, prototype setUnit L561-567): the
+    // converted number is a REFORMAT, not a fresh entry -- so the next digit replaces it
+    // (not "2203" from typing 3 over 220) and del discards it whole. Whether the close
+    // still commits depends on what was reformatted: a real lifter-chosen value stays
+    // committable (`reformatted` -- the prototype's close pushes srcKg regardless of
+    // pristine), while a genuine seed keeps committing null. `wasReal` is read BEFORE
+    // the flags mutate; once reformatted, further toggles keep the value committable.
+    const wasReal = !this.pristine && this.draft !== '';
+    this.markPristine(this.draft !== '' && (wasReal || this.reformatted));
     if (this.valueEl) this.renderValue();
   }
   get unit(): Unit {
@@ -134,11 +147,19 @@ class RackEntry extends HTMLElement {
   // (keypad/stepper/display). The Unit setter reformats FROM this so a Unit round-trip
   // is exact; it is not recomputed from the rounded draft on a Unit switch.
   private shownKg: number | null = null;
-  // True when `draft` holds an untouched seeded default the lifter never chose (the initial
-  // Bar weight or a value pushed in by display()). Drives the keypadclose COMMIT contract:
-  // a pristine field carries null so an idle peek never litters Recents. Cleared by the
+  // True when `draft` holds a value the lifter has not edited: a seeded default they
+  // never chose (the initial Bar weight, a display() push) OR a Unit-reformat of a value
+  // (RBAR-38 -- see `reformatted` for which). Drives the keypadclose COMMIT contract:
+  // a pristine SEED carries null so an idle peek never litters Recents, while a pristine
+  // REFORMAT of a lifter-chosen weight still commits its canonical kg. Cleared by the
   // first real edit (a keypress or a stepper nudge).
   private pristine = false;
+  // True when the pristine draft is a Unit-reformat of a weight the lifter DID choose
+  // (RBAR-38): it replaces-on-type like a seed, but closing the pad still commits its
+  // canonical `shownKg` (the prototype's close pushes srcKg regardless of pristine), and
+  // a Bar change must not mistake it for a seeded default even when the converted text
+  // happens to equal the Bar anchor. False for genuine seeds; cleared by any real edit.
+  private reformatted = false;
   // True when the next keypress should REPLACE the shown value rather than append to it.
   // Set on a seed AND every time the sheet OPENS (handoff 5: "first keypress after opening
   // replaces"), so reopening the pad on an existing Target and typing starts fresh (100 ->
@@ -157,9 +178,19 @@ class RackEntry extends HTMLElement {
   display(value: number | null): void {
     this.draft = value === null ? '' : String(shownIn(value, this._unit));
     this.shownKg = value;
+    this.markPristine(false); // a genuine seed: an idle peek-and-close commits null
+    this.renderValue();
+  }
+
+  // Mark the draft pristine (unedited by the lifter), keeping the flag trio in lockstep
+  // -- the RBAR-38 bug was one seeding site setting `pristine` without `replaceNext`'s
+  // semantics, so the pairing lives in one place now. `reformatted` says whether this
+  // pristine value is a Unit-reformat of a lifter-chosen weight (commits on close) or a
+  // genuine seed (commits null).
+  private markPristine(reformatted: boolean): void {
     this.pristine = true;
     this.replaceNext = true;
-    this.renderValue();
+    this.reformatted = reformatted;
   }
 
   // The Bar weight as shown in the display Unit -- the seeded default and empty-field
@@ -340,8 +371,8 @@ class RackEntry extends HTMLElement {
       this.sheet.hidden ? this.openKeypad() : this.closeKeypad(),
     );
     this.root.querySelector('[data-done]')!.addEventListener('click', () => this.closeKeypad());
-    this.incBtn.addEventListener('click', () => this.step(+stepFor(this._unit)));
-    this.decBtn.addEventListener('click', () => this.step(-stepFor(this._unit)));
+    this.incBtn.addEventListener('click', () => this.step(1));
+    this.decBtn.addEventListener('click', () => this.step(-1));
     this.root.querySelectorAll<HTMLButtonElement>('[data-key]').forEach((btn) =>
       btn.addEventListener('click', () => this.press(btn.dataset.key!)),
     );
@@ -349,8 +380,7 @@ class RackEntry extends HTMLElement {
     // Start at the Bar weight: a real, steppable starting point, silent (no target
     // event -- the console already renders the bare Bar). Pristine, so typing replaces it.
     this.draft = this.barShown();
-    this.pristine = true;
-    this.replaceNext = true;
+    this.markPristine(false);
     this.renderValue();
   }
 
@@ -398,6 +428,7 @@ class RackEntry extends HTMLElement {
     const discardOnDel = this.pristine;
     this.replaceNext = false;
     this.pristine = false;
+    this.reformatted = false; // a real edit: the value is now the lifter's own
     if (k === 'clear') {
       this.draft = '';
     } else if (k === 'del') {
@@ -416,17 +447,35 @@ class RackEntry extends HTMLElement {
   }
 
   // A stepper nudge in the display Unit: an empty field anchors at the Bar (you load up
-  // from the Bar), add the delta, clamp at 0 (Target is never negative), and round off
-  // float fuzz. The shown value moves by stepFor(unit) -- 5 lb or 1 kg.
-  private step(delta: number): void {
+  // from the Bar), snap to the step grid, clamp at 0 (Target is never negative), and
+  // round off float fuzz. The grid is stepFor(unit) -- 5 lb or 1 kg (RBAR-38, prototype
+  // step() L574-591): a nudge lands on the NEXT multiple of the grid rather than carrying
+  // an off-grid fraction along, so 142.5 steps to 143 / 142 and re-aligns for good. An
+  // on-grid value moves a whole step. The epsilon absorbs float fuzz in the quotient so
+  // a nominally-on-grid value is not treated as off-grid and half-stepped -- defensive:
+  // real drafts are keypad literals or shownIn output (both fuzz-free at these grids),
+  // so only a hand-pasted many-decimal draft can exercise it.
+  private step(dir: 1 | -1): void {
     this.pristine = false;
+    this.reformatted = false;
     // A nudge is an explicit edit of the current value, so a following digit appends to
     // the stepped number rather than replacing it.
     this.replaceNext = false;
+    const grid = stepFor(this._unit);
     const shownBar = shownIn(this._barKg, this._unit);
     const current = this.draft === '' ? shownBar : Number(this.draft);
     const base = Number.isNaN(current) ? shownBar : current;
-    const next = Math.max(0, Number((base + delta).toFixed(2)));
+    const q = base / grid;
+    const onGrid = Math.abs(q - Math.round(q)) < 1e-9;
+    const steps =
+      dir === 1
+        ? onGrid
+          ? Math.round(q) + 1
+          : Math.ceil(q - 1e-9)
+        : onGrid
+          ? Math.round(q) - 1
+          : Math.floor(q + 1e-9);
+    const next = Math.max(0, Number((steps * grid).toFixed(2)));
     this.draft = String(next);
     this.renderValue();
     this.emit();
@@ -479,13 +528,22 @@ class RackEntry extends HTMLElement {
   // Announce that the keypad just closed on the Target currently shown -- the console's
   // cue to remember it (RBAR-20). Distinct from `target` (which fires on every keystroke):
   // this is the deliberate commit, so only it feeds Recents, not every mid-entry digit.
-  // A pristine field carries null: closing the pad on an untouched seeded default (the
+  // A pristine SEED carries null: closing the pad on an untouched seeded default (the
   // bare Bar on first open, or a value display() pushed in) is an idle peek, not a Target
-  // the lifter entered -- so it must not litter the history with a weight they never chose.
+  // the lifter entered -- so it must not litter the history with a weight they never
+  // chose. A pristine REFORMAT (RBAR-38) still carries its canonical `shownKg`: the
+  // lifter DID choose that weight, a Unit toggle only re-dressed it (and the prototype's
+  // close pushes srcKg regardless of pristine). Canonical, not the re-parsed draft, so
+  // 100 kg toggled to "220" commits 100, never draftToKg("220", lb) ~ 99.79.
   private emitKeypadClose(): void {
+    const committed = this.pristine
+      ? this.reformatted
+        ? this.shownKg
+        : null
+      : this.currentTarget();
     this.dispatchEvent(
       new CustomEvent<{ target: number | null }>('keypadclose', {
-        detail: { target: this.pristine ? null : this.currentTarget() },
+        detail: { target: committed },
         bubbles: true,
         composed: true,
       }),

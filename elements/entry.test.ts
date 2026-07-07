@@ -109,12 +109,89 @@ describe('<rack-entry>', () => {
     expect(root.querySelector('[data-value-num]')!.textContent).toBe('5');
   });
 
-  it('steps cleanly from a fractional value without float fuzz', () => {
-    const { el, root } = mountEntry();
-    el.display(142.5);
-    const seen = targetSpy(el);
-    tap(root, '[data-step="inc"]');
-    expect(seen).toHaveBeenLastCalledWith(143.5);
+  describe('stepper grid snap (RBAR-38, prototype step() L574-591)', () => {
+    // Oracle cases lifted from the handoff prototype's step(): a nudge lands on the
+    // next multiple of the step grid (1 kg / 5 lb) rather than carrying an off-grid
+    // fraction along -- from 142.5, + gives 143 (not 143.5) and - gives 142, so an
+    // off-grid Target re-aligns on the first nudge. An on-grid value moves a whole step.
+
+    it('kg: snaps 142.5 up to 143, not 143.5 (off-grid re-aligns)', () => {
+      const { el, root } = mountEntry();
+      el.display(142.5);
+      const seen = targetSpy(el);
+      tap(root, '[data-step="inc"]');
+      expect(seen).toHaveBeenLastCalledWith(143);
+    });
+
+    it('kg: snaps 142.5 down to 142', () => {
+      const { el, root } = mountEntry();
+      el.display(142.5);
+      const seen = targetSpy(el);
+      tap(root, '[data-step="dec"]');
+      expect(seen).toHaveBeenLastCalledWith(142);
+    });
+
+    it('kg: snaps 145.5 up to 146 (the live stepper bug)', () => {
+      const { el, root } = mountEntry();
+      el.display(145.5);
+      const seen = targetSpy(el);
+      tap(root, '[data-step="inc"]');
+      expect(seen).toHaveBeenLastCalledWith(146);
+    });
+
+    it('kg: steps an on-grid 142 a whole step to 143 / 141', () => {
+      const { el, root } = mountEntry();
+      el.display(142);
+      const seen = targetSpy(el);
+      tap(root, '[data-step="inc"]');
+      expect(seen).toHaveBeenLastCalledWith(143);
+      tap(root, '[data-step="dec"]');
+      tap(root, '[data-step="dec"]');
+      expect(seen).toHaveBeenLastCalledWith(141);
+    });
+
+    it('kg: floors a sub-grid 0.4 at 0 stepping down, snaps to 1 stepping up', () => {
+      const down = mountEntry();
+      down.el.display(0.4);
+      const seenDown = targetSpy(down.el);
+      tap(down.root, '[data-step="dec"]');
+      expect(seenDown).toHaveBeenLastCalledWith(0);
+      const up = mountEntry();
+      up.el.display(0.4);
+      const seenUp = targetSpy(up.el);
+      tap(up.root, '[data-step="inc"]');
+      expect(seenUp).toHaveBeenLastCalledWith(1);
+    });
+
+    it('lb: snaps 137 up to 140 and down to 135 on the 5 lb grid', () => {
+      const up = mountEntry();
+      up.el.unit = 'lb';
+      up.el.display(lbToKg(137)); // shows 137, off the 5 lb grid
+      const seenUp = targetSpy(up.el);
+      tap(up.root, '[data-step="inc"]');
+      expect(seenUp).toHaveBeenLastCalledWith(lbToKg(140));
+      const down = mountEntry();
+      down.el.unit = 'lb';
+      down.el.display(lbToKg(137));
+      const seenDown = targetSpy(down.el);
+      tap(down.root, '[data-step="dec"]');
+      expect(seenDown).toHaveBeenLastCalledWith(lbToKg(135));
+    });
+
+    it('lb: snaps the 44 lb Bar anchor up to 45 and down to 40', () => {
+      // The 20 kg Bar reads 44 lb -- itself off the 5 lb grid, so the very first
+      // nudge from the seeded anchor must snap (prototype: anchor toLbWhole(barKg)).
+      const up = mountEntry();
+      up.el.unit = 'lb'; // pristine seed reformats to 44
+      const seenUp = targetSpy(up.el);
+      tap(up.root, '[data-step="inc"]');
+      expect(seenUp).toHaveBeenLastCalledWith(lbToKg(45));
+      const down = mountEntry();
+      down.el.unit = 'lb';
+      const seenDown = targetSpy(down.el);
+      tap(down.root, '[data-step="dec"]');
+      expect(seenDown).toHaveBeenLastCalledWith(lbToKg(40));
+    });
   });
 
   it('steps correctly from a mid-entry trailing-decimal draft (142. -> 143)', () => {
@@ -468,6 +545,114 @@ describe('<rack-entry>', () => {
       el.unit = 'lb';
       el.display(lbToKg(225));
       expect(valueText(root)).toBe('225');
+    });
+
+    describe('a Unit switch re-pristines the draft (RBAR-38, prototype setUnit L561-567)', () => {
+      // The converted draft is a REFORMAT of a weight the lifter already chose, not a
+      // fresh entry -- so the next keypress starts over instead of appending to it.
+
+      it('the first keypad key after a Unit switch REPLACES the converted draft', () => {
+        const { el, root } = mountEntry();
+        ['1', '0', '0'].forEach((k) => key(root, k)); // 100 kg
+        el.unit = 'lb'; // reformats to 220
+        const seen = targetSpy(el);
+        key(root, '3'); // must yield 3, not 2203
+        expect(valueText(root)).toBe('3');
+        expect(seen).toHaveBeenLastCalledWith(lbToKg(3));
+      });
+
+      it('del after a Unit switch discards the converted draft whole', () => {
+        // Prototype press(): del on a fresh (re-pristined) draft clears it outright.
+        const { el, root } = mountEntry();
+        ['1', '0', '0'].forEach((k) => key(root, k));
+        el.unit = 'lb';
+        const seen = targetSpy(el);
+        key(root, 'del');
+        expect(seen).toHaveBeenLastCalledWith(null);
+        expect(root.querySelector('[data-value]')!.classList.contains('empty')).toBe(true);
+      });
+
+      it('keypadclose after a Unit switch commits the canonical Target, drift-free', () => {
+        // The lifter typed this weight; the toggle only re-dressed it -- so type ->
+        // toggle -> Done must still commit (the prototype's close pushes srcKg
+        // regardless of pristine). And it commits the CANONICAL kg: 100, never the
+        // re-parsed rounded draft (draftToKg("220", lb) ~ 99.79).
+        const { el, root } = mountEntry();
+        ['1', '0', '0'].forEach((k) => key(root, k));
+        el.unit = 'lb'; // shows 220
+        const seen = vi.fn();
+        el.addEventListener('keypadclose', (e) =>
+          seen((e as CustomEvent<{ target: number | null }>).detail.target),
+        );
+        tap(root, '[data-value]'); // open
+        tap(root, '[data-value]'); // close untouched
+        expect(seen).toHaveBeenLastCalledWith(100);
+      });
+
+      it('keypadclose after toggling a SEEDED default still carries null', () => {
+        // The re-pristine must not make a seed committable: the Bar anchor reformatted
+        // to lb is still a weight the lifter never chose.
+        const { el, root } = mountEntry();
+        el.unit = 'lb'; // the pristine 20 kg seed re-dresses to 44
+        const seen = vi.fn();
+        el.addEventListener('keypadclose', (e) =>
+          seen((e as CustomEvent<{ target: number | null }>).detail.target),
+        );
+        tap(root, '[data-value]'); // open
+        tap(root, '[data-value]'); // close untouched
+        expect(seen).toHaveBeenLastCalledWith(null);
+      });
+
+      it('keypadclose after toggling a display()-seeded value still carries null', () => {
+        // A mode-switch carry (display()) stays an idle peek across a Unit toggle.
+        const { el, root } = mountEntry();
+        el.display(120);
+        el.unit = 'lb';
+        const seen = vi.fn();
+        el.addEventListener('keypadclose', (e) =>
+          seen((e as CustomEvent<{ target: number | null }>).detail.target),
+        );
+        tap(root, '[data-value]'); // open
+        tap(root, '[data-value]'); // close untouched
+        expect(seen).toHaveBeenLastCalledWith(null);
+      });
+
+      it('a Bar change does not stomp a toggled TYPED Target that matches the anchor', () => {
+        // Typed 20 on the 20 kg Bar, toggled to lb: the field reads "44" -- the same
+        // text as the Bar anchor. Picking another Bar must not mistake it for a seed
+        // and re-seed the field while the Target stands.
+        const { el, root } = mountEntry();
+        ['2', '0'].forEach((k) => key(root, k)); // a deliberate empty-bar Target
+        el.unit = 'lb'; // shows 44, same as the anchor text
+        el.barKg = 15;
+        expect(valueText(root)).toBe('44'); // the typed Target survives
+      });
+
+      it('a decimal point as the first key after a Unit switch starts a fresh draft', () => {
+        const { el, root } = mountEntry();
+        ['1', '0', '0'].forEach((k) => key(root, k));
+        el.unit = 'lb'; // 220, re-pristined
+        const seen = targetSpy(el);
+        key(root, '.');
+        expect(valueText(root)).toBe('0.'); // replaced, not "220."
+        expect(seen).toHaveBeenLastCalledWith(0);
+      });
+
+      it('a stepper nudge after a Unit switch makes the value real again (commits on close)', () => {
+        // The re-pristine must not swallow a genuine follow-up edit: nudging after a
+        // toggle is a real choice, so closing the pad commits it.
+        const { el, root } = mountEntry();
+        ['1', '0', '0'].forEach((k) => key(root, k));
+        el.unit = 'lb'; // 220, re-pristined
+        tap(root, '[data-step="inc"]'); // 225 -- a real edit
+        const seen = vi.fn();
+        el.addEventListener('keypadclose', (e) =>
+          seen((e as CustomEvent<{ target: number | null }>).detail.target),
+        );
+        tap(root, '[data-value]'); // open
+        tap(root, '[data-value]'); // close
+        expect(seen).toHaveBeenLastCalledWith(lbToKg(225));
+      });
     });
   });
 });
