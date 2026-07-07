@@ -22,6 +22,7 @@ import {
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 
 // The Competition Bar weights, heaviest-first (men's / women's / technique). The other
 // sets carry their own Bars (ADR-0010, lib/platesets); these stay exported as the
@@ -207,10 +208,7 @@ class RackSetup extends HTMLElement {
         }
         .done:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .section-label {
-          display: block;
-          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
-          margin-bottom: 8px;
+          display: block; ${SECTION_LABEL} margin-bottom: 8px;
         }
         /* Each selector row; the trailing margin separates a section from the next
            section-label (the last section -- the plate rows -- sits flush on the

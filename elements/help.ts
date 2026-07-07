@@ -14,6 +14,7 @@
 // Side; CONTEXT.md).
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 
 class RackHelp extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -95,10 +96,7 @@ class RackHelp extends HTMLElement {
           animation: rack-pop .16s cubic-bezier(.2, .85, .25, 1);
         }
         .popover[hidden] { display: none; }
-        .heading {
-          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .14em; text-transform: uppercase; color: var(--rack-text-muted);
-        }
+        .heading { ${SECTION_LABEL} }
         .step { display: flex; gap: 8px; align-items: baseline; }
         .step .n {
           flex: none; font-family: var(--rack-font-num); font-size: 11px;
