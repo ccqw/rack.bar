@@ -26,6 +26,7 @@ import { shownIn, draftToKg, stepFor, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 
 // The keypad layout, row-major. 'del' deletes the last character, 'clear' empties.
@@ -210,10 +211,17 @@ class RackEntry extends HTMLElement {
     this.root.innerHTML = `
       <style>
         ${BOX_SIZING}${BUTTON_FX}${ROLL_CSS}
-        :host { display: block; }
+        /* The Target section opener (prototype L146): a hairline divider + 15px pad on
+           the host, so the section boundary travels with the element. The margin above
+           comes from the console stack's gap. */
+        :host {
+          display: block;
+          border-top: 1px solid var(--rack-divider); padding-top: 15px;
+        }
+        /* The Target section label (RBAR-40): the shared recipe, left-aligned like the
+           prototype (L147) -- no longer a centered 13px caption. */
         .caption {
-          display: block; text-align: center;
-          color: var(--rack-muted); font-size: 13px; margin-bottom: 6px;
+          display: block; ${SECTION_LABEL} margin-bottom: 9px;
         }
         /* The value row: [-] prominent value [+]. The steppers are big round touch
            targets; the value itself is a button that opens the keypad. */

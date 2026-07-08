@@ -21,6 +21,7 @@ import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 
 // How long the Copy button reads "Copied" before reverting (ADR-0011, handoff 1.6s).
 const COPIED_MS = 1600;
@@ -106,10 +107,7 @@ class RackShare extends HTMLElement {
           letter-spacing: -.01em; color: var(--rack-fg);
         }
         .wordmark .dot { color: var(--rack-accent); }
-        .label {
-          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
-        }
+        .label { ${SECTION_LABEL} }
         /* The card total (RBAR-39, prototype L291): Hanken 800 52px -.03em with
            explicit tabular figures -- the display-number treatment, not mono. */
         .total {

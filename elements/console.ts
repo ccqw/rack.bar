@@ -29,6 +29,7 @@ import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
@@ -239,11 +240,13 @@ class RackConsole extends HTMLElement {
         .fullscreen:hover { color: var(--rack-fg); }
         .fullscreen:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .readout { text-align: center; }
-        /* The Total label sits beside the kg|lb unit toggle (the handoff's readout head). */
+        /* The readout head (prototype L131): the Total section label at the left edge,
+           the kg|lb unit toggle at the right -- space-between, not a centered cluster. */
         .readhead {
-          display: flex; align-items: center; justify-content: center; gap: 10px;
+          display: flex; align-items: center; justify-content: space-between;
+          margin-bottom: 8px;
         }
-        .readout .label { color: var(--rack-muted); font-size: 13px; }
+        .readout .label { ${SECTION_LABEL} }
         /* The kg|lb Primary unit toggle: a small segmented control. Disabled (locked)
            when the plate set fixes the unit -- the iron set is lb-only (ADR-0010). */
         .units {
@@ -270,7 +273,7 @@ class RackConsole extends HTMLElement {
           display: block; font-family: var(--rack-font); font-weight: 800;
           font-size: clamp(40px, 14.0625vw, 54px); letter-spacing: -.025em;
           font-variant-numeric: tabular-nums;
-          color: var(--rack-fg); margin-top: 4px;
+          color: var(--rack-fg);
         }
         /* The unit rides the Total as a small dim suffix (prototype L135: 21px/600
            text-dim), not full-size in the 54px ink -- so "142 kg" reads value-first.

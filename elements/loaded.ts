@@ -17,6 +17,7 @@ import { groupSide } from '../lib/summary.ts';
 import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 
 class RackLoaded extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -52,10 +53,7 @@ class RackLoaded extends HTMLElement {
           margin-bottom: 8px;
         }
         .head[hidden] { display: none; }
-        .label {
-          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
-        }
+        .label { ${SECTION_LABEL} }
         /* The Clear pill: a quiet uppercase mono control that empties the Side. Its
            hover/active goes danger-red per the handoff -- a destructive affordance, so it
            stays grey until reached for. */

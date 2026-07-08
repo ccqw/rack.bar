@@ -14,6 +14,7 @@ import { format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 
 class RackRecents extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -48,10 +49,7 @@ class RackRecents extends HTMLElement {
         :host { display: block; }
         :host([hidden]) { display: none; }
         .label {
-          display: block; text-align: center;
-          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
-          letter-spacing: .12em; text-transform: uppercase; color: var(--rack-text-muted);
-          margin-bottom: 8px;
+          display: block; text-align: center; ${SECTION_LABEL} margin-bottom: 8px;
         }
         /* The scroll viewport. The edge gradients are nudge cues that more chips sit
            past the fade -- a thin overflow affordance (RBAR-20); they tint the bg so
