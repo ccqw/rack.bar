@@ -122,13 +122,15 @@
   --rack-popover-border: #262b31;
   --rack-popover-ink: #c2c7cd;
 
-  /* Disc-fill convention (handoff "Plate palette"): a disc is not a flat fill but a
-     soft top-lit gradient over its plate hex, with the disc shadow below. The bar
-     renderer (RBAR-24) applies it as follows, with --disc set to the plate hex:
+  /* Disc-fill convention (handoff "Plate palette"): a plate-colored surface is not a
+     flat fill but a soft top-lit gradient over its plate hex, with --disc set to the
+     plate hex:
        background: linear-gradient(180deg, color-mix(in srgb, var(--disc) 95%, #fff), var(--disc));
-       box-shadow: var(--rack-shadow-disc);
-     Captured here so the renderer has one documented recipe; ink is dark on
-     white/yellow, white otherwise (already handled per-color in <rack-sleeve>). */
+     The recipe lives as the shared DISC_FILL snippet (elements/discfill.ts, RBAR-42),
+     interpolated by the sleeve discs, palette keys, and loaded chips; each surface
+     pairs it with its own spec'd shadow. The share card's chips are the deliberate
+     exception (flat fill + inset ring, prototype L889). Ink is dark on white/yellow,
+     white otherwise (handled per-color at each site). */
 
   /* Radii (handoff "Radii"). --rack-radius-sheet is the app's own bottom-sheet
      top-corner radius (setup/keypad), separate from the handoff control radii. */

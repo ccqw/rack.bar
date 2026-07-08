@@ -20,6 +20,7 @@
 import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { DISC_FILL } from './discfill.ts';
 
 // Fit-to-width scale (ADR-0004). A bumper is 450 mm; cap the zoom so a normal load
 // renders at a comfortable fixed size and only a genuinely huge bar (whose plates
@@ -169,7 +170,7 @@ class RackSleeve extends HTMLElement {
         /* Real side-on sizing: height from diameter, width from thickness, both under one
            --rack-mm-scale (px per mm), floored at MIN_DISC_PX so a digit still fits. The
            fallback keeps discs sane before fit() has measured (e.g. a no-layout test). The
-           fill is the handoff's soft top-lit gradient over the plate hex (--disc), lifted by
+           fill is the shared top-lit disc recipe (RBAR-42, elements/discfill.ts), lifted by
            the shared disc shadow; the first disc sits flush to the inner collar, later ones
            are spaced by DISC_GAP_PX. */
         .disc {
@@ -178,7 +179,7 @@ class RackSleeve extends HTMLElement {
           width: max(${MIN_DISC_PX}px, calc(var(--mm-w) * var(--rack-mm-scale, ${FALLBACK_SCALE}) * 1px));
           height: calc(var(--mm-d) * var(--rack-mm-scale, ${FALLBACK_SCALE}) * 1px);
           border-radius: 4px;
-          background: linear-gradient(180deg, color-mix(in srgb, var(--disc) 95%, #fff), var(--disc));
+          ${DISC_FILL}
           box-shadow: var(--rack-shadow-disc);
         }
         .disc + .disc { margin-left: ${DISC_GAP_PX}px; }

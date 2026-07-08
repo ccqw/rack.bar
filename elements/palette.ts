@@ -14,6 +14,7 @@ import { ELEIKO_KG, plateFitsMm } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { DISC_FILL } from './discfill.ts';
 
 class RackPalette extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -67,13 +68,16 @@ class RackPalette extends HTMLElement {
         :host { display: block; }
         .keys {
           display: grid; grid-template-columns: repeat(${columns}, 1fr);
-          gap: 6px; justify-items: stretch; max-width: 360px; margin: 0 auto;
+          gap: 7px; justify-items: stretch; max-width: 360px; margin: 0 auto;
         }
+        /* A key is a borderless slab of its Plate's color -- the shared top-lit disc
+           fill with its own soft lift (prototype L831). */
         .key {
-          min-width: 44px; min-height: 44px; padding: 0 10px;
-          border: 1px solid var(--rack-line); border-radius: var(--rack-radius);
-          background: var(--disc);
-          font-family: var(--rack-font-num); font-size: 14px; font-weight: 600;
+          height: 44px; padding: 0;
+          border: none; border-radius: 12px;
+          ${DISC_FILL}
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.1), 0 1px 3px rgba(0,0,0,.2);
+          font-family: var(--rack-font); font-size: 15px; font-weight: 700;
           color: var(--rack-bg); /* light Plates need dark ink */
           cursor: pointer;
         }
@@ -83,8 +87,8 @@ class RackPalette extends HTMLElement {
         .key[data-color="iron"] { color: #fff; }
         .key:focus-visible { outline: 2px solid var(--rack-accent); }
         /* A key whose Plate no longer fits the sleeve (ADR-0012): visibly out of
-           play, not tappable. */
-        .key:disabled { opacity: .35; cursor: default; }
+           play, not tappable (handoff 4b: 30%, not-allowed). */
+        .key:disabled { opacity: .3; cursor: not-allowed; }
       </style>
       <div class="keys">${keys}</div>
     `;
