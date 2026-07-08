@@ -10,6 +10,13 @@ const root = import.meta.dirname;
 
 export default defineConfig({
   appType: 'mpa', // distinct documents, not a single-page app with a router
+  server: {
+    // rack.bar's home port. Other local projects camp on Vite's 5173 default;
+    // strictPort makes a collision fail loudly instead of silently drifting to
+    // the next free port (so the dev URL is always http://localhost:5175/).
+    port: 5175,
+    strictPort: true,
+  },
   build: {
     rollupOptions: {
       input: {

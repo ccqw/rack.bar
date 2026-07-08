@@ -17,6 +17,7 @@ import { groupSide } from '../lib/summary.ts';
 import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { DISC_FILL } from './discfill.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
 
 class RackLoaded extends HTMLElement {
@@ -80,16 +81,18 @@ class RackLoaded extends HTMLElement {
           padding: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
         }
         .rail::-webkit-scrollbar { display: none; }
-        /* A loaded chip: a tappable Plate group, filled in its plate colour. Tap removes
-           one of that Plate. The face reads in Hanken; the xN count is a quiet mono
-           suffix. Light plates take dark ink, dark plates white (mirrors the palette). */
+        /* A loaded chip: a tappable Plate group in the shared top-lit disc fill, lifted
+           by its own chip shadow (prototype L843 -- softer than the sleeve's disc lift).
+           Tap removes one of that Plate. The face reads in Hanken; the xN count is a
+           quiet mono suffix. Light plates take dark ink, dark plates white (mirrors the
+           palette). */
         .chip {
           flex: none; display: inline-flex; align-items: center; gap: 4px;
           min-height: 30px; padding: 0 13px; cursor: pointer;
           font-family: var(--rack-font); font-size: 13px; font-weight: 700;
-          color: var(--rack-bg); background: var(--disc);
+          color: var(--rack-bg); ${DISC_FILL}
           border: none; border-radius: 999px; white-space: nowrap;
-          box-shadow: var(--rack-shadow-disc);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), 0 1px 2px rgba(0,0,0,.2);
         }
         .chip[data-color="red"],
         .chip[data-color="blue"],

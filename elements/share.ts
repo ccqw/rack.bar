@@ -120,14 +120,17 @@ class RackShare extends HTMLElement {
         .secondary {
           font-family: var(--rack-font-num); font-size: 14px; color: var(--rack-muted);
         }
-        /* The per-Side chips wrap; each is a colour-coded pill of N x face. */
+        /* The per-Side chips wrap; each is a colour-coded pill of N x face. The fill
+           stays FLAT with an inset ring (prototype L889) -- the one plate-colored
+           surface that does NOT take the shared top-lit gradient (RBAR-42). */
         .chips {
           display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
         }
         .chip {
-          font-family: var(--rack-font-num); font-size: 13px; font-weight: 600;
+          font-family: var(--rack-font); font-size: 12px; font-weight: 700;
           color: #fff; background: var(--disc);
-          border-radius: 999px; padding: 5px 11px; white-space: nowrap;
+          border-radius: 999px; padding: 6px 12px; white-space: nowrap;
+          box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.14);
         }
         /* Light Plates need dark ink; iron and the dark colours keep white. */
         .chip[data-color="white"],
