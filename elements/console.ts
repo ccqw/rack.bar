@@ -211,18 +211,24 @@ class RackConsole extends HTMLElement {
         .stack {
           display: flex; flex-direction: column; gap: 24px; align-items: stretch;
         }
-        /* The Decode/Encode toggle: a segmented control, the obvious mode switch. */
+        /* The Decode/Encode toggle: a segmented control, the obvious mode switch.
+           A full-width raised track (prototype L92) -- the .stack's stretch spreads
+           it; the segments split the track as equal halves (sModeBtn, L404). */
         .modes {
-          display: flex; align-self: center; gap: 4px;
-          border: 1px solid var(--rack-line); border-radius: 999px; padding: 4px;
+          display: flex; padding: 4px;
+          background: var(--rack-raised);
+          border: 1px solid var(--rack-border);
+          border-radius: var(--rack-radius-pill);
         }
         .modes button {
-          font: inherit; font-size: 14px; font-weight: 600;
-          color: var(--rack-muted); background: transparent;
-          border: none; border-radius: 999px; padding: 8px 20px; cursor: pointer;
+          flex: 1; font: inherit; font-size: 14px; font-weight: 600;
+          color: var(--rack-text-dim); background: transparent;
+          border: none; border-radius: var(--rack-radius-pill);
+          padding: 11px 0; cursor: pointer;
         }
         .modes button[aria-pressed="true"] {
-          color: var(--rack-bg); background: var(--rack-accent);
+          font-weight: 700;
+          color: var(--rack-accent-ink); background: var(--rack-accent);
         }
         .modes button:focus-visible { outline: 2px solid var(--rack-accent); }
         rack-entry[hidden], rack-palette[hidden] { display: none; }
@@ -247,19 +253,27 @@ class RackConsole extends HTMLElement {
           margin-bottom: 8px;
         }
         .readout .label { ${SECTION_LABEL} }
-        /* The kg|lb Primary unit toggle: a small segmented control. Disabled (locked)
-           when the plate set fixes the unit -- the iron set is lb-only (ADR-0010). */
+        /* The kg|lb Primary unit toggle: a small segmented control on the same raised
+           track (prototype L122). Its active is the SELECTED GREY, not the accent --
+           the accent-active belongs to the mode toggle alone (sUnitBtn, L406).
+           Disabled (locked) when the plate set fixes the unit -- the iron set is
+           lb-only (ADR-0010). */
         .units {
-          display: inline-flex; gap: 2px;
-          border: 1px solid var(--rack-line); border-radius: 999px; padding: 2px;
+          display: inline-flex; padding: 2px;
+          background: var(--rack-raised);
+          border: 1px solid var(--rack-border);
+          border-radius: var(--rack-radius-pill);
         }
         .units button {
           font-family: var(--rack-font-num); font-size: 12px; font-weight: 600;
-          color: var(--rack-muted); background: transparent;
-          border: none; border-radius: 999px; padding: 3px 10px; cursor: pointer;
+          letter-spacing: .04em;
+          color: var(--rack-text-dim); background: transparent;
+          border: none; border-radius: var(--rack-radius-pill);
+          padding: 7px 15px; cursor: pointer;
         }
         .units button[aria-pressed="true"] {
-          color: var(--rack-bg); background: var(--rack-accent);
+          font-weight: 700;
+          color: var(--rack-text); background: var(--rack-selected);
         }
         .units button:disabled { cursor: default; opacity: .55; }
         .units button:focus-visible { outline: 2px solid var(--rack-accent); }
