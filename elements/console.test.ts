@@ -1423,3 +1423,66 @@ describe('<rack-console> (big Total typography + numRoll, RBAR-30)', () => {
     expect(root.querySelector('[data-total-unit]')!.classList.contains('roll')).toBe(false);
   });
 });
+
+describe('<rack-console> (segmented-control fidelity, RBAR-43)', () => {
+  // Both segmented controls text-lock their handoff treatment here (happy-dom computes
+  // no layout; the rendered side-by-side vs screenshots 01/02 is the browser pass).
+  // Rule-body slices keep a sibling rule's tokens from false-passing an assertion.
+  const ruleBody = (css: string, selector: string) => {
+    const start = css.indexOf(selector);
+    expect(start).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  };
+  const consoleCss = () =>
+    mountConsole().shadowRoot!.querySelector('style')!.textContent!;
+
+  it('gives the mode toggle a full-width raised track (prototype L92)', () => {
+    const track = ruleBody(consoleCss(), '.modes {');
+    expect(track).toContain('var(--rack-raised)');
+    expect(track).toContain('var(--rack-border)');
+    expect(track).toContain('padding: 4px');
+    expect(track).toContain('var(--rack-radius-pill)');
+    // Full width comes from the .stack's align-items: stretch -- the old hug-width
+    // centering must go, not be overridden.
+    expect(track).not.toContain('align-self');
+  });
+
+  it('spreads the mode segments as equal halves (sModeBtn: flex 1, 11px pad)', () => {
+    const seg = ruleBody(consoleCss(), '.modes button {');
+    expect(seg).toContain('flex: 1');
+    expect(seg).toContain('padding: 11px 0');
+    expect(seg).toContain('var(--rack-text-dim)'); // inactive ink, explicit tier
+    expect(seg).toContain('font-weight: 600'); // inactive weight
+  });
+
+  it('weights the active mode segment 700 on the accent fill', () => {
+    const active = ruleBody(consoleCss(), '.modes button[aria-pressed="true"]');
+    expect(active).toContain('font-weight: 700');
+    expect(active).toContain('var(--rack-accent)');
+    expect(active).toContain('var(--rack-accent-ink)'); // explicit tier, not --rack-bg
+  });
+
+  it('gives the unit toggle the raised track (prototype L122: 2px pad)', () => {
+    const track = ruleBody(consoleCss(), '.units {');
+    expect(track).toContain('var(--rack-raised)');
+    expect(track).toContain('var(--rack-border)');
+    expect(track).toContain('padding: 2px');
+  });
+
+  it('sizes the unit segments per sUnitBtn (7px 15px, .04em)', () => {
+    const seg = ruleBody(consoleCss(), '.units button {');
+    expect(seg).toContain('padding: 7px 15px');
+    expect(seg).toContain('letter-spacing: .04em');
+    expect(seg).toContain('var(--rack-text-dim)');
+  });
+
+  it('selects the active unit with the grey fill, never the accent (sUnitBtn)', () => {
+    const active = ruleBody(consoleCss(), '.units button[aria-pressed="true"]');
+    expect(active).toContain('var(--rack-selected)'); // #272b30 grey, the spec'd active
+    expect(active).toContain('var(--rack-text)');
+    expect(active).toContain('font-weight: 700');
+    // The accent-active belongs to the mode toggle alone. (The :focus-visible accent
+    // ring is the app-wide keyboard idiom and lives in its own rule -- out of scope.)
+    expect(active).not.toContain('--rack-accent');
+  });
+});
