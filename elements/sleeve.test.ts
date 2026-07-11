@@ -284,6 +284,13 @@ describe('<rack-sleeve>', () => {
       expect(rowPx(el, load)).toBeLessThanOrEqual(budget + 1e-6);
     });
 
+    it('keeps the shrink sane for a bare Bar on a host narrower than the chrome', () => {
+      // An empty row is 0 wide; without the row > 0 guard the shrink would be 0/0 NaN.
+      const el = fitted(60, []);
+      const shrink = el.style.getPropertyValue('--rack-fit-shrink');
+      expect(shrink === '' || shrink === '1').toBe(true);
+    });
+
     it('never overflows the host across mixed loads and widths (the AC property case)', () => {
       const loads = [
         side(25, 25, 25, 25, 25, 25),

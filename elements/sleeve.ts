@@ -103,7 +103,7 @@ class RackSleeve extends HTMLElement {
     // Re-fit when the host's width changes (rotation, resize). ResizeObserver, not
     // requestAnimationFrame, so it is not paused in a backgrounded tab; the host width
     // is bounded by its parent (not by disc size), so setting the scale can't feed back
-    // into a resize loop -- and fit() early-returns on an unchanged width regardless.
+    // into a resize loop -- and fit() skips re-setting unchanged scale/shrink values.
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(this);
     this.render();
@@ -273,11 +273,14 @@ class RackSleeve extends HTMLElement {
       }
       scale = lo;
     }
+    // row > 0 keeps a bare Bar (empty row) on an absurdly narrow host from a 0/0 NaN;
+    // Math.max keeps the shrink non-negative when the chrome alone overflows the host.
     const row = rowWidthAt(scale);
-    const shrink = row > avail ? Math.max(0, avail) / row : 1;
-    // Set each property only when it changed: a new Side Load re-fits at the same width,
-    // while re-setting unchanged values is skipped so the ResizeObserver this triggers
-    // (disc heights shift the host height) can't loop.
+    const shrink = row > avail && row > 0 ? Math.max(0, avail) / row : 1;
+    // Set each property only when it changed -- a new Side Load re-fits at the same
+    // width without churning the host's inline style. (Layout can't feed back into a
+    // resize loop regardless: the host width is parent-bounded, and the BLOCK_PX
+    // min-height dominates every disc height, so neither property moves the host size.)
     if (scale !== this.lastScale) {
       this.lastScale = scale;
       this.style.setProperty('--rack-mm-scale', String(scale));
