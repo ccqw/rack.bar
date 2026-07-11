@@ -35,12 +35,12 @@ class RackFullscreen extends HTMLElement {
   private captionEl!: HTMLElement;
   private sleeve!: Sleeve;
 
-  // The active plate set, for the caption's set name + native-Unit Bar (RBAR-30). The
-  // console pushes it alongside `load`; an unknown key resolves to Competition
+  // The active plate set, naming the caption's dual-unit config line (RBAR-30/44).
+  // The console pushes it alongside `load`; an unknown key resolves to Competition
   // (plateSetFor), so a pre-seed render is harmless.
   private _plateSet = 'comp';
 
-  /** The plate set whose name + native Unit the caption reads (RBAR-30). Re-renders. */
+  /** The plate set whose name the config caption carries (RBAR-30/44). Re-renders. */
   set plateSet(key: string) {
     this._plateSet = key;
     if (this.overlay) this.render();

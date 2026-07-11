@@ -596,7 +596,7 @@ class RackConsole extends HTMLElement {
       collarKg: this._collarKg,
       unit: this.activeUnit(),
     };
-    // The set drives the caption's name + native-Unit Bar (RBAR-30); the load snapshot
+    // The set names the caption's config line (RBAR-30/44); the load snapshot
     // (ADR-0011 shape, shared with the share card) deliberately stays set-agnostic.
     this.fullscreen.plateSet = this._plateSetKey;
     this.fullscreen.open();
