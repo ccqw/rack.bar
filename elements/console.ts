@@ -52,7 +52,7 @@ type Entry = HTMLElement & {
 type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
 type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
-type Share = HTMLElement & { load: LoadSummary; open(): void };
+type Share = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
 type Fullscreen = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
 type Mode = 'decode' | 'encode';
 
@@ -579,6 +579,9 @@ class RackConsole extends HTMLElement {
       collarKg: this._collarKg,
       unit: this.activeUnit(),
     };
+    // The set names the caption + copied text (RBAR-44); the load snapshot stays
+    // set-agnostic, the same split the fullscreen card uses.
+    this.share.plateSet = this._plateSetKey;
     this.share.open();
   }
 

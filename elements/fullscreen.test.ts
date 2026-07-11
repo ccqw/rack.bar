@@ -92,7 +92,7 @@ describe('<rack-fullscreen>', () => {
     none.el.open();
     const cap = none.root.querySelector('[data-caption]')!.textContent!;
     expect(cap).toContain('Competition'); // the active plate set
-    expect(cap).toContain('20 kg'); // the Bar, in the set's native Unit
+    expect(cap).toContain('20 kg / 44 lb bar'); // the Bar, dual-unit (RBAR-44 configText)
     expect(cap).not.toContain('collar'); // None fitted
     expect(cap).not.toContain('per side'); // the per-side note moved to the secondary line
 
