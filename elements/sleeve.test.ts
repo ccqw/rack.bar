@@ -184,30 +184,120 @@ describe('<rack-sleeve>', () => {
     });
   });
 
-  describe('digit stacking (a thin plate too narrow for a horizontal number)', () => {
-    function labelHtml(el: HTMLElement): string[] {
-      return [...el.shadowRoot!.querySelectorAll<HTMLElement>('.label')].map(
-        (l) => l.innerHTML,
-      );
+  describe('engraved numerals (RBAR-41: rotated -90deg, adaptive size, hidden when too thin)', () => {
+    function styleText(el: HTMLElement): string {
+      return el.shadowRoot!.querySelector('style')!.textContent!;
     }
 
-    it('stacks a thin change plate\'s digits one per line, upright', () => {
+    it('rotates the numeral -90deg in mono 800 with the prototype letter-spacing', () => {
       const el = mountSleeve();
-      el.sideLoad = side(2.5, 0.5); // both under the 30 mm stack threshold
-      // textContent still reads the plain kg (the <br>s drop out), but the markup stacks.
-      expect(labelHtml(el)).toEqual(['2<br>.<br>5', '.<br>5']);
+      el.sideLoad = side(25);
+      const css = styleText(el);
+      expect(css).toContain('transform: rotate(-90deg)');
+      expect(css).toContain('font-weight: 800');
+      expect(css).toContain('letter-spacing: .04em');
     });
 
-    it('keeps a bumper\'s multi-digit number horizontal (wide enough, above the threshold)', () => {
+    it('engraves the numeral: light lip under dark ink, dark seat under light ink', () => {
       const el = mountSleeve();
-      el.sideLoad = side(25, 10); // 58 / 35 mm thick, both >= 30 mm -> no stacking
-      expect(labelHtml(el)).toEqual(['25', '10']);
+      el.sideLoad = side(25);
+      const css = styleText(el);
+      // prototype vm L731: the shadow direction keys off the ink, not the plate hex
+      expect(css).toContain('text-shadow: 0 1px 0 rgba(255,255,255,.3)');
+      expect(css).toContain('text-shadow: 0 1px 1px rgba(0,0,0,.4)');
     });
 
-    it('never stacks a single-digit label, thin plate or not', () => {
+    it('clips the rotated numeral to its disc (overflow hidden)', () => {
       const el = mountSleeve();
-      el.sideLoad = side(5, 2, 1); // thin plates, but one character each
-      expect(labelHtml(el)).toEqual(['5', '2', '1']);
+      el.sideLoad = side(25);
+      expect(styleText(el)).toContain('overflow: hidden');
+    });
+
+    it('buckets the numeral size by the disc\'s rendered width (11 / 9 / 8 px)', () => {
+      const el = mountSleeve();
+      // full zoom (168/450 px per mm): 58 mm -> ~21.7 px, 35 mm -> ~13.1 px,
+      // 20 mm -> ~7.5 px floored to the 9 px min (prototype vm L727 buckets)
+      el.sideLoad = side(25, 10, 5);
+      expect(discs(el).map((d) => d.dataset.numeral)).toEqual(['11', '9', '8']);
+    });
+
+    it('keeps a multi-digit label on one rotated line (no per-digit stacking)', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(2.5, 0.5);
+      const html = [...el.shadowRoot!.querySelectorAll<HTMLElement>('.label')].map(
+        (l) => l.innerHTML,
+      );
+      expect(html).toEqual(['2.5', '.5']); // the RBAR-9 <br> stacking is retired
+    });
+
+    it('shows no numeral on a disc squeezed below the readable floor', () => {
+      const el = mountSleeve();
+      // A narrow host + a wall of floored thin plates forces the overflow guard;
+      // the squeezed discs can no longer seat their digits, so the numeral goes.
+      Object.defineProperty(el, 'clientWidth', { value: 200, configurable: true });
+      el.sideLoad = side(...Array(13).fill(0.5));
+      for (const d of discs(el)) expect(d.dataset.numeral).toBeUndefined();
+    });
+  });
+
+  describe('block geometry + overflow guard (RBAR-41: 204px block, 168px cap, no overflow)', () => {
+    // The fixed chrome the fit budget reserves (sleeve.ts constants, text-locked here
+    // the same way the mm sizing tests lock the plate table).
+    const CHROME = 52 + 11 + 8 + 13;
+    const END_GAP = 3;
+    const DISC_GAP = 1.5;
+    const MIN_DISC = 9;
+
+    function styleText(el: HTMLElement): string {
+      return el.shadowRoot!.querySelector('style')!.textContent!;
+    }
+    function fitted(width: number, load: Plate[]): Sleeve {
+      const el = mountSleeve();
+      Object.defineProperty(el, 'clientWidth', { value: width, configurable: true });
+      el.sideLoad = load;
+      return el;
+    }
+    function rowPx(el: Sleeve, load: Plate[]): number {
+      const scale = Number(el.style.getPropertyValue('--rack-mm-scale'));
+      const shrink = Number(el.style.getPropertyValue('--rack-fit-shrink') || '1');
+      return load.reduce((px, p) => px + Math.max(p.widthMm * scale, MIN_DISC) * shrink, 0);
+    }
+
+    it('reserves the handoff\'s 204px block height', () => {
+      const el = mountSleeve();
+      el.sideLoad = side(25);
+      expect(styleText(el)).toContain('min-height: 204px');
+    });
+
+    it('caps a bumper at the prototype\'s 168px scale at full zoom', () => {
+      const el = fitted(390, side(25, 15));
+      expect(el.style.getPropertyValue('--rack-mm-scale')).toBe(String(168 / 450));
+    });
+
+    it('shrinks a floored wall of thin plates proportionally instead of overflowing', () => {
+      const load = side(...Array(13).fill(0.5));
+      const el = fitted(200, load);
+      const shrink = Number(el.style.getPropertyValue('--rack-fit-shrink'));
+      expect(shrink).toBeGreaterThan(0);
+      expect(shrink).toBeLessThan(1);
+      const budget = 200 - CHROME - END_GAP - DISC_GAP * (load.length - 1);
+      expect(rowPx(el, load)).toBeLessThanOrEqual(budget + 1e-6);
+    });
+
+    it('never overflows the host across mixed loads and widths (the AC property case)', () => {
+      const loads = [
+        side(25, 25, 25, 25, 25, 25),
+        side(25, 10, 5, 2.5, 1, 0.5),
+        side(...Array(20).fill(0.5)),
+        side(...Array(8).fill(2.5)),
+      ];
+      for (const width of [200, 280, 390]) {
+        for (const load of loads) {
+          const el = fitted(width, load);
+          const budget = width - CHROME - END_GAP - DISC_GAP * (load.length - 1);
+          expect(rowPx(el, load)).toBeLessThanOrEqual(budget + 1e-6);
+        }
+      }
     });
   });
 
