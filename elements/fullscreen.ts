@@ -35,12 +35,12 @@ class RackFullscreen extends HTMLElement {
   private captionEl!: HTMLElement;
   private sleeve!: Sleeve;
 
-  // The active plate set, for the caption's set name + native-Unit Bar (RBAR-30). The
-  // console pushes it alongside `load`; an unknown key resolves to Competition
+  // The active plate set, naming the caption's dual-unit config line (RBAR-30/44).
+  // The console pushes it alongside `load`; an unknown key resolves to Competition
   // (plateSetFor), so a pre-seed render is harmless.
   private _plateSet = 'comp';
 
-  /** The plate set whose name + native Unit the caption reads (RBAR-30). Re-renders. */
+  /** The plate set whose name the config caption carries (RBAR-30/44). Re-renders. */
   set plateSet(key: string) {
     this._plateSet = key;
     if (this.overlay) this.render();
@@ -200,10 +200,9 @@ class RackFullscreen extends HTMLElement {
   // Render every surface from the current load (handoff section 8). The Total derives
   // from the rig + Side Load (loadTotalKg) and reads in the load's display Unit, rolling
   // up on change (numRoll). The secondary line shows the same Total in the OTHER Unit + a
-  // per-side note. The config line names the plate set and the Bar in the SET's native
-  // Unit (like the header pill) -- reusing the shared configText so the Bar/Collar wording
-  // can't drift from the share card. The sleeve draws the Side Load inert (a disc tap
-  // exits, it never edits).
+  // per-side note. The config line is the shared configText (dual-unit Bar + set name,
+  // RBAR-44) -- the exact caption the share card shows, so the wording can't drift.
+  // The sleeve draws the Side Load inert (a disc tap exits, it never edits).
   private render(): void {
     const { side, barKg, collarKg, unit } = this._load;
     const set = plateSetFor(this._plateSet);
@@ -213,7 +212,7 @@ class RackFullscreen extends HTMLElement {
     rollText(this.totalNumEl, String(shownIn(total, unit)));
     this.totalUnitEl.textContent = ` ${unit}`;
     this.secondaryEl.textContent = `${format(total, other)} - per side`;
-    this.captionEl.textContent = `${set.label} - ${configText(barKg, collarKg, set.unit)}`;
+    this.captionEl.textContent = configText(barKg, collarKg, set.label);
     this.sleeve.interactive = false;
     this.sleeve.sideLoad = side;
   }

@@ -1,8 +1,9 @@
-// <rack-share> -- the share card (RBAR-19, ADR-0011). A centered modal that shows the
-// current load as a clean summary -- wordmark, big Total, secondary unit, the per-Side
-// Plates as wrapped colour chips (or a bare-bar state), and a config caption -- plus a
-// Copy summary button (writes the plain-text version to the clipboard) and a Close
-// button.
+// <rack-share> -- the share card (RBAR-19, ADR-0011; layout to the prototype in
+// RBAR-44). A centered modal that shows the current load as a clean summary -- a
+// header row (wordmark left, 'Loading card' label right), big Total, secondary unit,
+// the per-Side Plates as wrapped colour chips (or a bare-bar state), and a config
+// caption -- then one action row: Copy summary (accent, grows; writes the plain-text
+// version to the clipboard) beside Close (quiet outline).
 //
 // A controlled, stateless shell (ADR-0001), the same shape as <rack-setup> / <rack-recents>:
 // one property down (`load`, a snapshot of the current load), one event up (`close`). It
@@ -19,6 +20,7 @@ import {
 import type { LoadSummary } from '../lib/summary.ts';
 import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
+import { plateSetFor } from '../lib/platesets.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
@@ -47,6 +49,21 @@ class RackShare extends HTMLElement {
     collarKg: 0,
     unit: 'kg',
   };
+
+  // The active plate set KEY -- names the set on the caption + copied text (RBAR-44).
+  // Kept beside the load, not in it: the LoadSummary snapshot deliberately stays
+  // set-agnostic (the same split <rack-fullscreen> uses). An unknown key falls back
+  // to Competition (plateSetFor), so a pre-seed render is harmless.
+  private _plateSet = 'comp';
+
+  /** The active plate set key; the caption and copied text carry its name (RBAR-44). */
+  set plateSet(key: string) {
+    this._plateSet = key;
+    if (this.totalEl) this.render();
+  }
+  get plateSet(): string {
+    return this._plateSet;
+  }
 
   /** The current load snapshot to summarise (ADR-0011). Assigning re-renders the card. */
   set load(value: LoadSummary) {
@@ -90,24 +107,28 @@ class RackShare extends HTMLElement {
           padding: 24px;
           animation: rack-fade .16s ease-out;
         }
-        /* The card itself: a raised, rounded panel, centered. */
+        /* The card itself: a raised, rounded panel, centered. Spacing is the
+           prototype's explicit margins (L286-308), not a uniform flex gap. */
         .card {
           width: 100%; max-width: 300px;
-          display: flex; flex-direction: column; align-items: stretch; gap: 14px;
           background: var(--rack-overlay);
           border: 1px solid var(--rack-border-strong);
           border-radius: 26px;
           padding: 22px 22px calc(22px + env(safe-area-inset-bottom));
           box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .7);
           animation: rack-card .24s cubic-bezier(.2, .85, .25, 1);
-          text-align: center;
+        }
+        /* Header row (prototype L286): wordmark left, the card label right. */
+        .head {
+          display: flex; align-items: center; justify-content: space-between;
         }
         .wordmark {
           font-family: var(--rack-font); font-weight: 800; font-size: 16px;
-          letter-spacing: -.01em; color: var(--rack-fg);
+          letter-spacing: -.02em; color: var(--rack-text);
         }
         .wordmark .dot { color: var(--rack-accent); }
         .label { ${SECTION_LABEL} }
+        .totals { text-align: center; margin: 18px 0 4px; }
         /* The card total (RBAR-39, prototype L291): Hanken 800 52px -.03em with
            explicit tabular figures -- the display-number treatment, not mono. */
         .total {
@@ -117,14 +138,18 @@ class RackShare extends HTMLElement {
         }
         /* The unit rides the total as a small dim suffix (18px/700, text-dim). */
         .total .tu { font-size: 18px; font-weight: 700; color: var(--rack-text-dim); }
+        /* The other-Unit readout under the Total (prototype L292: Hanken 500 13px). */
         .secondary {
-          font-family: var(--rack-font-num); font-size: 14px; color: var(--rack-muted);
+          display: block; margin-top: 4px;
+          font-family: var(--rack-font); font-weight: 500; font-size: 13px;
+          color: var(--rack-text-dim);
         }
         /* The per-Side chips wrap; each is a colour-coded pill of N x face. The fill
            stays FLAT with an inset ring (prototype L889) -- the one plate-colored
            surface that does NOT take the shared top-lit gradient (RBAR-42). */
         .chips {
           display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+          margin: 16px 0;
         }
         .chip {
           font-family: var(--rack-font); font-size: 12px; font-weight: 700;
@@ -132,38 +157,48 @@ class RackShare extends HTMLElement {
           border-radius: 999px; padding: 6px 12px; white-space: nowrap;
           box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.14);
         }
-        /* Light Plates need dark ink; iron and the dark colours keep white. */
+        /* Light Plates need dark ink; iron and the dark colours keep white
+           (the RBAR-42 plateInk convention: accent-ink on white/yellow). */
         .chip[data-color="white"],
-        .chip[data-color="yellow"] { color: var(--rack-bg); }
+        .chip[data-color="yellow"] { color: var(--rack-accent-ink); }
         .bare {
-          font-family: var(--rack-font-num); font-size: 13px; color: var(--rack-muted);
+          font-family: var(--rack-font); font-weight: 500; font-size: 13px;
+          color: var(--rack-text-dim);
         }
+        /* Config caption (prototype L304): mono 600 11px .06em, centered. */
         .caption {
-          font-family: var(--rack-font-num); font-size: 12px; color: var(--rack-muted);
+          display: block; text-align: center; margin: 0 0 18px;
+          font-family: var(--rack-font-num); font-weight: 600; font-size: 11px;
+          letter-spacing: .06em; color: var(--rack-text-dim);
         }
-        .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+        /* One action row (prototype L305-308): Copy grows, Close hugs its label. */
+        .actions { display: flex; gap: 9px; }
         .copy {
-          font: inherit; font-size: 14px; font-weight: 700;
-          color: var(--rack-bg); background: var(--rack-accent);
-          border: none; border-radius: 999px; padding: 10px 16px;
+          flex: 1; font-family: var(--rack-font); font-size: 13px; font-weight: 700;
+          color: var(--rack-accent-ink); background: var(--rack-accent);
+          border: none; border-radius: 13px; padding: 12px 0;
           min-height: 44px; cursor: pointer;
         }
         .close {
-          font: inherit; font-size: 14px; font-weight: 600;
-          color: var(--rack-muted); background: transparent;
-          border: 1px solid var(--rack-line); border-radius: 999px;
-          padding: 10px 16px; min-height: 44px; cursor: pointer;
+          flex: none; font-family: var(--rack-font); font-size: 13px; font-weight: 600;
+          color: var(--rack-text-dim); background: transparent;
+          border: 1px solid var(--rack-border-strong); border-radius: 13px;
+          padding: 12px 17px; min-height: 44px; cursor: pointer;
         }
         .copy:focus-visible, .close:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
-        .close:hover { color: var(--rack-fg); }
+        .close:hover { color: var(--rack-text); }
       </style>
       <div class="scrim" data-scrim>
         <div class="card" data-card role="dialog" aria-modal="true" aria-label="Loading card">
-          <span class="wordmark">rack<span class="dot">.</span>bar</span>
-          <span class="label">Loading card</span>
-          <span class="total" data-total><span data-total-num></span><span
-            class="tu" data-total-unit></span></span>
-          <span class="secondary" data-secondary></span>
+          <div class="head" data-head>
+            <span class="wordmark">rack<span class="dot">.</span>bar</span>
+            <span class="label">Loading card</span>
+          </div>
+          <div class="totals">
+            <span class="total" data-total><span data-total-num></span><span
+              class="tu" data-total-unit></span></span>
+            <span class="secondary" data-secondary></span>
+          </div>
           <div class="chips" data-chips></div>
           <span class="caption" data-caption></span>
           <div class="actions">
@@ -221,15 +256,17 @@ class RackShare extends HTMLElement {
             )
             .join('');
 
-    // The config caption reuses the shared config wording, plus a "per side" note.
-    this.captionEl.textContent = `${configText(barKg, collarKg, unit)} - per side`;
+    // The config caption reuses the shared config wording (dual-unit Bar + set name,
+    // RBAR-44), plus a "per side" note.
+    const setLabel = plateSetFor(this._plateSet).label;
+    this.captionEl.textContent = `${configText(barKg, collarKg, setLabel)} - per side`;
   }
 
   // Write the plain-text summary to the clipboard and confirm with a transient "Copied"
   // (ADR-0011). The confirmation flips ONLY on a successful write -- a missing or denied
   // clipboard leaves the label unchanged rather than claiming a copy that did not happen.
   private copy(): void {
-    const text = loadingSummary(this._load);
+    const text = loadingSummary(this._load, plateSetFor(this._plateSet).label);
     const clip = navigator.clipboard;
     if (!clip || typeof clip.writeText !== 'function') return; // no clipboard: say nothing
     clip.writeText(text).then(

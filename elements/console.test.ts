@@ -993,7 +993,7 @@ describe('<rack-console> (Share card)', () => {
     type(el, '100'); // 20 Bar + 25 + 15 per side
     shareBtn(el).click();
     expect(shareText(el, '[data-total]')).toBe('100 kg');
-    expect(shareChips(el)).toEqual(['25', '15']);
+    expect(shareChips(el)).toEqual(['1x 25', '1x 15']); // counts always (RBAR-44)
   });
 
   it('the card reflects a hand-built Encode load', () => {
@@ -1060,7 +1060,7 @@ describe('<rack-console> (Share card)', () => {
     over(el).click(); // show the round-up loadout -- this.side becomes the over loadout
     shareBtn(el).click();
     expect(shareText(el, '[data-total]')).toBe('101 kg'); // the over Total, not the 100 primary
-    expect(shareChips(el)).toEqual(['25', '15', '0.5']);
+    expect(shareChips(el)).toEqual(['1x 25', '1x 15', '1x 0.5']);
     expect(recentLabels(el)).toEqual([101]); // the achieved over Total (RBAR-38)
   });
 
@@ -1083,7 +1083,7 @@ describe('<rack-console> (Share card)', () => {
     type(el, '135'); // 45 lb iron Bar + 2 x 45 lb iron = 135 lb
     shareBtn(el).click();
     expect(shareText(el, '[data-total]')).toBe('135 lb');
-    expect(shareChips(el)).toEqual(['45']); // the stamped lb face, not a kg mass
+    expect(shareChips(el)).toEqual(['1x 45']); // the stamped lb face, not a kg mass
     // The lb-mode push stores canonically in kg (ADR-0006), to stored precision --
     // guards a future shownIn() slip at the push site writing display-unit numbers.
     expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([

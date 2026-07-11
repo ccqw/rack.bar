@@ -9,7 +9,7 @@
 // sleeve and palette use). The Total and config lines carry the Unit via `format`.
 import type { Plate, PlateColor } from './plates.ts';
 import { barWithCollars, totalKg } from './plates.ts';
-import { format } from './units.ts';
+import { format, shownIn, toLbWhole } from './units.ts';
 import type { Unit } from './units.ts';
 
 /**
@@ -75,9 +75,11 @@ export function groupSide(side: readonly Plate[]): readonly PlateGroup[] {
 }
 
 /**
- * One per-Side group as `N x face`, or just `face` for a single Plate. Exported so
- * the card's chips and the plain text render the group label from ONE place -- the
- * "cannot drift" guarantee (ADR-0011) covers the rendered label, not just the fold.
+ * One per-Side group as `N x face` -- the count ALWAYS shows, singles included
+ * (`1x 25`), so a glance never has to infer whether a bare face means one Plate
+ * (RBAR-44, prototype L888). Exported so the card's chips and the plain text render
+ * the group label from ONE place -- the "cannot drift" guarantee (ADR-0011) covers
+ * the rendered label, not just the fold.
  *
  * 2026-06-29 (RBAR-27): this is the share/fullscreen card's flat label format. The
  * "On the bar" loaded chips (<rack-loaded>) deliberately do NOT use it -- they render a
@@ -86,39 +88,43 @@ export function groupSide(side: readonly Plate[]): readonly PlateGroup[] {
  * drift; only the loaded chips' visual label format differs by design.
  */
 export function groupText(g: PlateGroup): string {
-  return g.count > 1 ? `${g.count}x ${g.face}` : g.face;
+  return `${g.count}x ${g.face}`;
 }
 
 /**
- * The rig-config line: the Bar, plus the Collars when fitted, in `unit` (ADR-0011).
- * Shared by the plain text and the card caption (the caption appends "per side"), so
- * the config wording cannot drift between them either.
+ * The rig-config line (RBAR-44, prototype L891): the Bar in BOTH Units plus the
+ * plate-set name -- `20 kg / 44 lb bar - Competition` -- with the Collars appended
+ * when fitted (an in-house addition the prototype lacks; the caption would otherwise
+ * hide rig weight). Dual-unit is fixed kg-then-lb, so the line no longer takes a
+ * display Unit. Shared by the plain text, the card caption (which appends "per
+ * side"), and the fullscreen caption, so the config wording cannot drift.
  */
-export function configText(barKg: number, collarKg: number, unit: Unit): string {
-  return collarKg > 0
-    ? `Bar ${format(barKg, unit)}, collars ${format(collarKg, unit)}`
-    : `Bar ${format(barKg, unit)}`;
+export function configText(barKg: number, collarKg: number, setLabel: string): string {
+  const bar = `${shownIn(barKg, 'kg')} kg / ${toLbWhole(barKg)} lb bar`;
+  const rig = collarKg > 0 ? `${bar}, collars ${format(collarKg, 'kg')}` : bar;
+  return `${rig} - ${setLabel}`;
 }
 
 /**
- * The ~3-line plain-text loading summary the Copy button writes (RBAR-19, ADR-0011):
+ * The 3-line plain-text loading summary the Copy button writes (RBAR-19/44,
+ * ADR-0011; prototype copyText L906):
  *
- *   rack.bar 100 kg (220 lb)      <- wordmark + Total (display Unit) + secondary
- *   Per side: 2x 25, 15           <- the Side Load grouped, or "Bare bar - no plates"
- *   Bar 20 kg, collars 2.5 kg     <- the rig config (Collars line omitted when None)
+ *   rack.bar - 100 kg                       <- wordmark + Total (display Unit)
+ *   Per side: 2x 25  1x 15                  <- groups, counts always, two-space join
+ *   20 kg / 44 lb bar - Competition         <- the config caption the card shows
  *
- * Total and config read in `unit`; the secondary reads the other Unit. The Total is
- * derived from the rig + Side Load (`loadTotalKg`), and the group label, bare-bar
+ * The Total reads in `unit`; the config line is dual-unit by construction. The Total
+ * is derived from the rig + Side Load (`loadTotalKg`), and the group label, bare-bar
  * text, and config all come from the shared helpers -- so the text and the card
- * cannot diverge. Plate faces are the Plate's own stamp; the Total line carries Unit.
+ * cannot diverge. Plate faces are the Plate's own stamp; `setLabel` is the active
+ * plate set's lifter-facing name (the element resolves it, `plateSetFor(key).label`).
  */
-export function loadingSummary(s: LoadSummary): string {
-  const other: Unit = s.unit === 'kg' ? 'lb' : 'kg';
+export function loadingSummary(s: LoadSummary, setLabel: string): string {
   const total = loadTotalKg(s);
-  const head = `rack.bar ${format(total, s.unit)} (${format(total, other)})`;
+  const head = `rack.bar - ${format(total, s.unit)}`;
   const perSide =
     s.side.length === 0
       ? BARE_BAR
-      : `Per side: ${groupSide(s.side).map(groupText).join(', ')}`;
-  return `${head}\n${perSide}\n${configText(s.barKg, s.collarKg, s.unit)}`;
+      : `Per side: ${groupSide(s.side).map(groupText).join('  ')}`;
+  return `${head}\n${perSide}\n${configText(s.barKg, s.collarKg, setLabel)}`;
 }
