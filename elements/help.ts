@@ -96,7 +96,9 @@ class RackHelp extends HTMLElement {
           animation: rack-pop .16s cubic-bezier(.2, .85, .25, 1);
         }
         .popover[hidden] { display: none; }
-        .heading { ${SECTION_LABEL} }
+        /* An h2 since RBAR-53 (heading navigation); flex item of the popover column, so
+           display was already blockified -- margin pinned over the UA heading default. */
+        .heading { ${SECTION_LABEL} margin: 0; }
         .step { display: flex; gap: 8px; align-items: baseline; }
         .step .n {
           flex: none; font-family: var(--rack-font-num); font-size: 11px;
@@ -120,7 +122,7 @@ class RackHelp extends HTMLElement {
       </button>
       <div class="popover" data-help-popover id="rack-help-popover"
            role="group" aria-label="How it works" hidden>
-        <span class="heading">How it works</span>
+        <h2 class="heading">How it works</h2>
         <div class="step" data-help-step>
           <span class="n">1</span>
           <span class="body"><strong>By Weight</strong> - type a Target and we rack the Plates per Side.</span>

@@ -15,6 +15,7 @@ import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
+import { VISUALLY_HIDDEN } from './sectionlabel.ts';
 
 class RackPalette extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -89,7 +90,12 @@ class RackPalette extends HTMLElement {
         /* A key whose Plate no longer fits the sleeve (ADR-0012): visibly out of
            play, not tappable (handoff 4b: 30%, not-allowed). */
         .key:disabled { opacity: .3; cursor: not-allowed; }
+        /* The section heading exists for heading navigation only (RBAR-53): the palette
+           has no visible label (the handoff's Add grid is self-evident), so it hides by
+           the clip recipe -- present to the a11y tree, invisible on screen. */
+        .sr-heading { ${VISUALLY_HIDDEN} }
       </style>
+      <h2 class="sr-heading">Add</h2>
       <div class="keys">${keys}</div>
     `;
     this.root.querySelectorAll<HTMLButtonElement>('.key').forEach((key, i) => {

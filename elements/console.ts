@@ -29,7 +29,7 @@ import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
-import { SECTION_LABEL } from './sectionlabel.ts';
+import { SECTION_LABEL, VISUALLY_HIDDEN } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
@@ -79,6 +79,7 @@ class RackConsole extends HTMLElement {
   private secondary!: HTMLButtonElement;
   private status!: HTMLElement;
   private statusLabel!: HTMLElement;
+  private announcer!: HTMLElement;
   private over!: HTMLButtonElement;
   private unitButtons!: NodeListOf<HTMLButtonElement>;
   private modeButtons!: NodeListOf<HTMLButtonElement>;
@@ -112,6 +113,11 @@ class RackConsole extends HTMLElement {
   // never auto-puts the lifter over Target (ADR-0003). Both reset on a mode switch.
   private decoded: Decoded | null = null;
   private showingOver = false;
+  // Whether the entry's keypad sheet is open (RBAR-53). While it is -- and Decode is the
+  // active mode, so the sheet actually shows -- the sheet's own "On the bar" load line is
+  // the live announcement source and the console's status region stays quiet (exactly one
+  // source at a time). Tracked off the entry's keypadopen/keypadclose events.
+  private keypadOpen = false;
 
   /**
    * The Bar the solver loads up from (RBAR-15). Setting it threads the new Bar into the
@@ -252,7 +258,12 @@ class RackConsole extends HTMLElement {
           display: flex; align-items: center; justify-content: space-between;
           margin-bottom: 8px;
         }
-        .readout .label { ${SECTION_LABEL} }
+        /* An h2 since RBAR-53 (heading navigation); margin pinned so the UA heading
+           margin cannot move the row. */
+        .readout .label { ${SECTION_LABEL} margin: 0; }
+        /* The screen-reader announcement region (RBAR-53): visually hidden by the clip
+           recipe (display:none would drop it from the a11y tree and silence it). */
+        .sr { ${VISUALLY_HIDDEN} }
         /* The kg|lb Primary unit toggle: a small segmented control on the same raised
            track (prototype L122). Its active is the SELECTED GREY, not the accent --
            the accent-active belongs to the mode toggle alone (sUnitBtn, L406).
@@ -380,7 +391,7 @@ class RackConsole extends HTMLElement {
         </div>
         <div class="readout">
           <div class="readhead">
-            <span class="label">Total</span>
+            <h2 class="label">Total</h2>
             <div class="units" role="group" aria-label="Display unit">
               <button type="button" data-unit="kg" aria-pressed="true">kg</button>
               <button type="button" data-unit="lb" aria-pressed="false">lb</button>
@@ -394,6 +405,10 @@ class RackConsole extends HTMLElement {
               ><span class="dot" aria-hidden="true"></span
               ><span data-status-label></span></span>
           </div>
+          <!-- The decode outcome for screen readers (RBAR-53): a polite status region
+               that speaks the Total + status once per user action. Visually hidden --
+               the sighted readout above IS this information. -->
+          <div class="sr" data-announce role="status"></div>
         </div>
         <!-- The round-up opt-in sits under the Total (handoff 4a), above the Target block. -->
         <button type="button" class="over" data-over hidden></button>
@@ -430,6 +445,7 @@ class RackConsole extends HTMLElement {
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
+    this.announcer = this.root.querySelector('[data-announce]')!;
     this.over = this.root.querySelector('[data-over]')!;
     this.unitButtons = this.root.querySelectorAll('[data-unit]');
     this.modeButtons = this.root.querySelectorAll('[data-mode]');
@@ -439,13 +455,22 @@ class RackConsole extends HTMLElement {
       if (this.mode !== 'decode') return;
       this.decodeTo((e as CustomEvent<{ target: number | null }>).detail.target);
     });
+    // The keypad sheet's open/closed edges hand the single announcement source back and
+    // forth (RBAR-53): open -> the sheet's load line speaks, the console region mutes;
+    // close -> re-render so the console region settles on the final decoded value.
+    this.entry.addEventListener('keypadopen', () => {
+      this.keypadOpen = true;
+    });
     // A Target commit (the keypad closing) is remembered in the Recent row (RBAR-20).
     // Distinct from `target`, which fires on every keystroke -- only the commit is kept,
     // so mid-entry digits never litter the history. A null Target (empty field) is a
-    // no-op (rememberTarget guards it).
-    this.entry.addEventListener('keypadclose', (e) =>
-      this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target),
-    );
+    // no-op (rememberTarget guards it). The trailing render() unmutes the announcement
+    // region even on a null commit (rememberTarget only renders on a real Target).
+    this.entry.addEventListener('keypadclose', (e) => {
+      this.keypadOpen = false;
+      this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
+      this.render();
+    });
     // A recent chip tap re-applies that Target: seed the field, decode it, and move it
     // back to the front of the history (a re-use is a fresh commit).
     this.recentsRow.addEventListener('recentapply', (e) => {
@@ -676,6 +701,17 @@ class RackConsole extends HTMLElement {
       // Feed the keypad sheet its "on the bar" line (RBAR-22): the loadable Total + delta,
       // so the sheet reads self-contained without the (bright, un-scrimmed) Total behind it.
       this.entry.loadLine = onBarLine(shown.total, targetKg, unit, atCap);
+      // The spoken counterpart (RBAR-53): the Total + the pill's copy. statusPill is
+      // recomputed rather than threaded out of renderStatus -- pure and cheap, and both
+      // call sites keep reading exactly the DISPLAYED numbers (ADR-0010).
+      this.announce(
+        announceLine(
+          shownIn(shown.total, unit),
+          unit,
+          statusPill(shownIn(shown.total, unit), shownIn(targetKg, unit), unit, atCap)
+            .label,
+        ),
+      );
     } else {
       this.status.hidden = true;
       this.status.className = 'status'; // drop any prior state class/label while hidden
@@ -683,7 +719,22 @@ class RackConsole extends HTMLElement {
       this.over.hidden = true;
       this.over.textContent = '';
       this.entry.loadLine = null; // nothing decoded -> the keypad sheet hides the line
+      // No decode outcome to qualify the Total (Encode, or no Target yet): the spoken
+      // line is the Total alone (RBAR-53) -- what a plate add/remove changes.
+      this.announce(announceLine(shownIn(encode(this.side, this.baselineKg()), unit), unit));
     }
+  }
+
+  // Update the screen-reader announcement region (RBAR-53). Two gates keep it honest:
+  // while the keypad sheet is showing (open AND Decode active) the sheet's own load line
+  // is the single live source, so the console stays quiet; and an unchanged line is left
+  // untouched, so an action that renders more than once (a Recent re-apply decodes, then
+  // re-remembers) still settles to exactly one announcement -- and the numRoll transition
+  // never drives it, because only render() writes here, once, with the final value.
+  private announce(text: string): void {
+    if (this.keypadOpen && this.mode === 'decode') return;
+    if (this.announcer.textContent === text) return;
+    this.announcer.textContent = text;
   }
 
   // Reflect the active Primary unit on the kg|lb toggle, and disable it when the plate
@@ -838,6 +889,23 @@ export function onBarLine(
   if (shownTotal > shownTarget) return `${head} (${mag} over)`;
   if (atCapacity) return `${head} (at capacity)`;
   return `${head} (${mag} under)`;
+}
+
+/**
+ * The screen-reader announcement line (RBAR-53): the shown Total with its Unit spelled
+ * out for speech ("kilograms"/"pounds" -- a naked "kg" is read letter-by-letter by some
+ * screen readers), plus the status pill's copy when Decode has one ("142 kilograms,
+ * Exact"). `shownTotal` is already display-rounded (shownIn), so the spoken number is
+ * exactly the one on screen (ADR-0010).
+ */
+export function announceLine(
+  shownTotal: number,
+  unit: Unit,
+  statusLabel?: string,
+): string {
+  const spoken = unit === 'kg' ? 'kilograms' : 'pounds';
+  const head = `${fmtNum(shownTotal)} ${spoken}`;
+  return statusLabel === undefined ? head : `${head}, ${statusLabel}`;
 }
 
 customElements.define('rack-console', RackConsole);

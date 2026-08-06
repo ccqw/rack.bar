@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import './console.ts';
-import { statusPill, onBarLine } from './console.ts';
+import { statusPill, onBarLine, announceLine } from './console.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
 import { lbToKg } from '../lib/units.ts';
 
@@ -1484,5 +1484,144 @@ describe('<rack-console> (segmented-control fidelity, RBAR-43)', () => {
     // The accent-active belongs to the mode toggle alone. (The :focus-visible accent
     // ring is the app-wide keyboard idiom and lives in its own rule -- out of scope.)
     expect(active).not.toContain('--rack-accent');
+  });
+});
+
+// RBAR-53: the screen-reader announcement layer. The console carries a visually-hidden
+// polite live region (role="status") that speaks the decode outcome -- the Total in the
+// display Unit plus the status pill's copy -- settling to ONE final value per user
+// action. While the keypad sheet is open, the sheet's own "On the bar" load line is the
+// active source and the console region goes quiet (exactly one source at a time).
+describe('screen-reader announcements (RBAR-53)', () => {
+  beforeEach(() => localStorage.clear());
+
+  function announcer(el: HTMLElement): HTMLElement {
+    return el.shadowRoot!.querySelector<HTMLElement>('[data-announce]')!;
+  }
+  function openKeypad(el: HTMLElement): void {
+    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!.click();
+  }
+  function done(el: HTMLElement): void {
+    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-done]')!.click();
+  }
+  function paletteKey(el: HTMLElement, kg: number): void {
+    palette(el)
+      .shadowRoot!.querySelector<HTMLButtonElement>(`.key[data-kg="${kg}"]`)!
+      .click();
+  }
+  function loadedChip(el: HTMLElement): void {
+    el.shadowRoot!.querySelector('rack-loaded')!
+      .shadowRoot!.querySelector<HTMLButtonElement>('.chip')!
+      .click();
+  }
+  function stepperInc(el: HTMLElement): void {
+    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-step="inc"]')!.click();
+  }
+
+  it('is a polite status region, hidden by the clip recipe (never display:none)', () => {
+    const el = mountConsole();
+    const a = announcer(el);
+    expect(a.getAttribute('role')).toBe('status');
+    expect(a.hasAttribute('hidden')).toBe(false);
+    const css = el.shadowRoot!.querySelector('style')!.textContent!;
+    const start = css.indexOf('.sr {');
+    expect(start).toBeGreaterThan(-1);
+    const rule = css.slice(start, css.indexOf('}', start));
+    expect(rule).toContain('position: absolute');
+    expect(rule).toContain('clip-path');
+    expect(rule).not.toContain('display: none');
+  });
+
+  it('announces the Total and status in the display Unit when a Target lands', () => {
+    const el = mountConsole();
+    type(el, '142');
+    expect(announcer(el).textContent).toBe('142 kilograms, Exact');
+    type(el, '21.3');
+    expect(announcer(el).textContent).toBe('21 kilograms, 0.3 kg short');
+  });
+
+  it('announces a stepper nudge', () => {
+    const el = mountConsole();
+    stepperInc(el); // bare 20 kg Bar -> 21 kg Target
+    expect(announcer(el).textContent).toBe('21 kilograms, Exact');
+  });
+
+  it('announces the round-up toggle outcome', () => {
+    const el = mountConsole();
+    type(el, '21.3');
+    over(el).click(); // Round up -> 22
+    expect(announcer(el).textContent).toBe('22 kilograms, 0.7 kg over');
+    over(el).click(); // back to the at-or-under primary
+    expect(announcer(el).textContent).toBe('21 kilograms, 0.3 kg short');
+  });
+
+  it('announces plate add and remove in By Plates (Total only -- no status there)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    expect(announcer(el).textContent).toBe('20 kilograms');
+    paletteKey(el, 25);
+    expect(announcer(el).textContent).toBe('70 kilograms');
+    loadedChip(el); // remove the 25 pair
+    expect(announcer(el).textContent).toBe('20 kilograms');
+  });
+
+  it('announces in pounds when the display Unit is lb', () => {
+    const el = mountConsole();
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    expect(announcer(el).textContent).toBe('44 pounds');
+  });
+
+  it('goes quiet while the keypad sheet is open -- the sheet load line is the source', () => {
+    const el = mountConsole();
+    openKeypad(el);
+    type(el, '142.5');
+    // The console region did not move; the sheet's load line (a status region itself)
+    // carries the live outcome instead. (142.5 needs a 0.25 Plate no Eleiko set has,
+    // so the loadable Total is 142 -- the line speaks the honest achieved load.)
+    expect(announcer(el).textContent).toBe('20 kilograms');
+    const line = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live-load]')!;
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.textContent).toBe('On the bar: 142 kg (0.5 under)');
+    // Closing hands the announcement back to the console, settled on the final value.
+    done(el);
+    expect(announcer(el).textContent).toBe('142 kilograms, 0.5 kg short');
+  });
+
+  it('settles to one announcement per action, even when an action renders twice', () => {
+    const el = mountConsole();
+    // Two committed Targets so a Recent chip re-apply really changes the announcement.
+    openKeypad(el);
+    type(el, '100');
+    done(el);
+    openKeypad(el);
+    type(el, '142');
+    done(el);
+    const a = announcer(el);
+    const mo = new MutationObserver(() => {});
+    mo.observe(a, { childList: true, characterData: true, subtree: true });
+    // A chip re-apply decodes AND re-remembers (two render passes) -- still one update.
+    el.shadowRoot!.querySelector('rack-recents')!
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-target="100"]')!
+      .click();
+    const records = mo.takeRecords();
+    mo.disconnect();
+    expect(a.textContent).toBe('100 kilograms, Exact');
+    // One text node landed, once (happy-dom reports a textContent set as a remove
+    // record plus an add record, so count the ADDED text, not raw records).
+    const added = records.flatMap((r) => [...r.addedNodes].map((n) => n.textContent));
+    expect(added).toEqual(['100 kilograms, Exact']);
+  });
+});
+
+// The announcement line (RBAR-53): the Total in the display Unit spelled out for speech
+// ("kilograms"/"pounds"), with the status pill's copy appended when Decode has one.
+describe('announceLine', () => {
+  it('spells the Unit out and appends the status copy', () => {
+    expect(announceLine(142.5, 'kg', 'Exact')).toBe('142.5 kilograms, Exact');
+    expect(announceLine(21, 'kg', '0.3 kg short')).toBe('21 kilograms, 0.3 kg short');
+  });
+
+  it('is Total-only without a status (Encode / nothing decoded)', () => {
+    expect(announceLine(315, 'lb')).toBe('315 pounds');
   });
 });

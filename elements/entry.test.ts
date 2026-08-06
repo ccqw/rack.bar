@@ -722,3 +722,43 @@ describe('<rack-entry> (numeric typography, RBAR-39)', () => {
     expect(root.querySelector('[data-live]')!.classList.contains('roll')).toBe(true);
   });
 });
+
+// RBAR-53: the keypad sheet participates in the announcement layer. Its "On the bar"
+// load line is a polite status region (active only while the sheet shows), and the
+// sheet's open edge is announced to the console via `keypadopen` -- the console's cue
+// to hand the single announcement source over to the sheet.
+describe('keypad sheet announcements (RBAR-53)', () => {
+  it('dispatches keypadopen when the sheet opens, and only then', () => {
+    const { el, root } = mountEntry();
+    const seen = vi.fn();
+    el.addEventListener('keypadopen', seen);
+    tap(root, '[data-value]'); // open
+    expect(seen).toHaveBeenCalledTimes(1);
+    tap(root, '[data-value]'); // a re-tap closes -- no second open
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it('the load line is a polite status region that hides while empty', () => {
+    const { el, root } = mountEntry();
+    const line = root.querySelector<HTMLElement>('[data-live-load]')!;
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.hidden).toBe(true); // nothing decoded yet
+    el.loadLine = 'On the bar: 100 kg (exact)';
+    expect(line.hidden).toBe(false);
+    expect(line.textContent).toBe('On the bar: 100 kg (exact)');
+    el.loadLine = null;
+    expect(line.hidden).toBe(true);
+  });
+
+  it('re-setting an unchanged load line does not touch the region (no re-announce)', () => {
+    const { el, root } = mountEntry();
+    el.loadLine = 'On the bar: 100 kg (exact)';
+    const line = root.querySelector<HTMLElement>('[data-live-load]')!;
+    const mo = new MutationObserver(() => {});
+    mo.observe(line, { childList: true, characterData: true, subtree: true });
+    el.loadLine = 'On the bar: 100 kg (exact)'; // the same text again
+    const records = mo.takeRecords();
+    mo.disconnect();
+    expect(records.length).toBe(0);
+  });
+});
