@@ -276,9 +276,9 @@ class RackSetup extends HTMLElement {
         .row[aria-pressed="true"] .check { opacity: 1; }
       </style>
       <div class="scrim" data-scrim>
-        <div class="panel" data-panel role="dialog" aria-modal="true" aria-label="Setup">
+        <div class="panel" data-panel role="dialog" aria-modal="true" aria-labelledby="setup-heading">
           <div class="head">
-            <h2 class="title">Setup</h2>
+            <h2 class="title" id="setup-heading">Setup</h2>
             <button type="button" class="done" data-done>Done</button>
           </div>
           <h3 class="section-label">Bar</h3>

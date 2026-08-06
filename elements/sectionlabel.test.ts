@@ -1,8 +1,9 @@
 // RBAR-40: the section-label system. One recipe -- JetBrains Mono 600 11px, .14em
 // tracking, uppercase, text-muted ink (handoff "Typography": 'section label 11px/600
 // mono, .14em, uppercase') -- across every section label: console Total, entry Target,
-// loaded On the bar, recents Recent, setup Bar/Collars/Plates, share Loading card,
-// help How it works. Plus the two layout adoptions the ticket names: the Total row
+// loaded On the bar, recents Recent, palette Add (visible since RBAR-54's head row),
+// setup Bar/Collars/Plates, share Loading card, help How it works. Plus the two
+// layout adoptions the ticket names: the Total row
 // becomes flex space-between (toggle at the right edge, prototype L131) and the Target
 // section opens with a divider (prototype L146: border-top + 15px padding).
 import { describe, it, expect } from 'vitest';
@@ -15,6 +16,7 @@ import './setup.ts';
 import './share.ts';
 import './help.ts';
 import { VISUALLY_HIDDEN } from './sectionlabel.ts';
+import { ELEIKO_KG } from '../lib/plates.ts';
 
 // Mount the element and slice one rule body out of its shadow stylesheet, so a
 // sibling rule using the same declaration cannot false-pass (console.test idiom).
@@ -34,6 +36,7 @@ describe('section-label system (RBAR-40)', () => {
     ['rack-console', '.readout .label'],
     ['rack-entry', '.caption'],
     ['rack-loaded', '.label'],
+    ['rack-palette', '.label'],
     ['rack-recents', '.label'],
     ['rack-setup', '.section-label'],
     ['rack-share', '.label'],
@@ -89,7 +92,6 @@ describe('section labels are headings (RBAR-53)', () => {
   const HEADINGS: Array<[tag: string, selector: string, text: string]> = [
     ['rack-console', 'h2.label', 'Total'],
     ['rack-entry', 'h2.caption', 'Target'],
-    ['rack-loaded', 'h2.label', 'On the bar'],
     ['rack-recents', 'h2.label', 'Recent'],
     ['rack-share', 'h2.label', 'Loading card'],
     ['rack-help', 'h2.heading', 'How it works'],
@@ -118,6 +120,23 @@ describe('section labels are headings (RBAR-53)', () => {
     const rule = ruleBody('rack-palette', '.label');
     expect(rule).toContain('margin: 0');
     expect(rule).not.toContain('clip-path');
+  });
+
+  it('the On the bar heading rides the reservation: hidden empty, exposed loaded', () => {
+    // Deliberate contract, not an accident of RBAR-52's slot: an empty On the bar
+    // section has nothing to navigate to, so its whole row -- h2 included -- sits
+    // reserved (visibility: hidden, out of the a11y tree). The heading joins heading
+    // navigation the moment a Plate lands.
+    const el = document.createElement('rack-loaded') as HTMLElement & {
+      side: readonly unknown[];
+    };
+    document.body.append(el);
+    const root = el.shadowRoot!;
+    expect(root.querySelector('h2.label')?.textContent).toBe('On the bar');
+    expect(root.querySelector('[data-onbar]')?.classList.contains('reserving')).toBe(true);
+    el.side = [ELEIKO_KG[0]];
+    expect(root.querySelector('[data-onbar]')?.classList.contains('reserving')).toBe(false);
+    el.remove();
   });
 
   it('the loaded empty hint stays a plain label, not a heading', () => {

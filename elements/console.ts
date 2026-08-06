@@ -23,7 +23,7 @@ import './share.ts';
 import './fullscreen.ts';
 import { decode } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
-import { DEFAULT_BAR_KG, barWithCollars, sideWidthMm } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
@@ -351,7 +351,15 @@ class RackConsole extends HTMLElement {
           display: block; margin-top: 4px;
           font-family: var(--rack-font-num); font-size: 12px; color: var(--rack-muted);
         }
-        .barnote[hidden] { display: none; }
+        /* The note's row is reserved exactly like the round-up row below (RBAR-52's
+           mechanism): visibility swap + a zero-width-space line-box holder, so the
+           round-up row and Target steppers never move when the note appears -- the
+           note toggles on stepper taps, the one place a moving target hurts most. */
+        .barnote[hidden] { display: block; visibility: hidden; }
+        .barnote[hidden]::before { content: "\\200b"; }
+        /* By Plates never shows the note; collapse fully (after [hidden], same
+           specificity -- source order lets display:none win). */
+        .barnote.collapsed { display: none; }
         /* The over-target opt-in: a quiet, deliberately un-pushy round-up control
            (ADR-0003 -- never auto-selected). */
         .over {
@@ -368,7 +376,9 @@ class RackConsole extends HTMLElement {
            cleared. visibility:hidden also drops the control from the a11y tree and
            from hit-testing, exactly as display:none did. */
         .over[hidden] { display: inline-block; visibility: hidden; }
-        .over::before { content: "\\200b"; }
+        /* Scoped to the hidden state: generated content joins the accessible name
+           (accname 2F), so the visible button must not carry the ZWSP. */
+        .over[hidden]::before { content: "\\200b"; }
         /* By Plates has no round-up row to reserve: there the control collapses
            fully. Declared AFTER .over[hidden] -- equal specificity, so source order
            is what lets display:none win when both apply. */
@@ -704,6 +714,7 @@ class RackConsole extends HTMLElement {
     // offer on hand (hidden keeps it in flow -- see the .over[hidden] rule), collapsed
     // out of the column entirely in By Plates, which has no such row.
     this.over.classList.toggle('collapsed', this.mode !== 'decode');
+    this.barnote.classList.toggle('collapsed', this.mode !== 'decode');
     this.modeButtons.forEach((b) =>
       b.setAttribute('aria-pressed', String(b.dataset.mode === this.mode)),
     );
@@ -735,15 +746,16 @@ class RackConsole extends HTMLElement {
       this.barnote.textContent = note ?? '';
       // The spoken counterpart (RBAR-53): the Total + the pill's copy. statusPill is
       // recomputed rather than threaded out of renderStatus -- pure and cheap, and both
-      // call sites keep reading exactly the DISPLAYED numbers (ADR-0010).
-      this.announce(
-        announceLine(
-          shownIn(shown.total, unit),
-          unit,
-          statusPill(shownIn(shown.total, unit), shownIn(targetKg, unit), unit, atCap)
-            .label,
-        ),
+      // call sites keep reading exactly the DISPLAYED numbers (ADR-0010). The below-Bar
+      // note rides along -- the copy-truth explanation (RBAR-55) must reach screen
+      // readers too, or the "reads as a malfunction" experience survives aurally.
+      const line = announceLine(
+        shownIn(shown.total, unit),
+        unit,
+        statusPill(shownIn(shown.total, unit), shownIn(targetKg, unit), unit, atCap)
+          .label,
       );
+      this.announce(note === null ? line : `${line}. ${note}`);
     } else {
       this.status.hidden = true;
       this.status.className = 'status'; // drop any prior state class/label while hidden
@@ -754,8 +766,18 @@ class RackConsole extends HTMLElement {
       this.barnote.hidden = true;
       this.barnote.textContent = '';
       // No decode outcome to qualify the Total (Encode, or no Target yet): the spoken
-      // line is the Total alone (RBAR-53) -- what a plate add/remove changes.
-      this.announce(announceLine(shownIn(encode(this.side, this.baselineKg()), unit), unit));
+      // line is the Total (RBAR-53) -- what a plate add/remove changes -- plus "Sleeve
+      // full" when the last-fitting Plate just went on, so By Plates speaks the same
+      // capacity fact By Weight's pill already does (the visible warning is RBAR-54's;
+      // same atSleeveCapacity source of truth, so they cannot disagree).
+      const full = this.mode === 'encode' && atSleeveCapacity(this.side, this.inventory());
+      this.announce(
+        announceLine(
+          shownIn(encode(this.side, this.baselineKg()), unit),
+          unit,
+          full ? 'Sleeve full' : undefined,
+        ),
+      );
     }
   }
 

@@ -16,8 +16,7 @@ export const SECTION_LABEL = `
 // The visually-hidden recipe (RBAR-53): off-screen for sighted lifters, present to the
 // accessibility tree -- the classic clip idiom, NEVER display:none (which would remove
 // the node from the a11y tree and silence a live region or heading). Same interpolate-
-// inside-a-rule idiom as SECTION_LABEL. Used by the console's announcement region and
-// the palette's hidden "Add" heading.
+// inside-a-rule idiom as SECTION_LABEL. Used by the console's announcement region.
 export const VISUALLY_HIDDEN = `
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);

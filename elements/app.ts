@@ -108,10 +108,12 @@ class RackApp extends HTMLElement {
         }
       </style>
       <header>
-        <span class="brand">
+        <!-- A div, not a span: the h1 is flow content and a span may hold only
+             phrasing content. .brand is inline-flex either way. -->
+        <div class="brand">
           <h1 class="wordmark">rack<span class="dot">.</span>bar</h1>
           <rack-help></rack-help>
-        </span>
+        </div>
         <button type="button" class="pill" data-setup-pill
                 aria-haspopup="dialog" aria-expanded="false">
           <svg class="sliders" data-pill-icon width="13" height="13" viewBox="0 0 16 16"

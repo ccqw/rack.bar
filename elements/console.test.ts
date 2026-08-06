@@ -1596,7 +1596,22 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
     // The UA sheet's [hidden] display:none must be beaten explicitly, or the row
     // still collapses out of flow.
     expect(hiddenRule).toContain('display: inline-block');
-    expect(ruleBody(css, '.over::before')).toContain('content: "\\200b"');
+    // Scoped to [hidden]: generated content joins the accessible name (accname
+    // step 2F), so the visible button must not carry the ZWSP.
+    expect(ruleBody(css, '.over[hidden]::before')).toContain('content: "\\200b"');
+  });
+
+  it('reserves the below-Bar note row the same way (RBAR-55 meets RBAR-52)', () => {
+    // The note toggles on stepper taps -- the one place a moving target hurts most --
+    // so its row uses the same reservation mechanism as the round-up offer.
+    const css = consoleCss();
+    const hiddenRule = ruleBody(css, '.barnote[hidden]');
+    expect(hiddenRule).toContain('visibility: hidden');
+    expect(hiddenRule).toContain('display: block');
+    expect(hiddenRule).not.toContain('display: none');
+    expect(ruleBody(css, '.barnote[hidden]::before')).toContain('content: "\\200b"');
+    expect(ruleBody(css, '.barnote.collapsed')).toContain('display: none');
+    expect(css.indexOf('.barnote.collapsed')).toBeGreaterThan(css.indexOf('.barnote[hidden]'));
   });
 
   it('collapses the round-up row only outside By Weight', () => {
@@ -1625,8 +1640,10 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
     modeBtn(el, 'encode').click();
     expect(over(el).hidden).toBe(true);
     expect(over(el).classList.contains('collapsed')).toBe(true);
+    expect(barnote(el).classList.contains('collapsed')).toBe(true);
     modeBtn(el, 'decode').click();
     expect(over(el).classList.contains('collapsed')).toBe(false);
+    expect(barnote(el).classList.contains('collapsed')).toBe(false);
   });
 });
 
@@ -1706,6 +1723,27 @@ describe('screen-reader announcements (RBAR-53)', () => {
     expect(announcer(el).textContent).toBe('70 kilograms');
     loadedChip(el); // remove the 25 pair
     expect(announcer(el).textContent).toBe('20 kilograms');
+  });
+
+  it('speaks the below-Bar explanation with the outcome, not sighted-only (RBAR-55)', () => {
+    // The copy-truth fix must reach screen readers too: the pill's "10 kg over"
+    // alone is exactly the "reads as a malfunction" experience RBAR-55 removes.
+    const el = mountConsole();
+    type(el, '10');
+    expect(announcer(el).textContent).toBe(
+      '20 kilograms, 10 kg over. Empty bar weighs 20 kg - above your Target',
+    );
+  });
+
+  it('speaks Sleeve full when the last-fitting Plate lands (RBAR-54 parity)', () => {
+    // By Weight's capacity state rides the pill copy into the announcement; By
+    // Plates must speak the same fact, or hitting capacity is silent for AT users.
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    for (let i = 0; i < 7; i++) paletteKey(el, 25); // 406 mm of 415: nothing fits
+    expect(announcer(el).textContent).toBe('370 kilograms, Sleeve full');
+    loadedChip(el); // a 25 pair comes off: room again
+    expect(announcer(el).textContent).toBe('320 kilograms');
   });
 
   it('announces in pounds when the display Unit is lb', () => {

@@ -121,8 +121,8 @@ class RackHelp extends HTMLElement {
         </svg>
       </button>
       <div class="popover" data-help-popover id="rack-help-popover"
-           role="group" aria-label="How it works" hidden>
-        <h2 class="heading">How it works</h2>
+           role="group" aria-labelledby="help-heading" hidden>
+        <h2 class="heading" id="help-heading">How it works</h2>
         <div class="step" data-help-step>
           <span class="n">1</span>
           <span class="body"><strong>By Weight</strong> - type a Target and we rack the Plates per Side.</span>

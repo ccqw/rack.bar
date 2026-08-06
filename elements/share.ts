@@ -191,10 +191,10 @@ class RackShare extends HTMLElement {
         .close:hover { color: var(--rack-text); }
       </style>
       <div class="scrim" data-scrim>
-        <div class="card" data-card role="dialog" aria-modal="true" aria-label="Loading card">
+        <div class="card" data-card role="dialog" aria-modal="true" aria-labelledby="share-heading">
           <div class="head" data-head>
             <span class="wordmark">rack<span class="dot">.</span>bar</span>
-            <h2 class="label">Loading card</h2>
+            <h2 class="label" id="share-heading">Loading card</h2>
           </div>
           <div class="totals">
             <span class="total" data-total><span data-total-num></span><span
