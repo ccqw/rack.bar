@@ -35,6 +35,8 @@ export default defineConfig({
     // docs/design-handoff/ is the authoritative Claude Design reference package
     // (RBAR-10 output), not part of the app -- its bundled engine.test.js is the
     // prototype's own contract file and must not run in our suite.
-    exclude: [...configDefaults.exclude, 'docs/**'],
+    // .claude/worktrees/ holds agent git worktrees (full repo copies); without
+    // the deep glob their suites -- and their docs/engine.test.js -- run too.
+    exclude: [...configDefaults.exclude, 'docs/**', '**/.claude/**'],
   },
 });
