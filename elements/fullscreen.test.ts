@@ -78,13 +78,25 @@ describe('<rack-fullscreen>', () => {
     expect(root.querySelector('[data-total]')!.textContent!.trim()).toBe('220 lb');
   });
 
-  it('captions with a secondary-unit line + per-side note (RBAR-30)', () => {
-    const { el, root } = mount(LOADED); // comp / kg by default
+  it('reads the secondary line as a plain other-unit Total, never "per side" (RBAR-55)', () => {
+    const { el, root } = mount(LOADED); // comp / kg by default; Total 155 kg
     el.open();
     const sec = root.querySelector('[data-secondary]')!.textContent!;
-    // The achieved Total in the OTHER unit (a kg load reads its secondary in lb) + per side.
-    expect(sec).toContain('lb');
-    expect(sec).toContain('per side');
+    // The achieved WHOLE-BAR Total in the OTHER unit, unqualified -- the number is not
+    // a Side Load, so "per side" must never ride it (the RBAR-55 copy-truth fix).
+    expect(sec).toBe('342 lb');
+  });
+
+  it('reads the lb load\'s secondary as the plain kg Total (RBAR-55)', () => {
+    const { el, root } = mount({
+      side: [eleiko(25), eleiko(15)],
+      barKg: 20,
+      collarKg: 0,
+      unit: 'lb',
+    });
+    el.open();
+    // 20 + 2 x (25 + 15) = 100 kg whole-bar Total, shown plain in the other unit.
+    expect(root.querySelector('[data-secondary]')!.textContent).toBe('100 kg');
   });
 
   it('names the plate set + Bar in the config line, Collars only when fitted (RBAR-30)', () => {
@@ -94,12 +106,20 @@ describe('<rack-fullscreen>', () => {
     expect(cap).toContain('Competition'); // the active plate set
     expect(cap).toContain('20 kg / 44 lb bar'); // the Bar, dual-unit (RBAR-44 configText)
     expect(cap).not.toContain('collar'); // None fitted
-    expect(cap).not.toContain('per side'); // the per-side note moved to the secondary line
 
     const withCollar = mount({ ...LOADED, collarKg: 2.5 });
     withCollar.el.open();
     expect(withCollar.root.querySelector('[data-caption]')!.textContent).toContain(
       'collars 2.5 kg',
+    );
+  });
+
+  it('carries the per-side context on the config caption, mirroring the share card (RBAR-55)', () => {
+    const { el, root } = mount(LOADED);
+    el.open();
+    // The exact caption the share card shows: shared configText + the per-side note.
+    expect(root.querySelector('[data-caption]')!.textContent).toBe(
+      '20 kg / 44 lb bar - Competition - per side',
     );
   });
 

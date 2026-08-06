@@ -79,6 +79,7 @@ class RackConsole extends HTMLElement {
   private secondary!: HTMLButtonElement;
   private status!: HTMLElement;
   private statusLabel!: HTMLElement;
+  private barnote!: HTMLElement;
   private over!: HTMLButtonElement;
   private unitButtons!: NodeListOf<HTMLButtonElement>;
   private modeButtons!: NodeListOf<HTMLButtonElement>;
@@ -332,6 +333,14 @@ class RackConsole extends HTMLElement {
           background: var(--rack-accent); border-color: var(--rack-accent);
         }
         .status.over .dot { display: none; }
+        /* The below-Bar explanation (RBAR-55): when the Target sits under the empty
+           bar's own weight, the OVER pill alone reads as "is it broken?" -- this quiet
+           line under the status row names the plain fact. Decode-only. */
+        .barnote {
+          display: block; margin-top: 4px;
+          font-family: var(--rack-font-num); font-size: 12px; color: var(--rack-muted);
+        }
+        .barnote[hidden] { display: none; }
         /* The over-target opt-in: a quiet, deliberately un-pushy round-up control
            (ADR-0003 -- never auto-selected). */
         .over {
@@ -394,6 +403,7 @@ class RackConsole extends HTMLElement {
               ><span class="dot" aria-hidden="true"></span
               ><span data-status-label></span></span>
           </div>
+          <span class="barnote" data-barnote hidden></span>
         </div>
         <!-- The round-up opt-in sits under the Total (handoff 4a), above the Target block. -->
         <button type="button" class="over" data-over hidden></button>
@@ -430,6 +440,7 @@ class RackConsole extends HTMLElement {
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
+    this.barnote = this.root.querySelector('[data-barnote]')!;
     this.over = this.root.querySelector('[data-over]')!;
     this.unitButtons = this.root.querySelectorAll('[data-unit]');
     this.modeButtons = this.root.querySelectorAll('[data-mode]');
@@ -676,6 +687,11 @@ class RackConsole extends HTMLElement {
       // Feed the keypad sheet its "on the bar" line (RBAR-22): the loadable Total + delta,
       // so the sheet reads self-contained without the (bright, un-scrimmed) Total behind it.
       this.entry.loadLine = onBarLine(shown.total, targetKg, unit, atCap);
+      // A Target under the empty bar's own weight gets the plain-fact explanation
+      // (RBAR-55) -- the OVER pill stays, but is no longer the only reading.
+      const note = belowBarNote(targetKg, this.baselineKg(), unit);
+      this.barnote.hidden = note === null;
+      this.barnote.textContent = note ?? '';
     } else {
       this.status.hidden = true;
       this.status.className = 'status'; // drop any prior state class/label while hidden
@@ -683,6 +699,8 @@ class RackConsole extends HTMLElement {
       this.over.hidden = true;
       this.over.textContent = '';
       this.entry.loadLine = null; // nothing decoded -> the keypad sheet hides the line
+      this.barnote.hidden = true;
+      this.barnote.textContent = '';
     }
   }
 
@@ -838,6 +856,25 @@ export function onBarLine(
   if (shownTotal > shownTarget) return `${head} (${mag} over)`;
   if (atCapacity) return `${head} (at capacity)`;
   return `${head} (${mag} under)`;
+}
+
+/**
+ * The below-Bar Target explanation (RBAR-55): when the Target sits under what the
+ * empty bar itself weighs, the solver correctly shows a bare bar and the pill reads
+ * "N over" -- right math, but alone it reads as a malfunction. This line names the
+ * plain fact in the display Unit. `baselineKg` is the empty rig (Bar + Collars when
+ * fitted, ADR-0008) -- exactly the Total the bare render shows, so the note can never
+ * contradict the readout. Keyed off the DISPLAYED numbers (ADR-0010) so it stays
+ * silent when the Target displays equal to the bar (where the pill reads Exact).
+ * Null at or above the bar -- the note only exists below it.
+ */
+export function belowBarNote(
+  targetKg: number,
+  baselineKg: number,
+  unit: Unit,
+): string | null {
+  if (shownIn(targetKg, unit) >= shownIn(baselineKg, unit)) return null;
+  return `Empty bar weighs ${format(baselineKg, unit)} - above your Target`;
 }
 
 customElements.define('rack-console', RackConsole);
