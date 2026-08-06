@@ -1369,6 +1369,23 @@ describe('<rack-console> Encode respects the sleeve cap (RBAR-31, ADR-0012)', ()
     tapDisc(el, 0); // remove a 25: 340 mm used, wide keys fit again
     expect(fits(25)).toBe(true);
   });
+
+  // The "Sleeve full" warning beside the palette's Add label (RBAR-54): the By-Plates
+  // counterpart of By Weight's "Bar at capacity" pill. Console-level wiring check --
+  // the appear/clear/partial states themselves are locked in palette.test.ts.
+  it('surfaces "Sleeve full" beside Add when the last-fitting Plate goes on, clearing on removal (RBAR-54)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    const warn = () =>
+      palette(el).shadowRoot!.querySelector<HTMLElement>('[data-sleeve-full]')!;
+    for (let i = 0; i < 6; i++) tapAdd(el, 25); // 348 mm -- a 25 still fits
+    expect(warn().hidden).toBe(true);
+    tapAdd(el, 25); // 406 mm of 415: 9 mm of room, nothing fits
+    expect(warn().hidden).toBe(false);
+    expect(warn().textContent).toContain('Sleeve full');
+    tapDisc(el, 0); // a 25 comes off: room again
+    expect(warn().hidden).toBe(true);
+  });
 });
 
 describe('<rack-console> (big Total typography + numRoll, RBAR-30)', () => {
