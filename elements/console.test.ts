@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import './console.ts';
-import { statusPill, onBarLine } from './console.ts';
+import { statusPill, onBarLine, belowBarNote } from './console.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
 import { lbToKg } from '../lib/units.ts';
 
@@ -58,6 +58,12 @@ function statusKind(el: HTMLElement): string {
 }
 function statusText(el: HTMLElement): string {
   return statusEl(el).querySelector('[data-status-label]')!.textContent ?? '';
+}
+
+// The below-Bar explanation line (RBAR-55): shown when the Target sits under the
+// empty bar's own weight, so the OVER pill is never the only explanation.
+function barnote(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('[data-barnote]')!;
 }
 
 function over(el: HTMLElement): HTMLButtonElement {
@@ -234,6 +240,45 @@ describe('<rack-console> (Decode: at-or-under + status pill)', () => {
     expect(statusText(el)).toBe('10 kg over');
     // A sub-Bar Target already sits above the Target -- no round-up to offer.
     expect(over(el).hidden).toBe(true);
+  });
+
+  it('explains a below-Bar Target by naming the empty bar\'s weight in kg (RBAR-55)', () => {
+    // The pill's "10 kg over" is correct but alone reads as "is it broken?" -- the
+    // note states the plain fact: the empty bar already outweighs the Target.
+    const el = mountConsole();
+    type(el, '10');
+    expect(barnote(el).hidden).toBe(false);
+    expect(barnote(el).textContent).toBe('Empty bar weighs 20 kg - above your Target');
+  });
+
+  it('explains a below-Bar Target in the display Unit when it is lb (RBAR-55)', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    type(el, '10'); // 10 lb -- under the 20 kg (44 lb) Bar
+    expect(barnote(el).hidden).toBe(false);
+    expect(barnote(el).textContent).toBe('Empty bar weighs 44 lb - above your Target');
+  });
+
+  it('folds fitted Collars into the empty-bar weight the note names (RBAR-55)', () => {
+    // The bare render's Total IS bar + 2 x collar (ADR-0008): 20 + 2 x 2.5 = 25. The
+    // note must name the same number the readout shows, or it would contradict the screen.
+    const el = mountConsole();
+    el.collarKg = 2.5;
+    type(el, '10');
+    expect(barnote(el).textContent).toBe('Empty bar weighs 25 kg - above your Target');
+  });
+
+  it('hides the below-Bar note for an achievable Target, an empty Target, and Encode (RBAR-55)', () => {
+    const el = mountConsole();
+    type(el, '100'); // at-or-above the Bar: no note
+    expect(barnote(el).hidden).toBe(true);
+    type(el, '10'); // below the Bar: the note shows...
+    expect(barnote(el).hidden).toBe(false);
+    modeBtn(el, 'encode').click(); // ...but never in Encode (no Target there)
+    expect(barnote(el).hidden).toBe(true);
+    modeBtn(el, 'decode').click();
+    type(el, ''); // no Target -> no note
+    expect(barnote(el).hidden).toBe(true);
   });
 
   describe('over-target opt-in (ADR-0003, RBAR-11)', () => {
@@ -1238,6 +1283,30 @@ describe('onBarLine deriver (RBAR-22 keypad sheet)', () => {
   it('keys off the displayed unit so it is honest in lb', () => {
     // 100 kg -> 220 lb; an exact whole-lb Target reads exact in lb.
     expect(onBarLine(100, 100, 'lb', false)).toBe('On the bar: 220 lb (exact)');
+  });
+});
+
+describe('belowBarNote deriver (RBAR-55)', () => {
+  // The below-Bar explanation: names the empty rig's weight in the display Unit when
+  // the Target sits under it. Args are canonical kg; `baselineKg` is Bar + Collars.
+  it('names the empty-bar weight in the display Unit below the Bar', () => {
+    expect(belowBarNote(lbToKg(10), 20, 'kg')).toBe(
+      'Empty bar weighs 20 kg - above your Target',
+    );
+    expect(belowBarNote(lbToKg(10), 20, 'lb')).toBe(
+      'Empty bar weighs 44 lb - above your Target',
+    );
+  });
+
+  it('is null at or above the Bar weight', () => {
+    expect(belowBarNote(20, 20, 'kg')).toBeNull();
+    expect(belowBarNote(100, 20, 'kg')).toBeNull();
+  });
+
+  it('keys off the DISPLAYED numbers so it never contradicts an Exact pill (ADR-0010)', () => {
+    // A 44 lb Target on the 20 kg Bar is 0.04 kg under in raw kg, but DISPLAYS equal
+    // (44 lb vs 44 lb) -- the pill reads Exact there, so the note must stay silent.
+    expect(belowBarNote(lbToKg(44), 20, 'lb')).toBeNull();
   });
 });
 
