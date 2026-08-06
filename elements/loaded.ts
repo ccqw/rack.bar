@@ -66,7 +66,10 @@ class RackLoaded extends HTMLElement {
           display: flex; align-items: center; justify-content: space-between;
           margin-bottom: 8px;
         }
-        .label { ${SECTION_LABEL} }
+        /* The head label is an h2 since RBAR-53 (heading navigation); the empty hint
+           shares the recipe but stays a span. margin: 0 pins the UA heading margin
+           (no-op on the span). */
+        .label { ${SECTION_LABEL} margin: 0; }
         /* The Clear pill: a quiet uppercase mono control that empties the Side. Its
            hover/active goes danger-red per the handoff -- a destructive affordance, so it
            stays grey until reached for. */
@@ -140,7 +143,7 @@ class RackLoaded extends HTMLElement {
       <div class="slot" data-slot>
         <div class="onbar" data-onbar>
           <div class="head" data-head>
-            <span class="label">On the bar</span>
+            <h2 class="label">On the bar</h2>
             <button type="button" class="clear" data-clear aria-label="Clear the bar">
               <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor"

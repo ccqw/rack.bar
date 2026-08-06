@@ -77,7 +77,9 @@ class RackPalette extends HTMLElement {
           display: flex; align-items: center; justify-content: space-between;
           max-width: 360px; margin: 0 auto 8px;
         }
-        .label { ${SECTION_LABEL} }
+        /* The label doubles as the section's heading (RBAR-53): h2 for SR
+           navigation, margins pinned so the head row's flex geometry is unchanged. */
+        .label { ${SECTION_LABEL} margin: 0; }
         /* The "Sleeve full" warning (RBAR-54): the status pill's uppercase-mono
            state-dot vocabulary in the danger ink (--rack-danger is the over-capacity
            red) -- real text beside the label, not color/opacity alone. */
@@ -117,7 +119,7 @@ class RackPalette extends HTMLElement {
         .key:disabled { opacity: .3; cursor: not-allowed; }
       </style>
       <div class="head">
-        <span class="label">Add</span>
+        <h2 class="label">Add</h2>
         <span class="full" data-sleeve-full hidden
           ><span class="dot" aria-hidden="true"></span>Sleeve full</span>
       </div>
