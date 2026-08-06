@@ -1486,3 +1486,60 @@ describe('<rack-console> (segmented-control fidelity, RBAR-43)', () => {
     expect(active).not.toContain('--rack-accent');
   });
 });
+
+describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
+  // happy-dom computes no layout, so these text-lock the reserving MECHANISM: in By
+  // Weight a hidden round-up offer keeps its row in flow (visibility, not display),
+  // with a zero-width-space ::before holding the line box while the text is cleared,
+  // so the Target row + steppers below never move when the offer appears/disappears.
+  // By Plates has no round-up row at all, so there the control collapses fully.
+  // Pixel-identical stepper positions across the toggle are the browser pass.
+  const ruleBody = (css: string, selector: string) => {
+    const start = css.indexOf(selector);
+    expect(start).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  };
+  const consoleCss = () =>
+    mountConsole().shadowRoot!.querySelector('style')!.textContent!;
+
+  it('keeps a hidden offer in flow: visibility swap + zero-width line-box holder', () => {
+    const css = consoleCss();
+    const hiddenRule = ruleBody(css, '.over[hidden]');
+    expect(hiddenRule).toContain('visibility: hidden');
+    expect(hiddenRule).not.toContain('display: none');
+    // The UA sheet's [hidden] display:none must be beaten explicitly, or the row
+    // still collapses out of flow.
+    expect(hiddenRule).toContain('display: inline-block');
+    expect(ruleBody(css, '.over::before')).toContain('content: "\\200b"');
+  });
+
+  it('collapses the round-up row only outside By Weight', () => {
+    const css = consoleCss();
+    expect(ruleBody(css, '.over.collapsed')).toContain('display: none');
+    // Order is load-bearing: .collapsed must come after .over[hidden] so its
+    // display:none wins the equal-specificity tie in By Plates.
+    expect(css.indexOf('.over.collapsed')).toBeGreaterThan(css.indexOf('.over[hidden]'));
+  });
+
+  it('By Weight reserves the row whether or not the offer shows', () => {
+    const el = mountConsole();
+    // Nothing typed yet: no offer, but the row is reserved (hidden, not collapsed).
+    expect(over(el).hidden).toBe(true);
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+    type(el, '100'); // exact: still no offer, row still reserved
+    expect(over(el).hidden).toBe(true);
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+    type(el, '100.5'); // off-grid: the offer appears IN the reserved row
+    expect(over(el).hidden).toBe(false);
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+  });
+
+  it('By Plates drops the reservation entirely, and By Weight restores it', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    expect(over(el).hidden).toBe(true);
+    expect(over(el).classList.contains('collapsed')).toBe(true);
+    modeBtn(el, 'decode').click();
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+  });
+});

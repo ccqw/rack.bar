@@ -340,7 +340,19 @@ class RackConsole extends HTMLElement {
           background: transparent; border: 1px solid var(--rack-line);
           border-radius: 999px; padding: 8px 16px; cursor: pointer;
         }
-        .over[hidden] { display: none; }
+        /* Round-up row reservation (RBAR-52): in By Weight a hidden offer keeps its
+           row IN FLOW -- swapped by visibility, with an explicit display to beat the
+           UA sheet's [hidden] display:none -- so the Target row + steppers below
+           never move when the offer appears/disappears. The ::before zero-width
+           space holds the line box (and so the row height) while the text is
+           cleared. visibility:hidden also drops the control from the a11y tree and
+           from hit-testing, exactly as display:none did. */
+        .over[hidden] { display: inline-block; visibility: hidden; }
+        .over::before { content: "\\200b"; }
+        /* By Plates has no round-up row to reserve: there the control collapses
+           fully. Declared AFTER .over[hidden] -- equal specificity, so source order
+           is what lets display:none win when both apply. */
+        .over.collapsed { display: none; }
         .over:focus-visible { outline: 2px solid var(--rack-accent); }
         /* The Share control: a quiet pill that opens the loading card (RBAR-19). Always
            available -- the card reflects whatever is on the Bar, bare or loaded. */
@@ -652,6 +664,10 @@ class RackConsole extends HTMLElement {
     // when empty (it shows its own "Tap to add a pair" hint), so it toggles by mode alone.
     this.loadedRow.hidden = this.mode !== 'encode';
     this.loadedRow.side = this.side;
+    // The round-up row is a By-Weight fixture (RBAR-52): reserved there even with no
+    // offer on hand (hidden keeps it in flow -- see the .over[hidden] rule), collapsed
+    // out of the column entirely in By Plates, which has no such row.
+    this.over.classList.toggle('collapsed', this.mode !== 'decode');
     this.modeButtons.forEach((b) =>
       b.setAttribute('aria-pressed', String(b.dataset.mode === this.mode)),
     );

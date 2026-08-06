@@ -2,7 +2,10 @@
 // handoff section 4b). In By-Plates (Encode) mode it shows the current Side Load as a
 // horizontally scrolling row of per-Plate colour chips, grouped `N x face`. Tapping a
 // chip removes one of that Plate; the Clear pill empties the Side; an empty Side reads
-// "Tap to add a pair". A controlled, stateless shell (ADR-0001): the console owns the
+// "Tap to add a pair". Both states share one fixed-geometry slot (RBAR-52): the hint
+// and the chip row occupy the same reserved block height, so the Add palette below
+// never shifts when the first Plate lands.
+// A controlled, stateless shell (ADR-0001): the console owns the
 // Side Load, this renders the `side` it is fed and emits `removeplate` (the Plate to
 // drop) / `clearbar` up -- one property down, events up, the same shape as
 // <rack-recents> and <rack-palette>.
@@ -23,8 +26,7 @@ import { SECTION_LABEL } from './sectionlabel.ts';
 class RackLoaded extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private rail!: HTMLElement;
-  private viewport!: HTMLElement;
-  private headRow!: HTMLElement;
+  private onbar!: HTMLElement;
   private emptyHint!: HTMLElement;
   private nudgeL!: HTMLButtonElement;
   private nudgeR!: HTMLButtonElement;
@@ -46,14 +48,24 @@ class RackLoaded extends HTMLElement {
     this.root.innerHTML = `
       <style>
         ${BOX_SIZING}${BUTTON_FX}
-        :host { display: block; }
+        :host { display: block; --chip-h: 30px; }
         :host([hidden]) { display: none; }
-        /* The On the bar / Clear head: shown only when something is loaded. */
+        /* The stable-geometry slot (RBAR-52): the loaded row and the empty hint share
+           one grid cell, so the slot's block height is the taller (loaded) state's in
+           BOTH states and the Add palette below never moves when the first Plate
+           lands. The empty state keeps the loaded row IN FLOW and swaps it out by
+           visibility -- reserving its height -- while the hint overlays it, centered
+           in the reserved space. --chip-h (on :host above) is the one height the chip
+           and the bare rail share, so the reservation tracks the chip by definition. */
+        .slot { display: grid; }
+        .slot > * { grid-area: 1 / 1; min-width: 0; }
+        .onbar.reserving { visibility: hidden; }
+        /* The On the bar / Clear head: visible only when something is loaded (its
+           .onbar wrapper reserves it invisibly on a bare Bar). */
         .head {
           display: flex; align-items: center; justify-content: space-between;
           margin-bottom: 8px;
         }
-        .head[hidden] { display: none; }
         .label { ${SECTION_LABEL} }
         /* The Clear pill: a quiet uppercase mono control that empties the Side. Its
            hover/active goes danger-red per the handoff -- a destructive affordance, so it
@@ -72,12 +84,16 @@ class RackLoaded extends HTMLElement {
         .clear:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .clear svg { display: block; }
         /* The chip rail: a horizontal scroller with edge nudge arrows that surface only
-           when the chips overflow (measured on resize / scroll). Hidden on a bare Bar so
-           only the "Tap to add a pair" hint shows -- no empty strip above it. */
+           when the chips overflow (measured on resize / scroll). On a bare Bar the rail
+           is empty but its row height stays reserved (min-height: --chip-h, RBAR-52)
+           inside the invisible .onbar, so the hint-to-chips swap never moves the
+           palette below. */
         .viewport { position: relative; }
-        .viewport[hidden] { display: none; }
         .rail {
           display: flex; gap: 6px; overflow-x: auto;
+          /* chip height + the rail's own 2px padding twice (border-box): the empty
+             rail's height lands exactly where the loaded rail's does. */
+          min-height: calc(var(--chip-h) + 4px);
           padding: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
         }
         .rail::-webkit-scrollbar { display: none; }
@@ -88,7 +104,7 @@ class RackLoaded extends HTMLElement {
            palette). */
         .chip {
           flex: none; display: inline-flex; align-items: center; gap: 4px;
-          min-height: 30px; padding: 0 13px; cursor: pointer;
+          min-height: var(--chip-h); padding: 0 13px; cursor: pointer;
           font-family: var(--rack-font); font-size: 13px; font-weight: 700;
           color: var(--rack-bg); ${DISC_FILL}
           border: none; border-radius: 999px; white-space: nowrap;
@@ -117,41 +133,44 @@ class RackLoaded extends HTMLElement {
           background: linear-gradient(270deg, var(--rack-bg) 34%, transparent);
         }
         .nudge:focus-visible { outline: 2px solid var(--rack-accent); }
-        /* The empty hint: the only thing shown on a bare Bar. */
-        .empty { text-align: center; }
+        /* The empty hint: what shows on a bare Bar, centered in the reserved slot. */
+        .empty { align-self: center; text-align: center; }
         .empty[hidden] { display: none; }
       </style>
-      <div class="head" data-head>
-        <span class="label">On the bar</span>
-        <button type="button" class="clear" data-clear aria-label="Clear the bar">
-          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor"
-                  stroke-width="2" stroke-linecap="round"></path>
-          </svg>Clear
-        </button>
-      </div>
-      <div class="viewport" data-viewport>
-        <div class="rail" data-rail role="list" aria-label="Plates on the bar"></div>
-        <button type="button" class="nudge left" data-nudge="left" aria-label="Scroll left">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M11.5 3L7 8l4.5 5M7 3L2.5 8 7 13" stroke="currentColor"
-                  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-        </button>
-        <button type="button" class="nudge right" data-nudge="right" aria-label="Scroll right">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M4.5 3L9 8l-4.5 5M9 3l4.5 5L9 13" stroke="currentColor"
-                  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-        </button>
-      </div>
-      <div class="empty" data-empty>
-        <span class="label">Tap to add a pair</span>
+      <div class="slot" data-slot>
+        <div class="onbar" data-onbar>
+          <div class="head" data-head>
+            <span class="label">On the bar</span>
+            <button type="button" class="clear" data-clear aria-label="Clear the bar">
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round"></path>
+              </svg>Clear
+            </button>
+          </div>
+          <div class="viewport" data-viewport>
+            <div class="rail" data-rail role="list" aria-label="Plates on the bar"></div>
+            <button type="button" class="nudge left" data-nudge="left" aria-label="Scroll left">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M11.5 3L7 8l4.5 5M7 3L2.5 8 7 13" stroke="currentColor"
+                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+            <button type="button" class="nudge right" data-nudge="right" aria-label="Scroll right">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M4.5 3L9 8l-4.5 5M9 3l4.5 5L9 13" stroke="currentColor"
+                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="empty" data-empty>
+          <span class="label">Tap to add a pair</span>
+        </div>
       </div>
     `;
     this.rail = this.root.querySelector('[data-rail]')!;
-    this.viewport = this.root.querySelector('[data-viewport]')!;
-    this.headRow = this.root.querySelector('[data-head]')!;
+    this.onbar = this.root.querySelector('[data-onbar]')!;
     this.emptyHint = this.root.querySelector('[data-empty]')!;
     this.nudgeL = this.root.querySelector('[data-nudge="left"]')!;
     this.nudgeR = this.root.querySelector('[data-nudge="right"]')!;
@@ -188,8 +207,11 @@ class RackLoaded extends HTMLElement {
   private renderChips(): void {
     const groups = groupSide(this._side);
     const loaded = this._side.length > 0;
-    this.headRow.hidden = !loaded;
-    this.viewport.hidden = !loaded;
+    // RBAR-52: on a bare Bar the loaded row is RESERVED, not removed -- .reserving
+    // swaps it out by visibility, keeping its block height in flow so the Add palette
+    // below never moves when the first Plate lands (it also drops the head's Clear and
+    // the rail from the a11y tree while invisible). The hint overlays the same slot.
+    this.onbar.classList.toggle('reserving', !loaded);
     this.emptyHint.hidden = loaded;
 
     let offset = 0;
