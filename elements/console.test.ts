@@ -70,6 +70,18 @@ function over(el: HTMLElement): HTMLButtonElement {
   return el.shadowRoot!.querySelector<HTMLButtonElement>('[data-over]')!;
 }
 
+// The round-up row (RBAR-47): the fixed-height row hosting the round-up opt-in and
+// the at-capacity caption; it is the element that collapses in By Plates.
+function roundupRow(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('[data-roundup-row]')!;
+}
+
+// The at-capacity accent caption (RBAR-47): "Bar at capacity" beside/instead of the
+// round-up offer -- the pill keeps the shortfall, this names the capacity fact.
+function atcapEl(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('[data-atcap]')!;
+}
+
 function modeBtn(el: HTMLElement, mode: 'decode' | 'encode'): HTMLButtonElement {
   return el.shadowRoot!.querySelector<HTMLButtonElement>(
     `[data-mode="${mode}"]`,
@@ -1308,10 +1320,11 @@ describe('statusPill deriver (RBAR-28)', () => {
     expect(statusPill(309, 310, 'lb', false)).toEqual({ kind: 'short', label: '1 lb short' });
   });
 
-  it('reads a short Side that is physically full as "Bar at capacity" in either unit', () => {
-    // The capacity flag only overrides the SHORT case -- an over/exact Total is unaffected.
-    expect(statusPill(720, 720.3, 'kg', true)).toEqual({ kind: 'capacity', label: 'Bar at capacity' });
-    expect(statusPill(1598, 1600, 'lb', true)).toEqual({ kind: 'capacity', label: 'Bar at capacity' });
+  it('keeps the shortfall on a physically-full short Side (kind capacity, label N short)', () => {
+    // RBAR-47: capacity qualifies the kind (the caption keys off it) but never
+    // replaces the shortfall -- the magnitude of the miss stays on the pill.
+    expect(statusPill(720, 720.3, 'kg', true)).toEqual({ kind: 'capacity', label: '0.3 kg short' });
+    expect(statusPill(1598, 1600, 'lb', true)).toEqual({ kind: 'capacity', label: '2 lb short' });
     // capacity never masks an over or exact reading
     expect(statusPill(101, 100, 'kg', true).kind).toBe('over');
     expect(statusPill(100, 100, 'kg', true).kind).toBe('exact');
@@ -1416,18 +1429,37 @@ describe('<rack-console> status pill wiring (RBAR-28)', () => {
     expect(statusText(el)).toBe('1 lb over');
   });
 
-  it('reads "Bar at capacity" over the CAPPED Total, with no round-up (ADR-0012)', () => {
+  it('keeps the shortfall on the pill AND shows the at-capacity caption over the CAPPED Total (ADR-0012, RBAR-47)', () => {
     // An extreme Target: the capped core (RBAR-31) loads the widest fitting Side --
     // 7 x 25 (406 mm), Total 370 -- instead of an unrackable 720. The miss cannot be
-    // closed (no Plate fits), so the pill reads capacity; the core carries no `over`,
-    // so the round-up control is genuinely gone, not merely view-suppressed.
+    // closed (no Plate fits): the pill keeps the magnitude ("350.3 kg short") while
+    // the separate accent caption names "Bar at capacity" in the round-up row; the
+    // core carries no `over`, so the round-up control is genuinely gone, not merely
+    // view-suppressed.
     const el = mountConsole();
     type(el, '720.3');
     expect(total(el)).toBe('370 kg');
     expect(discs(el)).toHaveLength(7);
     expect(statusKind(el)).toBe('capacity');
-    expect(statusText(el)).toBe('Bar at capacity');
+    expect(statusText(el)).toBe('350.3 kg short');
+    expect(atcapEl(el).hidden).toBe(false);
+    expect(atcapEl(el).textContent).toContain('Bar at capacity');
     expect(over(el).hidden).toBe(true);
+  });
+
+  it('hides the at-capacity caption in every non-capacity state (RBAR-47)', () => {
+    const el = mountConsole();
+    expect(atcapEl(el).hidden).toBe(true); // nothing decoded
+    type(el, '100'); // exact
+    expect(atcapEl(el).hidden).toBe(true);
+    type(el, '100.5'); // short with a working round-up: caption stays away
+    expect(atcapEl(el).hidden).toBe(true);
+    type(el, '10'); // over (sub-Bar floor)
+    expect(atcapEl(el).hidden).toBe(true);
+    type(el, '720.3'); // capacity: the caption shows...
+    expect(atcapEl(el).hidden).toBe(false);
+    modeBtn(el, 'encode').click(); // ...but never in By Plates (RBAR-54 owns that)
+    expect(atcapEl(el).hidden).toBe(true);
   });
 
   it('reads "short" WITH the round-up when a reshuffled over still fits (no contradiction)', () => {
@@ -1444,12 +1476,14 @@ describe('<rack-console> status pill wiring (RBAR-28)', () => {
     expect(over(el).textContent).toContain('347');
   });
 
-  it('reads "Bar at capacity" in lb too (same label, unit-independent)', () => {
+  it('reads the capacity state in lb too (shortfall pill + caption, unit-independent caption copy)', () => {
     const el = mountConsole();
     unitBtn(el, 'lb').click();
     type(el, '1600'); // ~725.7 kg -> a sleeve-full short, displayed in pounds
     expect(statusKind(el)).toBe('capacity');
-    expect(statusText(el)).toBe('Bar at capacity');
+    expect(statusText(el)).toMatch(/^\d+ lb short$/); // the shortfall, in the display unit
+    expect(atcapEl(el).hidden).toBe(false);
+    expect(atcapEl(el).textContent).toContain('Bar at capacity');
     expect(over(el).hidden).toBe(true);
   });
 
@@ -1650,7 +1684,7 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
 
   it('keeps a hidden offer in flow: visibility swap + zero-width line-box holder', () => {
     const css = consoleCss();
-    const hiddenRule = ruleBody(css, '.over[hidden]');
+    const hiddenRule = ruleBody(css, '.roundup[hidden]');
     expect(hiddenRule).toContain('visibility: hidden');
     expect(hiddenRule).not.toContain('display: none');
     // The UA sheet's [hidden] display:none must be beaten explicitly, or the row
@@ -1658,7 +1692,14 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
     expect(hiddenRule).toContain('display: inline-block');
     // Scoped to [hidden]: generated content joins the accessible name (accname
     // step 2F), so the visible button must not carry the ZWSP.
-    expect(ruleBody(css, '.over[hidden]::before')).toContain('content: "\\200b"');
+    expect(ruleBody(css, '.roundup[hidden]::before')).toContain('content: "\\200b"');
+  });
+
+  it('pins the round-up row at 36px on top of the in-flow reservation (RBAR-47, prototype L140)', () => {
+    // The explicit row height is the belt over RBAR-52's suspenders: whether the row
+    // holds the offer, the at-capacity caption, or nothing, its height cannot move.
+    const row = ruleBody(consoleCss(), '.rounduprow {');
+    expect(row).toContain('min-height: 36px');
   });
 
   it('reserves the below-Bar note row the same way (RBAR-55 meets RBAR-52)', () => {
@@ -1674,36 +1715,92 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
     expect(css.indexOf('.barnote.collapsed')).toBeGreaterThan(css.indexOf('.barnote[hidden]'));
   });
 
-  it('collapses the round-up row only outside By Weight', () => {
-    const css = consoleCss();
-    expect(ruleBody(css, '.over.collapsed')).toContain('display: none');
-    // Order is load-bearing: .collapsed must come after .over[hidden] so its
-    // display:none wins the equal-specificity tie in By Plates.
-    expect(css.indexOf('.over.collapsed')).toBeGreaterThan(css.indexOf('.over[hidden]'));
+  it('drops the round-up row only outside By Weight', () => {
+    // Since RBAR-47 the WHOLE row goes in By Plates (it also hosts the at-capacity
+    // caption), via its own plain [hidden] -- with an explicit display:none, since
+    // the row's flex display would otherwise beat the UA sheet's [hidden] rule.
+    // The button's in-flow reservation lives inside it.
+    expect(ruleBody(consoleCss(), '.rounduprow[hidden]')).toContain('display: none');
   });
 
   it('By Weight reserves the row whether or not the offer shows', () => {
     const el = mountConsole();
-    // Nothing typed yet: no offer, but the row is reserved (hidden, not collapsed).
+    // Nothing typed yet: no offer, but the row is reserved (button hidden in flow,
+    // row present).
     expect(over(el).hidden).toBe(true);
-    expect(over(el).classList.contains('collapsed')).toBe(false);
+    expect(roundupRow(el).hidden).toBe(false);
     type(el, '100'); // exact: still no offer, row still reserved
     expect(over(el).hidden).toBe(true);
-    expect(over(el).classList.contains('collapsed')).toBe(false);
+    expect(roundupRow(el).hidden).toBe(false);
     type(el, '100.5'); // off-grid: the offer appears IN the reserved row
     expect(over(el).hidden).toBe(false);
-    expect(over(el).classList.contains('collapsed')).toBe(false);
+    expect(roundupRow(el).hidden).toBe(false);
   });
 
   it('By Plates drops the reservation entirely, and By Weight restores it', () => {
     const el = mountConsole();
     modeBtn(el, 'encode').click();
     expect(over(el).hidden).toBe(true);
-    expect(over(el).classList.contains('collapsed')).toBe(true);
+    expect(roundupRow(el).hidden).toBe(true);
     expect(barnote(el).classList.contains('collapsed')).toBe(true);
     modeBtn(el, 'decode').click();
-    expect(over(el).classList.contains('collapsed')).toBe(false);
+    expect(roundupRow(el).hidden).toBe(false);
     expect(barnote(el).classList.contains('collapsed')).toBe(false);
+  });
+});
+
+describe('<rack-console> (status row at capacity + round-up styling, RBAR-47)', () => {
+  // happy-dom computes no layout, so the geometry facts are text-locked: the pill
+  // recipe must hold in every state (the RBAR-56 collision inflated the over-state
+  // pill 20px -> 36px, shifting the steppers on every exact->over crossing), and the
+  // round-up control + at-capacity caption must carry the prototype's metrics
+  // (L140-142). The rendered pill height across all four states is the browser pass.
+  const ruleBody = (css: string, selector: string) => {
+    const start = css.indexOf(selector);
+    expect(start).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  };
+  const consoleCss = () =>
+    mountConsole().shadowRoot!.querySelector('style')!.textContent!;
+
+  it('keeps the status pill recipe in EVERY state: no bare .over selector exists (RBAR-56)', () => {
+    const css = consoleCss();
+    // The over-state pill carries class "status over"; any selector starting with a
+    // bare ".over" would match it and restyle the pill. The round-up button is
+    // .roundup-scoped precisely so this can never happen again.
+    expect(css).not.toMatch(/(?<![\w-])\.over(?![\w-])/);
+    // ...and the pill recipe itself stays the 10px / 4px 10px quiet pill.
+    const pill = ruleBody(css, '.status {');
+    expect(pill).toContain('font-size: 10px');
+    expect(pill).toContain('padding: 4px 10px');
+  });
+
+  it('styles the round-up control per the prototype (Hanken 600 12px, muted border, 8px 15px)', () => {
+    const btn = ruleBody(consoleCss(), '.roundup {');
+    expect(btn).toContain('var(--rack-font)'); // Hanken, not font: inherit
+    expect(btn).toContain('font-size: 12px');
+    expect(btn).toContain('font-weight: 600');
+    expect(btn).toContain('padding: 8px 15px');
+    expect(btn).toContain('var(--rack-border-muted)'); // #2a2f35, not --rack-line
+    expect(btn).toContain('var(--rack-accent)');
+  });
+
+  it('styles the at-capacity caption in the Sleeve-full accent vocabulary (mono 10px, accent dot, borderless)', () => {
+    const css = consoleCss();
+    const cap = ruleBody(css, '.atcap {');
+    expect(cap).toContain('var(--rack-font-num)'); // uppercase mono caption...
+    expect(cap).toContain('font-size: 10px');
+    expect(cap).toContain('text-transform: uppercase');
+    expect(cap).toContain('var(--rack-accent)'); // ...in the accent ink
+    expect(cap).not.toContain('border'); // borderless -- a caption, not a pill
+    const dot = ruleBody(css, '.atcap .dot');
+    expect(dot).toContain('var(--rack-accent)');
+  });
+
+  it('hosts the caption inside the reserved round-up row (prototype L138+142)', () => {
+    const el = mountConsole();
+    expect(roundupRow(el).contains(atcapEl(el))).toBe(true);
+    expect(roundupRow(el).contains(over(el))).toBe(true);
   });
 });
 
@@ -1792,6 +1889,16 @@ describe('screen-reader announcements (RBAR-53)', () => {
     type(el, '10');
     expect(announcer(el).textContent).toBe(
       '20 kilograms, 10 kg over. Empty bar weighs 20 kg - above your Target',
+    );
+  });
+
+  it('speaks BOTH the shortfall and the capacity fact at the cap (RBAR-47)', () => {
+    // The visible split (shortfall pill + at-capacity caption) must not cost the
+    // spoken line either fact: magnitude AND the reason it cannot close.
+    const el = mountConsole();
+    type(el, '720.3'); // capped at 370 kg, no round-up exists (ADR-0012)
+    expect(announcer(el).textContent).toBe(
+      '370 kilograms, 350.3 kg short, bar at capacity',
     );
   });
 
