@@ -2,7 +2,10 @@
 // Plate keys, one per denomination, heaviest-first (the load order CONTEXT.md fixes).
 // Tapping a key emits `addplate` with that Plate; the console applies the pure addPlate()
 // transform. The palette holds no math -- it surfaces the active Inventory's
-// denominations as taps (ADR-0001 shell).
+// denominations as taps (ADR-0001 shell). Its head row carries the handoff-4b "Add"
+// section label, with a "Sleeve full" warning surfacing beside it when NO remaining
+// Plate fits (RBAR-54) -- real text, so a full sleeve is never signalled by dimming
+// alone.
 //
 // The Inventory is set by the console from the active plate set (RBAR-17, ADR-0010):
 // the kg Eleiko set renders 5 columns of color keys; the lb iron set renders 3 columns
@@ -15,9 +18,11 @@ import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
+import { SECTION_LABEL } from './sectionlabel.ts';
 
 class RackPalette extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
+  private warn!: HTMLElement;
   private _inventory: readonly Plate[] = ELEIKO_KG;
   private _sideMm = 0;
 
@@ -66,6 +71,33 @@ class RackPalette extends HTMLElement {
       <style>
         ${BOX_SIZING}${BUTTON_FX}
         :host { display: block; }
+        /* The Add head row (handoff 4b): section label left, the conditional "Sleeve
+           full" warning right. Same 360px rail as the key grid so they stay aligned. */
+        .head {
+          display: flex; align-items: center; justify-content: space-between;
+          max-width: 360px; margin: 0 auto 8px;
+        }
+        /* The label doubles as the section's heading (RBAR-53): h2 for SR
+           navigation, margins pinned so the head row's flex geometry is unchanged. */
+        .label { ${SECTION_LABEL} margin: 0; }
+        /* The "Sleeve full" warning (RBAR-54): the status pill's uppercase-mono
+           state-dot vocabulary in the ACCENT ink, per the handoff (L210 -- #f5c518 is
+           --rb-accent there) and matching By Weight's "Bar at capacity" twin (accent
+           dot, L142). Accent = attention in this world; danger red is reserved for
+           destructive Clear. Accent also reads at ~11:1 on Platform Black where the
+           red sat near 4:1, and does not clash with the lit red discs beside it.
+           Real text beside the label, not color/opacity alone. */
+        .full {
+          display: inline-flex; align-items: center; gap: 5px;
+          font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
+          letter-spacing: .1em; text-transform: uppercase; line-height: 1;
+          color: var(--rack-accent);
+        }
+        .full[hidden] { display: none; }
+        .full .dot {
+          width: 5px; height: 5px; border-radius: 999px; flex: none;
+          background: var(--rack-accent);
+        }
         .keys {
           display: grid; grid-template-columns: repeat(${columns}, 1fr);
           gap: 7px; justify-items: stretch; max-width: 360px; margin: 0 auto;
@@ -90,8 +122,14 @@ class RackPalette extends HTMLElement {
            play, not tappable (handoff 4b: 30%, not-allowed). */
         .key:disabled { opacity: .3; cursor: not-allowed; }
       </style>
+      <div class="head">
+        <h2 class="label">Add</h2>
+        <span class="full" data-sleeve-full hidden
+          ><span class="dot" aria-hidden="true"></span>Sleeve full</span>
+      </div>
       <div class="keys">${keys}</div>
     `;
+    this.warn = this.root.querySelector('[data-sleeve-full]')!;
     this.root.querySelectorAll<HTMLButtonElement>('.key').forEach((key, i) => {
       const plate = this._inventory[i];
       key.addEventListener('click', () => this.emit(plate));
@@ -101,10 +139,18 @@ class RackPalette extends HTMLElement {
 
   // Disable the keys whose Plate would overrun the sleeve (ADR-0012). Same key order
   // as the Inventory (the render just mapped it), mirroring the click wiring above.
+  // The "Sleeve full" warning (RBAR-54) derives from these SAME per-key fit checks:
+  // it shows exactly when every key is out of play, so the warning and the dimming
+  // cannot disagree. An empty Inventory has no Plate to add at all, which is not a
+  // sleeve-room problem (the guard lib/plates' atSleeveCapacity also keeps).
   private syncFit(): void {
+    let anyFits = false;
     this.root.querySelectorAll<HTMLButtonElement>('.key').forEach((key, i) => {
-      key.disabled = !plateFitsMm(this._sideMm, this._inventory[i]);
+      const fits = plateFitsMm(this._sideMm, this._inventory[i]);
+      key.disabled = !fits;
+      anyFits ||= fits;
     });
+    this.warn.hidden = anyFits || this._inventory.length === 0;
   }
 
   private emit(plate: Plate): void {

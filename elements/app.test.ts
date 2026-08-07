@@ -292,3 +292,26 @@ describe('<rack-app> plate-set wiring (RBAR-17, ADR-0010)', () => {
     expect(consoleEl(root).barKg).toBe(lbToKg(45)); // 15 kg is off-menu for Training
   });
 });
+
+// RBAR-53: the heading skeleton. The wordmark is the page's single h1; every labeled
+// section below it is an h2/h3 (see sectionlabel.test.ts), so heading navigation walks
+// the whole app from one root. Shadow roots expose their headings to the accessibility
+// tree, so the h1 living in <rack-app>'s shadow DOM works.
+describe('heading structure (RBAR-53)', () => {
+  // Count h1s across the composed tree: this shadow root and every nested one.
+  function countH1(node: ParentNode): number {
+    let n = node.querySelectorAll('h1').length;
+    node.querySelectorAll('*').forEach((el) => {
+      if (el.shadowRoot) n += countH1(el.shadowRoot);
+    });
+    return n;
+  }
+
+  it('the wordmark is the single h1 in the composed tree', () => {
+    const { root } = mountApp();
+    const h1s = root.querySelectorAll('h1');
+    expect(h1s.length).toBe(1);
+    expect(h1s[0].textContent).toBe('rack.bar');
+    expect(countH1(root)).toBe(1); // no nested shadow root adds another
+  });
+});

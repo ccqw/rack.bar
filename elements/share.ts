@@ -127,7 +127,9 @@ class RackShare extends HTMLElement {
           letter-spacing: -.02em; color: var(--rack-text);
         }
         .wordmark .dot { color: var(--rack-accent); }
-        .label { ${SECTION_LABEL} }
+        /* An h2 since RBAR-53 (heading navigation); flex item, so display was already
+           blockified -- margin pinned over the UA heading default. */
+        .label { ${SECTION_LABEL} margin: 0; }
         .totals { text-align: center; margin: 18px 0 4px; }
         /* The card total (RBAR-39, prototype L291): Hanken 800 52px -.03em with
            explicit tabular figures -- the display-number treatment, not mono. */
@@ -189,10 +191,10 @@ class RackShare extends HTMLElement {
         .close:hover { color: var(--rack-text); }
       </style>
       <div class="scrim" data-scrim>
-        <div class="card" data-card role="dialog" aria-modal="true" aria-label="Loading card">
+        <div class="card" data-card role="dialog" aria-modal="true" aria-labelledby="share-heading">
           <div class="head" data-head>
             <span class="wordmark">rack<span class="dot">.</span>bar</span>
-            <span class="label">Loading card</span>
+            <h2 class="label" id="share-heading">Loading card</h2>
           </div>
           <div class="totals">
             <span class="total" data-total><span data-total-num></span><span

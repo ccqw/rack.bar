@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import './console.ts';
-import { statusPill, onBarLine } from './console.ts';
+import { statusPill, onBarLine, belowBarNote, announceLine } from './console.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
 import { lbToKg } from '../lib/units.ts';
 
@@ -58,6 +58,12 @@ function statusKind(el: HTMLElement): string {
 }
 function statusText(el: HTMLElement): string {
   return statusEl(el).querySelector('[data-status-label]')!.textContent ?? '';
+}
+
+// The below-Bar explanation line (RBAR-55): shown when the Target sits under the
+// empty bar's own weight, so the OVER pill is never the only explanation.
+function barnote(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('[data-barnote]')!;
 }
 
 function over(el: HTMLElement): HTMLButtonElement {
@@ -234,6 +240,45 @@ describe('<rack-console> (Decode: at-or-under + status pill)', () => {
     expect(statusText(el)).toBe('10 kg over');
     // A sub-Bar Target already sits above the Target -- no round-up to offer.
     expect(over(el).hidden).toBe(true);
+  });
+
+  it('explains a below-Bar Target by naming the empty bar\'s weight in kg (RBAR-55)', () => {
+    // The pill's "10 kg over" is correct but alone reads as "is it broken?" -- the
+    // note states the plain fact: the empty bar already outweighs the Target.
+    const el = mountConsole();
+    type(el, '10');
+    expect(barnote(el).hidden).toBe(false);
+    expect(barnote(el).textContent).toBe('Empty bar weighs 20 kg - above your Target');
+  });
+
+  it('explains a below-Bar Target in the display Unit when it is lb (RBAR-55)', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    type(el, '10'); // 10 lb -- under the 20 kg (44 lb) Bar
+    expect(barnote(el).hidden).toBe(false);
+    expect(barnote(el).textContent).toBe('Empty bar weighs 44 lb - above your Target');
+  });
+
+  it('folds fitted Collars into the empty-bar weight the note names (RBAR-55)', () => {
+    // The bare render's Total IS bar + 2 x collar (ADR-0008): 20 + 2 x 2.5 = 25. The
+    // note must name the same number the readout shows, or it would contradict the screen.
+    const el = mountConsole();
+    el.collarKg = 2.5;
+    type(el, '10');
+    expect(barnote(el).textContent).toBe('Empty bar weighs 25 kg - above your Target');
+  });
+
+  it('hides the below-Bar note for an achievable Target, an empty Target, and Encode (RBAR-55)', () => {
+    const el = mountConsole();
+    type(el, '100'); // at-or-above the Bar: no note
+    expect(barnote(el).hidden).toBe(true);
+    type(el, '10'); // below the Bar: the note shows...
+    expect(barnote(el).hidden).toBe(false);
+    modeBtn(el, 'encode').click(); // ...but never in Encode (no Target there)
+    expect(barnote(el).hidden).toBe(true);
+    modeBtn(el, 'decode').click();
+    type(el, ''); // no Target -> no note
+    expect(barnote(el).hidden).toBe(true);
   });
 
   describe('over-target opt-in (ADR-0003, RBAR-11)', () => {
@@ -1241,6 +1286,30 @@ describe('onBarLine deriver (RBAR-22 keypad sheet)', () => {
   });
 });
 
+describe('belowBarNote deriver (RBAR-55)', () => {
+  // The below-Bar explanation: names the empty rig's weight in the display Unit when
+  // the Target sits under it. Args are canonical kg; `baselineKg` is Bar + Collars.
+  it('names the empty-bar weight in the display Unit below the Bar', () => {
+    expect(belowBarNote(lbToKg(10), 20, 'kg')).toBe(
+      'Empty bar weighs 20 kg - above your Target',
+    );
+    expect(belowBarNote(lbToKg(10), 20, 'lb')).toBe(
+      'Empty bar weighs 44 lb - above your Target',
+    );
+  });
+
+  it('is null at or above the Bar weight', () => {
+    expect(belowBarNote(20, 20, 'kg')).toBeNull();
+    expect(belowBarNote(100, 20, 'kg')).toBeNull();
+  });
+
+  it('keys off the DISPLAYED numbers so it never contradicts an Exact pill (ADR-0010)', () => {
+    // A 44 lb Target on the 20 kg Bar is 0.04 kg under in raw kg, but DISPLAYS equal
+    // (44 lb vs 44 lb) -- the pill reads Exact there, so the note must stay silent.
+    expect(belowBarNote(lbToKg(44), 20, 'lb')).toBeNull();
+  });
+});
+
 describe('<rack-console> feeds the keypad sheet its load line (RBAR-22)', () => {
   function loadLineEl(el: HTMLElement): HTMLElement {
     return entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live-load]')!;
@@ -1369,6 +1438,23 @@ describe('<rack-console> Encode respects the sleeve cap (RBAR-31, ADR-0012)', ()
     tapDisc(el, 0); // remove a 25: 340 mm used, wide keys fit again
     expect(fits(25)).toBe(true);
   });
+
+  // The "Sleeve full" warning beside the palette's Add label (RBAR-54): the By-Plates
+  // counterpart of By Weight's "Bar at capacity" pill. Console-level wiring check --
+  // the appear/clear/partial states themselves are locked in palette.test.ts.
+  it('surfaces "Sleeve full" beside Add when the last-fitting Plate goes on, clearing on removal (RBAR-54)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    const warn = () =>
+      palette(el).shadowRoot!.querySelector<HTMLElement>('[data-sleeve-full]')!;
+    for (let i = 0; i < 6; i++) tapAdd(el, 25); // 348 mm -- a 25 still fits
+    expect(warn().hidden).toBe(true);
+    tapAdd(el, 25); // 406 mm of 415: 9 mm of room, nothing fits
+    expect(warn().hidden).toBe(false);
+    expect(warn().textContent).toContain('Sleeve full');
+    tapDisc(el, 0); // a 25 comes off: room again
+    expect(warn().hidden).toBe(true);
+  });
 });
 
 describe('<rack-console> (big Total typography + numRoll, RBAR-30)', () => {
@@ -1484,5 +1570,239 @@ describe('<rack-console> (segmented-control fidelity, RBAR-43)', () => {
     // The accent-active belongs to the mode toggle alone. (The :focus-visible accent
     // ring is the app-wide keyboard idiom and lives in its own rule -- out of scope.)
     expect(active).not.toContain('--rack-accent');
+  });
+});
+
+describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
+  // happy-dom computes no layout, so these text-lock the reserving MECHANISM: in By
+  // Weight a hidden round-up offer keeps its row in flow (visibility, not display),
+  // with a zero-width-space ::before holding the line box while the text is cleared,
+  // so the Target row + steppers below never move when the offer appears/disappears.
+  // By Plates has no round-up row at all, so there the control collapses fully.
+  // Pixel-identical stepper positions across the toggle are the browser pass.
+  const ruleBody = (css: string, selector: string) => {
+    const start = css.indexOf(selector);
+    expect(start).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  };
+  const consoleCss = () =>
+    mountConsole().shadowRoot!.querySelector('style')!.textContent!;
+
+  it('keeps a hidden offer in flow: visibility swap + zero-width line-box holder', () => {
+    const css = consoleCss();
+    const hiddenRule = ruleBody(css, '.over[hidden]');
+    expect(hiddenRule).toContain('visibility: hidden');
+    expect(hiddenRule).not.toContain('display: none');
+    // The UA sheet's [hidden] display:none must be beaten explicitly, or the row
+    // still collapses out of flow.
+    expect(hiddenRule).toContain('display: inline-block');
+    // Scoped to [hidden]: generated content joins the accessible name (accname
+    // step 2F), so the visible button must not carry the ZWSP.
+    expect(ruleBody(css, '.over[hidden]::before')).toContain('content: "\\200b"');
+  });
+
+  it('reserves the below-Bar note row the same way (RBAR-55 meets RBAR-52)', () => {
+    // The note toggles on stepper taps -- the one place a moving target hurts most --
+    // so its row uses the same reservation mechanism as the round-up offer.
+    const css = consoleCss();
+    const hiddenRule = ruleBody(css, '.barnote[hidden]');
+    expect(hiddenRule).toContain('visibility: hidden');
+    expect(hiddenRule).toContain('display: block');
+    expect(hiddenRule).not.toContain('display: none');
+    expect(ruleBody(css, '.barnote[hidden]::before')).toContain('content: "\\200b"');
+    expect(ruleBody(css, '.barnote.collapsed')).toContain('display: none');
+    expect(css.indexOf('.barnote.collapsed')).toBeGreaterThan(css.indexOf('.barnote[hidden]'));
+  });
+
+  it('collapses the round-up row only outside By Weight', () => {
+    const css = consoleCss();
+    expect(ruleBody(css, '.over.collapsed')).toContain('display: none');
+    // Order is load-bearing: .collapsed must come after .over[hidden] so its
+    // display:none wins the equal-specificity tie in By Plates.
+    expect(css.indexOf('.over.collapsed')).toBeGreaterThan(css.indexOf('.over[hidden]'));
+  });
+
+  it('By Weight reserves the row whether or not the offer shows', () => {
+    const el = mountConsole();
+    // Nothing typed yet: no offer, but the row is reserved (hidden, not collapsed).
+    expect(over(el).hidden).toBe(true);
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+    type(el, '100'); // exact: still no offer, row still reserved
+    expect(over(el).hidden).toBe(true);
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+    type(el, '100.5'); // off-grid: the offer appears IN the reserved row
+    expect(over(el).hidden).toBe(false);
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+  });
+
+  it('By Plates drops the reservation entirely, and By Weight restores it', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    expect(over(el).hidden).toBe(true);
+    expect(over(el).classList.contains('collapsed')).toBe(true);
+    expect(barnote(el).classList.contains('collapsed')).toBe(true);
+    modeBtn(el, 'decode').click();
+    expect(over(el).classList.contains('collapsed')).toBe(false);
+    expect(barnote(el).classList.contains('collapsed')).toBe(false);
+  });
+});
+
+// RBAR-53: the screen-reader announcement layer. The console carries a visually-hidden
+// polite live region (role="status") that speaks the decode outcome -- the Total in the
+// display Unit plus the status pill's copy -- settling to ONE final value per user
+// action. While the keypad sheet is open, the sheet's own "On the bar" load line is the
+// active source and the console region goes quiet (exactly one source at a time).
+describe('screen-reader announcements (RBAR-53)', () => {
+  beforeEach(() => localStorage.clear());
+
+  function announcer(el: HTMLElement): HTMLElement {
+    return el.shadowRoot!.querySelector<HTMLElement>('[data-announce]')!;
+  }
+  function openKeypad(el: HTMLElement): void {
+    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!.click();
+  }
+  function done(el: HTMLElement): void {
+    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-done]')!.click();
+  }
+  function paletteKey(el: HTMLElement, kg: number): void {
+    palette(el)
+      .shadowRoot!.querySelector<HTMLButtonElement>(`.key[data-kg="${kg}"]`)!
+      .click();
+  }
+  function loadedChip(el: HTMLElement): void {
+    el.shadowRoot!.querySelector('rack-loaded')!
+      .shadowRoot!.querySelector<HTMLButtonElement>('.chip')!
+      .click();
+  }
+  function stepperInc(el: HTMLElement): void {
+    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-step="inc"]')!.click();
+  }
+
+  it('is a polite status region, hidden by the clip recipe (never display:none)', () => {
+    const el = mountConsole();
+    const a = announcer(el);
+    expect(a.getAttribute('role')).toBe('status');
+    expect(a.hasAttribute('hidden')).toBe(false);
+    const css = el.shadowRoot!.querySelector('style')!.textContent!;
+    const start = css.indexOf('.sr {');
+    expect(start).toBeGreaterThan(-1);
+    const rule = css.slice(start, css.indexOf('}', start));
+    expect(rule).toContain('position: absolute');
+    expect(rule).toContain('clip-path');
+    expect(rule).not.toContain('display: none');
+  });
+
+  it('announces the Total and status in the display Unit when a Target lands', () => {
+    const el = mountConsole();
+    type(el, '142');
+    expect(announcer(el).textContent).toBe('142 kilograms, Exact');
+    type(el, '21.3');
+    expect(announcer(el).textContent).toBe('21 kilograms, 0.3 kg short');
+  });
+
+  it('announces a stepper nudge', () => {
+    const el = mountConsole();
+    stepperInc(el); // bare 20 kg Bar -> 21 kg Target
+    expect(announcer(el).textContent).toBe('21 kilograms, Exact');
+  });
+
+  it('announces the round-up toggle outcome', () => {
+    const el = mountConsole();
+    type(el, '21.3');
+    over(el).click(); // Round up -> 22
+    expect(announcer(el).textContent).toBe('22 kilograms, 0.7 kg over');
+    over(el).click(); // back to the at-or-under primary
+    expect(announcer(el).textContent).toBe('21 kilograms, 0.3 kg short');
+  });
+
+  it('announces plate add and remove in By Plates (Total only -- no status there)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    expect(announcer(el).textContent).toBe('20 kilograms');
+    paletteKey(el, 25);
+    expect(announcer(el).textContent).toBe('70 kilograms');
+    loadedChip(el); // remove the 25 pair
+    expect(announcer(el).textContent).toBe('20 kilograms');
+  });
+
+  it('speaks the below-Bar explanation with the outcome, not sighted-only (RBAR-55)', () => {
+    // The copy-truth fix must reach screen readers too: the pill's "10 kg over"
+    // alone is exactly the "reads as a malfunction" experience RBAR-55 removes.
+    const el = mountConsole();
+    type(el, '10');
+    expect(announcer(el).textContent).toBe(
+      '20 kilograms, 10 kg over. Empty bar weighs 20 kg - above your Target',
+    );
+  });
+
+  it('speaks Sleeve full when the last-fitting Plate lands (RBAR-54 parity)', () => {
+    // By Weight's capacity state rides the pill copy into the announcement; By
+    // Plates must speak the same fact, or hitting capacity is silent for AT users.
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    for (let i = 0; i < 7; i++) paletteKey(el, 25); // 406 mm of 415: nothing fits
+    expect(announcer(el).textContent).toBe('370 kilograms, Sleeve full');
+    loadedChip(el); // a 25 pair comes off: room again
+    expect(announcer(el).textContent).toBe('320 kilograms');
+  });
+
+  it('announces in pounds when the display Unit is lb', () => {
+    const el = mountConsole();
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    expect(announcer(el).textContent).toBe('44 pounds');
+  });
+
+  it('goes quiet while the keypad sheet is open -- the sheet load line is the source', () => {
+    const el = mountConsole();
+    openKeypad(el);
+    type(el, '142.5');
+    // The console region did not move; the sheet's load line (a status region itself)
+    // carries the live outcome instead. (142.5 needs a 0.25 Plate no Eleiko set has,
+    // so the loadable Total is 142 -- the line speaks the honest achieved load.)
+    expect(announcer(el).textContent).toBe('20 kilograms');
+    const line = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live-load]')!;
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.textContent).toBe('On the bar: 142 kg (0.5 under)');
+    // Closing hands the announcement back to the console, settled on the final value.
+    done(el);
+    expect(announcer(el).textContent).toBe('142 kilograms, 0.5 kg short');
+  });
+
+  it('settles to one announcement per action, even when an action renders twice', () => {
+    const el = mountConsole();
+    // Two committed Targets so a Recent chip re-apply really changes the announcement.
+    openKeypad(el);
+    type(el, '100');
+    done(el);
+    openKeypad(el);
+    type(el, '142');
+    done(el);
+    const a = announcer(el);
+    const mo = new MutationObserver(() => {});
+    mo.observe(a, { childList: true, characterData: true, subtree: true });
+    // A chip re-apply decodes AND re-remembers (two render passes) -- still one update.
+    el.shadowRoot!.querySelector('rack-recents')!
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-target="100"]')!
+      .click();
+    const records = mo.takeRecords();
+    mo.disconnect();
+    expect(a.textContent).toBe('100 kilograms, Exact');
+    // One text node landed, once (happy-dom reports a textContent set as a remove
+    // record plus an add record, so count the ADDED text, not raw records).
+    const added = records.flatMap((r) => [...r.addedNodes].map((n) => n.textContent));
+    expect(added).toEqual(['100 kilograms, Exact']);
+  });
+});
+
+// The announcement line (RBAR-53): the Total in the display Unit spelled out for speech
+// ("kilograms"/"pounds"), with the status pill's copy appended when Decode has one.
+describe('announceLine', () => {
+  it('spells the Unit out and appends the status copy', () => {
+    expect(announceLine(142.5, 'kg', 'Exact')).toBe('142.5 kilograms, Exact');
+    expect(announceLine(21, 'kg', '0.3 kg short')).toBe('21 kilograms, 0.3 kg short');
+  });
+
+  it('is Total-only without a status (Encode / nothing decoded)', () => {
+    expect(announceLine(315, 'lb')).toBe('315 pounds');
   });
 });

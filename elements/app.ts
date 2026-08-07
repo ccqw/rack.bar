@@ -74,9 +74,12 @@ class RackApp extends HTMLElement {
         }
         /* Left cluster: the wordmark next to the how-it-works help icon. */
         .brand { display: inline-flex; align-items: center; gap: 9px; }
+        /* The single h1 (RBAR-53): the page title heading navigation starts from. As a
+           flex item its display was already blockified; margin pinned so the UA heading
+           margin cannot move the header row. */
         .wordmark {
           font-family: var(--rack-font); font-weight: 800; font-size: 18px;
-          letter-spacing: -.01em; color: var(--rack-fg);
+          letter-spacing: -.01em; color: var(--rack-fg); margin: 0;
         }
         .wordmark .dot { color: var(--rack-accent); }
         /* The Setup pill: the rig's current Bar, tappable to open the sheet. */
@@ -105,10 +108,12 @@ class RackApp extends HTMLElement {
         }
       </style>
       <header>
-        <span class="brand">
-          <span class="wordmark">rack<span class="dot">.</span>bar</span>
+        <!-- A div, not a span: the h1 is flow content and a span may hold only
+             phrasing content. .brand is inline-flex either way. -->
+        <div class="brand">
+          <h1 class="wordmark">rack<span class="dot">.</span>bar</h1>
           <rack-help></rack-help>
-        </span>
+        </div>
         <button type="button" class="pill" data-setup-pill
                 aria-haspopup="dialog" aria-expanded="false">
           <svg class="sliders" data-pill-icon width="13" height="13" viewBox="0 0 16 16"

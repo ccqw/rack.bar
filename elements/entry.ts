@@ -219,9 +219,11 @@ class RackEntry extends HTMLElement {
           border-top: 1px solid var(--rack-divider); padding-top: 15px;
         }
         /* The Target section label (RBAR-40): the shared recipe, left-aligned like the
-           prototype (L147) -- no longer a centered 13px caption. */
+           prototype (L147) -- no longer a centered 13px caption. An h2 since RBAR-53
+           (heading navigation), so the UA heading margins/font must be overridden --
+           the recipe already pins the font, margin is pinned here. */
         .caption {
-          display: block; ${SECTION_LABEL} margin-bottom: 9px;
+          display: block; ${SECTION_LABEL} margin: 0 0 9px;
         }
         /* The value row: [-] prominent value [+]. The steppers are big round touch
            targets; the value itself is a button that opens the keypad. */
@@ -332,9 +334,10 @@ class RackEntry extends HTMLElement {
           outline: 2px solid var(--rack-accent); outline-offset: 2px;
         }
       </style>
-      <!-- A decorative caption; the value button carries its own live aria-label.
-           Static "Target" -- the unit rides the value's suffix span (RBAR-39). -->
-      <div class="caption" data-caption>Target</div>
+      <!-- The Target section heading (RBAR-53): an h2 under the app's h1, styled by the
+           section-label recipe. Static "Target" -- the unit rides the value's suffix
+           span (RBAR-39); the value button still carries its own live aria-label. -->
+      <h2 class="caption" data-caption>Target</h2>
       <div class="row">
         <button type="button" class="step" data-step="dec" aria-label="Decrease">-</button>
         <button type="button" class="value" data-value
@@ -350,7 +353,11 @@ class RackEntry extends HTMLElement {
         </div>
         <div class="sub">
           <span data-live-sec></span>
-          <span class="load" data-live-load hidden></span>
+          <!-- A polite live region while the sheet shows (RBAR-53): the sheet covers the
+               console's Total, so this line is THE announcement source while typing. The
+               sheet's display:none removes it from the a11y tree on close, handing the
+               single active source back to the console's status region. -->
+          <span class="load" data-live-load role="status" hidden></span>
         </div>
         <div class="keypad" data-keypad role="group" aria-label="Enter Target">
           ${keys}
@@ -393,7 +400,8 @@ class RackEntry extends HTMLElement {
   }
 
   // Show the keypad sheet. Reflect the open state on the value button so assistive tech
-  // announces the expanded pad.
+  // announces the expanded pad, and tell the console (RBAR-53): while the sheet is open
+  // its load line is the single live announcement source, so the console mutes its own.
   private openKeypad(): void {
     this.sheet.hidden = false;
     this.valueEl.setAttribute('aria-expanded', 'true');
@@ -401,6 +409,7 @@ class RackEntry extends HTMLElement {
     // the pad on an existing Target and typing starts fresh (does NOT touch `pristine`, so
     // a real value peeked and closed still commits).
     this.replaceNext = true;
+    this.dispatchEvent(new CustomEvent('keypadopen', { bubbles: true, composed: true }));
   }
 
   // Hide the keypad sheet and commit the Target: the console pushes it onto the Recent
@@ -415,10 +424,12 @@ class RackEntry extends HTMLElement {
   }
 
   // The sheet's "on the bar" load line: the console's decoded status, or hidden when there
-  // is nothing decoded (an untouched default / empty field).
+  // is nothing decoded (an untouched default / empty field). The line is a live region
+  // (RBAR-53), so only a REAL text change touches the DOM -- re-pushing the same line
+  // (an idempotent console re-render) must not re-announce it.
   private renderLoadLine(): void {
     const text = this._loadLine ?? '';
-    this.liveLoadEl.textContent = text;
+    if (this.liveLoadEl.textContent !== text) this.liveLoadEl.textContent = text;
     this.liveLoadEl.hidden = text === '';
   }
 

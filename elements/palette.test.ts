@@ -83,6 +83,76 @@ describe('<rack-palette> (the Encode add-affordance)', () => {
     });
   });
 
+  describe('the Add head row + "Sleeve full" warning (RBAR-54, handoff 4b)', () => {
+    function warning(el: HTMLElement): HTMLElement {
+      return el.shadowRoot!.querySelector<HTMLElement>('[data-sleeve-full]')!;
+    }
+
+    it('labels the palette section "Add" (the handoff 4b section label)', () => {
+      const el = mountPalette();
+      expect(
+        el.shadowRoot!.querySelector('.head .label')!.textContent,
+      ).toBe('Add');
+    });
+
+    it('starts hidden on an empty sleeve (everything fits)', () => {
+      const el = mountPalette();
+      expect(warning(el).hidden).toBe(true);
+    });
+
+    it('surfaces real "Sleeve full" text when NO Plate fits', () => {
+      const el = mountPalette();
+      el.sideMm = 401; // 14 mm of room: even the 15 mm 2.5 cannot land
+      expect(keys(el).every((k) => k.disabled)).toBe(true);
+      expect(warning(el).hidden).toBe(false);
+      expect(warning(el).textContent).toContain('Sleeve full');
+    });
+
+    it('warns in the accent ink, per the handoff and the capacity-pill twin', () => {
+      // Handoff L210 sets the warning in #f5c518 == --rb-accent (its L40 map), the
+      // same treatment as By Weight's "Bar at capacity" dot (L142). Accent means
+      // attention here; danger red belongs to destructive Clear -- and red text
+      // reads ~4:1 on Platform Black beside lit red discs, which is what got this
+      // flagged by eye in the first place.
+      const el = mountPalette();
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const start = css.indexOf('.full {');
+      const rule = css.slice(start, css.indexOf('}', start));
+      expect(start).toBeGreaterThan(-1);
+      expect(rule).toContain('var(--rack-accent)');
+      expect(css).not.toContain('var(--rack-danger)');
+    });
+
+    it('clears as soon as a removal frees room', () => {
+      const el = mountPalette();
+      el.sideMm = 401;
+      el.sideMm = 343; // a 25 comes off
+      expect(warning(el).hidden).toBe(true);
+    });
+
+    it('stays hidden in a partial-fit state (dimming alone covers that)', () => {
+      const el = mountPalette();
+      el.sideMm = 398; // 17 mm of room: only the 2.5 and 0.5 still fit
+      expect(keys(el).some((k) => k.disabled)).toBe(true);
+      expect(keys(el).some((k) => !k.disabled)).toBe(true);
+      expect(warning(el).hidden).toBe(true);
+    });
+
+    it('keeps the warning across an inventory re-render', () => {
+      const el = mountPalette();
+      el.sideMm = 401; // 14 mm of room: no iron Plate (min 17 mm) fits either
+      el.inventory = IRON_LB;
+      expect(warning(el).hidden).toBe(false);
+    });
+
+    it('never warns on an empty Inventory (no Plate to add is not a room problem)', () => {
+      const el = mountPalette();
+      el.inventory = [];
+      el.sideMm = 401;
+      expect(warning(el).hidden).toBe(true);
+    });
+  });
+
   describe('the iron training Inventory (RBAR-17, ADR-0010)', () => {
     it('renders the iron denominations by their lb label when given the iron set', () => {
       const el = mountPalette();

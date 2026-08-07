@@ -199,7 +199,9 @@ class RackSetup extends HTMLElement {
           display: flex; align-items: center; justify-content: space-between;
           margin-bottom: 16px;
         }
-        .head .title { font-size: 17px; font-weight: 700; color: var(--rack-fg); }
+        /* An h2 since RBAR-53 (heading navigation); as a flex item its display was
+           already blockified, margin pinned over the UA heading default. */
+        .head .title { font-size: 17px; font-weight: 700; color: var(--rack-fg); margin: 0; }
         .done {
           font: inherit; font-size: 14px; font-weight: 700;
           color: var(--rack-bg); background: var(--rack-accent);
@@ -207,8 +209,10 @@ class RackSetup extends HTMLElement {
           min-height: 36px; cursor: pointer;
         }
         .done:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* h3s under the sheet's h2 title since RBAR-53; margin pinned over the UA
+           heading default. */
         .section-label {
-          display: block; ${SECTION_LABEL} margin-bottom: 8px;
+          display: block; ${SECTION_LABEL} margin: 0 0 8px;
         }
         /* Each selector row; the trailing margin separates a section from the next
            section-label (the last section -- the plate rows -- sits flush on the
@@ -272,16 +276,16 @@ class RackSetup extends HTMLElement {
         .row[aria-pressed="true"] .check { opacity: 1; }
       </style>
       <div class="scrim" data-scrim>
-        <div class="panel" data-panel role="dialog" aria-modal="true" aria-label="Setup">
+        <div class="panel" data-panel role="dialog" aria-modal="true" aria-labelledby="setup-heading">
           <div class="head">
-            <span class="title">Setup</span>
+            <h2 class="title" id="setup-heading">Setup</h2>
             <button type="button" class="done" data-done>Done</button>
           </div>
-          <span class="section-label">Bar</span>
+          <h3 class="section-label">Bar</h3>
           <div class="tiles" data-bar-tiles></div>
-          <span class="section-label">Collars</span>
+          <h3 class="section-label">Collars</h3>
           <div class="tiles">${collarTiles}</div>
-          <span class="section-label">Plates</span>
+          <h3 class="section-label">Plates</h3>
           <div class="rows" data-plateset-tiles></div>
         </div>
       </div>

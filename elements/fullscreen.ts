@@ -129,12 +129,14 @@ class RackFullscreen extends HTMLElement {
         /* The unit rides the huge Total as a small dim suffix (RBAR-39, prototype
            L321: 22px/600 text-dim). Only the value span rolls. */
         .total .tu { font-size: 22px; font-weight: 600; color: var(--rack-text-dim); }
-        /* The secondary line: the same Total in the OTHER Unit + a per-side note. */
+        /* The secondary line: the same Total, plain, in the OTHER Unit (RBAR-55: it is
+           a whole-bar number, so no "per side" may ride it). */
         .secondary {
           margin-top: 8px; font-family: var(--rack-font); font-weight: 500;
           font-size: 14px; color: var(--rack-muted);
         }
-        /* The config line: the plate-set name + the Bar (+ Collars when fitted). */
+        /* The config line: the plate-set name + the Bar (+ Collars when fitted) + the
+           per-side note -- the caption the share card shows (RBAR-55). */
         .caption {
           margin-top: 16px; font-family: var(--rack-font-num); font-size: 11px;
           font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
@@ -199,10 +201,11 @@ class RackFullscreen extends HTMLElement {
 
   // Render every surface from the current load (handoff section 8). The Total derives
   // from the rig + Side Load (loadTotalKg) and reads in the load's display Unit, rolling
-  // up on change (numRoll). The secondary line shows the same Total in the OTHER Unit + a
-  // per-side note. The config line is the shared configText (dual-unit Bar + set name,
-  // RBAR-44) -- the exact caption the share card shows, so the wording can't drift.
-  // The sleeve draws the Side Load inert (a disc tap exits, it never edits).
+  // up on change (numRoll). The secondary line shows the same Total, plain, in the OTHER
+  // Unit -- it is a whole-bar number, so no "per side" may qualify it (RBAR-55). The
+  // config line is the shared configText (dual-unit Bar + set name, RBAR-44) plus the
+  // "per side" note -- the exact caption the share card shows, so the wording can't
+  // drift. The sleeve draws the Side Load inert (a disc tap exits, it never edits).
   private render(): void {
     const { side, barKg, collarKg, unit } = this._load;
     const set = plateSetFor(this._plateSet);
@@ -211,8 +214,8 @@ class RackFullscreen extends HTMLElement {
     // Value + small dim unit suffix (RBAR-39): only the value rolls (numRoll).
     rollText(this.totalNumEl, String(shownIn(total, unit)));
     this.totalUnitEl.textContent = ` ${unit}`;
-    this.secondaryEl.textContent = `${format(total, other)} - per side`;
-    this.captionEl.textContent = configText(barKg, collarKg, set.label);
+    this.secondaryEl.textContent = format(total, other);
+    this.captionEl.textContent = `${configText(barKg, collarKg, set.label)} - per side`;
     this.sleeve.interactive = false;
     this.sleeve.sideLoad = side;
   }

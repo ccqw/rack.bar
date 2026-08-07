@@ -48,8 +48,9 @@ class RackRecents extends HTMLElement {
         ${BOX_SIZING}${BUTTON_FX}
         :host { display: block; }
         :host([hidden]) { display: none; }
+        /* An h2 since RBAR-53 (heading navigation); margin pinned over the UA default. */
         .label {
-          display: block; text-align: center; ${SECTION_LABEL} margin-bottom: 8px;
+          display: block; text-align: center; ${SECTION_LABEL} margin: 0 0 8px;
         }
         /* The scroll viewport. The edge gradients are nudge cues that more chips sit
            past the fade -- a thin overflow affordance (RBAR-20); they tint the bg so
@@ -84,7 +85,7 @@ class RackRecents extends HTMLElement {
         .chip:active { background: var(--rack-line); }
         .chip:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
       </style>
-      <span class="label">Recent</span>
+      <h2 class="label">Recent</h2>
       <div class="viewport">
         <div class="rail" data-rail role="list" aria-label="Recent Targets"></div>
       </div>
