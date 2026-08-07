@@ -49,7 +49,11 @@ type Entry = HTMLElement & {
   unit: Unit;
   loadLine: string | null;
 };
-type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
+type Recents = HTMLElement & {
+  targets: readonly number[];
+  unit: Unit;
+  target: number | null;
+};
 type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
 type Share = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
@@ -762,6 +766,14 @@ class RackConsole extends HTMLElement {
           : 'Enter a weight';
     this.entry.unit = unit;
     this.recentsRow.unit = unit;
+    // The Recent rail highlights the chip matching the live Target (RBAR-37): fed in
+    // canonical kg, so a chip applied in lb still matches its own echo. Fed HERE, before
+    // the mode-visibility writes below -- the rail re-renders on this setter and
+    // recomputes its own emptiness-hidden, which would otherwise undo the Encode hide.
+    this.recentsRow.target =
+      this.mode === 'decode' && this.decoded
+        ? this.decoded.primary.total - this.decoded.primary.delta
+        : null;
     // Value and suffix split (RBAR-39): only the value rolls; the suffix just tracks
     // the active unit. Together they still read "142 kg" (format's shape).
     rollText(this.totalNum, String(shownIn(encode(this.side, this.baselineKg()), unit)));

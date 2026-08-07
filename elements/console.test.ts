@@ -842,6 +842,33 @@ describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
     expect(recentLabels(el)).toEqual([100, 80]);
   });
 
+  // The console feeds the live Target down to the rail (RBAR-37), so the highlight
+  // tracks manual entry -- not just the rail's own local chip-tap echo.
+  const currentChips = (el: HTMLElement) =>
+    recentChips(el)
+      .filter((c) => c.getAttribute('aria-current') === 'true')
+      .map((c) => Number(c.dataset.target));
+
+  it('highlights the chip matching the live Target, and moves it on re-commit', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    commit(el, '80');
+    expect(currentChips(el)).toEqual([80]);
+    commit(el, '100');
+    expect(currentChips(el)).toEqual([100]);
+  });
+
+  it('drops the highlight when the Target is cleared (no live Target)', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    valueBtn(el).click(); // open
+    entry(el)
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-key="clear"]')!
+      .click(); // empty the field -> nothing decoded
+    valueBtn(el).click(); // close
+    expect(currentChips(el)).toEqual([]);
+  });
+
   it('caps the row at 6, dropping the oldest', () => {
     const el = mountConsole();
     ['10', '20', '30', '40', '50', '60', '70'].forEach((v) => commit(el, v));
