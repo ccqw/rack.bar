@@ -1317,10 +1317,11 @@ describe('<rack-console> feeds the keypad sheet its load line (RBAR-22)', () => 
 
   it('pushes the on-the-bar line to the entry once a Target decodes', () => {
     const el = mountConsole();
-    type(el, '100'); // exactly achievable
+    type(el, '100'); // exactly achievable -> the sheet's dedicated exact line (RBAR-46)
     const line = loadLineEl(el);
     expect(line.hidden).toBe(false);
-    expect(line.textContent).toBe('On the bar: 100 kg (exact)');
+    expect(line.textContent).toBe('exact');
+    expect(line.classList.contains('exact')).toBe(true);
   });
 
   it('reads an off-grid Target as under (keypad wording)', () => {
