@@ -196,6 +196,65 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
   });
 });
 
+// The contextual label above the bar visualizer (RBAR-35, prototype L924's vm): what
+// the bar block is showing right now, keyed off the shared Side Load then the mode.
+function vizLabel(el: HTMLElement): HTMLElement {
+  return el.shadowRoot!.querySelector<HTMLElement>('[data-viz-label]')!;
+}
+
+describe('<rack-console> (bar visualizer contextual label, RBAR-35)', () => {
+  it('reads "Enter a weight" in By Weight with no Target typed', () => {
+    const el = mountConsole();
+    expect(vizLabel(el).textContent).toBe('Enter a weight');
+  });
+
+  it('reads "per side" in By Weight once a Target decodes onto the bar', () => {
+    const el = mountConsole();
+    type(el, '100');
+    expect(vizLabel(el).textContent).toBe('per side');
+  });
+
+  it('reads "Tap a plate to load" in By Plates with an empty side', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    expect(vizLabel(el).textContent).toBe('Tap a plate to load');
+  });
+
+  it('reads "per side" in By Plates once plates are loaded', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    expect(vizLabel(el).textContent).toBe('per side');
+  });
+
+  it('falls back to the empty-state prompt when the bar is cleared again', () => {
+    const el = mountConsole();
+    type(el, '100');
+    type(el, ''); // clear the Target -> bare bar
+    expect(vizLabel(el).textContent).toBe('Enter a weight');
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapDisc(el, 0); // remove the only plate -> bare bar
+    expect(vizLabel(el).textContent).toBe('Tap a plate to load');
+  });
+
+  it('shares one head row with the fullscreen control, label first, above the sleeve', () => {
+    const el = mountConsole();
+    const viz = el.shadowRoot!.querySelector('.viz')!;
+    const head = viz.querySelector('.vizhead')!;
+    // The row holds exactly the label then the fullscreen button (right-aligned by
+    // the row's space-between), and sits before the sleeve in the viz block.
+    expect([...head.children]).toEqual([
+      vizLabel(el),
+      el.shadowRoot!.querySelector('[data-fullscreen]'),
+    ]);
+    const vizChildren = [...viz.children];
+    expect(vizChildren.indexOf(head)).toBeLessThan(
+      vizChildren.indexOf(viz.querySelector('rack-sleeve')!),
+    );
+  });
+});
+
 describe('<rack-console> (Decode: at-or-under + status pill)', () => {
   it('decodes an exact Target into discs and the achieved Total, showing the Exact pill', () => {
     const el = mountConsole();

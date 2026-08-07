@@ -80,6 +80,7 @@ class RackConsole extends HTMLElement {
   private status!: HTMLElement;
   private statusLabel!: HTMLElement;
   private barnote!: HTMLElement;
+  private vizLabel!: HTMLElement;
   private announcer!: HTMLElement;
   private over!: HTMLButtonElement;
   private unitButtons!: NodeListOf<HTMLButtonElement>;
@@ -239,14 +240,21 @@ class RackConsole extends HTMLElement {
         }
         .modes button:focus-visible { outline: 2px solid var(--rack-accent); }
         rack-entry[hidden], rack-palette[hidden] { display: none; }
-        /* The bar visualizer block: the sleeve, with the fullscreen control floated at
-           its top-right corner (handoff section 3) -- it blows the loaded Bar up to a
-           landscape, glanceable card (RBAR-18). */
-        .viz { position: relative; }
+        /* The bar visualizer block (handoff section 3, prototype L98): a head row --
+           the contextual label top-left, the fullscreen control top-right (RBAR-18/35)
+           -- then the sleeve, 10px apart (the prototype column's gap). */
+        .viz { display: flex; flex-direction: column; gap: 10px; }
+        .vizhead {
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        /* The contextual label (RBAR-35, prototype L101): what the bar block shows
+           right now -- "per side" once loaded, else the mode's empty-state prompt.
+           The shared section-label recipe; uppercase comes from it, so the copy stays
+           plain-cased in the DOM exactly like the prototype's vm. */
+        .vizlabel { ${SECTION_LABEL} }
         .fullscreen {
-          position: absolute; top: 0; right: 0; z-index: 1;
           width: 36px; height: 36px; display: flex; align-items: center;
-          justify-content: center; padding: 0;
+          justify-content: center; padding: 0; flex: none;
           color: var(--rack-muted); background: transparent;
           border: 1px solid var(--rack-line); border-radius: 10px; cursor: pointer;
         }
@@ -411,13 +419,19 @@ class RackConsole extends HTMLElement {
              the Add palette in By Plates). One DOM order serves both modes -- the editors
              toggle by the hidden attribute, so the visible column reads right either way. -->
         <div class="viz">
-          <button type="button" class="fullscreen" data-fullscreen aria-label="Full screen">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
-                    stroke="currentColor" stroke-width="1.6"
-                    stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-          </button>
+          <!-- The head row (RBAR-35): the contextual label at the left edge, the
+               existing fullscreen control right-aligned on the same row (it used to
+               float alone). The label's text is state-driven (see render). -->
+          <div class="vizhead">
+            <span class="vizlabel" data-viz-label></span>
+            <button type="button" class="fullscreen" data-fullscreen aria-label="Full screen">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
+                      stroke="currentColor" stroke-width="1.6"
+                      stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+          </div>
           <rack-sleeve></rack-sleeve>
         </div>
         <div class="readout">
@@ -478,6 +492,7 @@ class RackConsole extends HTMLElement {
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
     this.barnote = this.root.querySelector('[data-barnote]')!;
+    this.vizLabel = this.root.querySelector('[data-viz-label]')!;
     this.announcer = this.root.querySelector('[data-announce]')!;
     this.over = this.root.querySelector('[data-over]')!;
     this.unitButtons = this.root.querySelectorAll('[data-unit]');
@@ -690,6 +705,15 @@ class RackConsole extends HTMLElement {
     const unit = this.activeUnit();
     this.sleeve.sideLoad = this.side;
     this.sleeve.interactive = this.mode === 'encode';
+    // The bar block's contextual label (RBAR-35, prototype L924): "per side" whenever
+    // anything is loaded (either mode -- the shared Side Load is the fact it names),
+    // else the active mode's empty-state prompt. Uppercasing is the CSS's job.
+    this.vizLabel.textContent =
+      this.side.length > 0
+        ? 'per side'
+        : this.mode === 'encode'
+          ? 'Tap a plate to load'
+          : 'Enter a weight';
     this.entry.unit = unit;
     this.recentsRow.unit = unit;
     // Value and suffix split (RBAR-39): only the value rolls; the suffix just tracks
