@@ -114,7 +114,7 @@ class RackFullscreen extends HTMLElement {
         .head { flex: none; display: flex; flex-direction: column; align-items: center; text-align: center; }
         .wordmark {
           font-family: var(--rack-font); font-weight: 800; font-size: 19px;
-          letter-spacing: -.02em; color: var(--rack-fg);
+          letter-spacing: -.025em; color: var(--rack-fg);
         }
         .wordmark .dot { color: var(--rack-accent); }
         /* The huge Total: Hanken 800 with tabular figures (handoff section 8). Hanken is

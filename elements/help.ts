@@ -67,14 +67,15 @@ class RackHelp extends HTMLElement {
       <style>
         ${BOX_SIZING}${BUTTON_FX}
         :host { position: relative; display: inline-flex; }
-        @keyframes rack-pop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
-        /* The circular help icon. Picks up the accent when open, mirroring the Setup pill. */
+        @keyframes rack-pop { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: none; } }
+        /* The circular help icon: a raised idle chip (prototype helpBtnStyle) that
+           picks up the accent when open, mirroring the Setup pill. */
         .toggle {
           display: flex; align-items: center; justify-content: center;
           width: 22px; height: 22px; padding: 0;
           border-radius: 999px; cursor: pointer;
-          color: var(--rack-muted);
-          background: transparent; border: 1px solid var(--rack-line);
+          color: var(--rack-text-secondary);
+          background: var(--rack-active); border: 1px solid var(--rack-border-muted);
         }
         .toggle:hover { color: var(--rack-fg); }
         .toggle[aria-expanded="true"] {
@@ -89,7 +90,7 @@ class RackHelp extends HTMLElement {
           width: 248px; padding: 13px 14px;
           background: var(--rack-overlay);
           border: 1px solid var(--rack-popover-border);
-          border-radius: var(--rack-radius-tile);
+          border-radius: var(--rack-radius-sheet-control);
           box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .7);
           display: flex; flex-direction: column; gap: 9px;
           transform-origin: top left;

@@ -148,10 +148,17 @@ describe('<rack-fullscreen>', () => {
     expect(sleeve(root).interactive).toBe(false);
   });
 
-  it('carries the wordmark', () => {
+  it('carries the wordmark at the handoff tracking (RBAR-45)', () => {
     const { el, root } = mount();
     el.open();
     expect(root.querySelector('[data-wordmark]')!.textContent).toContain('rack');
+    // Prototype L320: the fullscreen wordmark is 800 19px at -.025em.
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf('.wordmark {');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const wm = css.slice(start, css.indexOf('}', start));
+    expect(wm).toContain('font-size: 19px');
+    expect(wm).toContain('letter-spacing: -.025em');
   });
 
   it('tapping anywhere on the immersive view exits', () => {

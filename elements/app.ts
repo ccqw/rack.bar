@@ -48,7 +48,6 @@ class RackApp extends HTMLElement {
   private setup!: Setup;
   private pill!: HTMLButtonElement;
   private pillLabel!: HTMLElement;
-  private pillSet!: HTMLElement;
 
   // The active plate set drives the offered Bars and the native Unit (ADR-0010); load it
   // first, since the Bar validates against its Bars.
@@ -78,29 +77,23 @@ class RackApp extends HTMLElement {
            flex item its display was already blockified; margin pinned so the UA heading
            margin cannot move the header row. */
         .wordmark {
-          font-family: var(--rack-font); font-weight: 800; font-size: 18px;
-          letter-spacing: -.01em; color: var(--rack-fg); margin: 0;
+          font-family: var(--rack-font); font-weight: 800; font-size: 20px;
+          letter-spacing: -.025em; color: var(--rack-fg); margin: 0;
         }
         .wordmark .dot { color: var(--rack-accent); }
-        /* The Setup pill: the rig's current Bar, tappable to open the sheet. */
+        /* The Setup pill: the rig's current Bar, tappable to open the sheet. A raised
+           fill over secondary ink (prototype L82), one line: Bar + middot + set. */
         .pill {
           display: inline-flex; align-items: center; gap: 7px;
-          font-family: var(--rack-font-num); font-size: 12px; font-weight: 600;
-          letter-spacing: .02em; color: var(--rack-muted);
-          background: transparent; border: 1px solid var(--rack-line);
+          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
+          letter-spacing: .04em; color: var(--rack-text-secondary);
+          background: var(--rack-raised); border: 1px solid var(--rack-border);
           border-radius: 999px; padding: 8px 14px; min-height: 36px; cursor: pointer;
         }
         .pill:hover { color: var(--rack-fg); }
         .pill:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .pill .sliders { display: block; flex: none; }
-        /* The Bar over a compact plate-set caption ("Comp" / "Training"), handoff
-           section 1 / screenshot 01. The size step (not colour) carries the hierarchy. */
-        .pill-text { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.12; }
-        .pill-set {
-          font-size: 9px; font-weight: 600; letter-spacing: .08em;
-          color: var(--rack-text-dim);
-        }
-        .pill .chev { display: block; transition: transform .16s ease; }
+        .pill .chev { display: block; transition: transform .15s; }
         .pill[aria-expanded="true"] .chev { transform: rotate(180deg); }
         main {
           flex: 1; display: flex; align-items: center; justify-content: center;
@@ -127,14 +120,11 @@ class RackApp extends HTMLElement {
             <circle cx="6" cy="11" r="2.3" fill="var(--rack-raised)"
                     stroke="var(--rack-accent)" stroke-width="1.6"></circle>
           </svg>
-          <span class="pill-text">
-            <span data-pill-label></span>
-            <span class="pill-set" data-pill-set></span>
-          </span>
+          <span data-pill-label></span>
           <svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none"
                aria-hidden="true">
-            <path d="M3.5 6L8 10.5 12.5 6" stroke="currentColor" stroke-width="1.8"
-                  stroke-linecap="round" stroke-linejoin="round"></path>
+            <path d="M3.5 6L8 10.5 12.5 6" stroke="var(--rack-text-secondary)"
+                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
           </svg>
         </button>
       </header>
@@ -146,7 +136,6 @@ class RackApp extends HTMLElement {
     this.setup = this.root.querySelector('rack-setup') as Setup;
     this.pill = this.root.querySelector('[data-setup-pill]')!;
     this.pillLabel = this.root.querySelector('[data-pill-label]')!;
-    this.pillSet = this.root.querySelector('[data-pill-set]')!;
 
     // Seed every surface from the (possibly persisted) plate set, Bar, and Collar. Push
     // the Bar before the plate set, matching adoptPlateSet's invariant ("set barKg first
@@ -225,13 +214,14 @@ class RackApp extends HTMLElement {
   }
 
   // The pill names the current Bar in the active set's native Unit (e.g. "20 kg bar",
-  // "45 lb bar") over a compact plate-set caption ("Comp" / "Training") -- the handoff's
-  // header pill (section 1, screenshot 01). Both the Bar and the caption follow a set or
-  // Bar change, so adopt()/adoptPlateSet() call relabel() and the pill stays in sync.
+  // "45 lb bar") on ONE line with the plate-set short name after a middot ("20 kg bar
+  // <middot> Comp") -- the handoff's header pill (prototype L82/L912, screenshot 01).
+  // The middot is emitted as an escape so the source stays ASCII. Both facts follow a
+  // set or Bar change, so adopt()/adoptPlateSet() call relabel() and the pill stays in
+  // sync.
   private relabel(): void {
     const set = plateSetFor(this.plateSetKey);
-    this.pillLabel.textContent = `${format(this.barKg, set.unit)} bar`;
-    this.pillSet.textContent = set.shortLabel;
+    this.pillLabel.textContent = `${format(this.barKg, set.unit)} bar \u00B7 ${set.shortLabel}`;
   }
 
   // Read the persisted plate set, validated against the offered keys (ADR-0007 pattern):
