@@ -192,7 +192,7 @@ class RackSetup extends HTMLElement {
           border-top: 1px solid var(--rack-border-strong);
           border-radius: var(--rack-radius-sheet) var(--rack-radius-sheet) 0 0;
           padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
-          box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, .7);
+          box-shadow: var(--rack-shadow-sheet);
           animation: rack-rise .2s cubic-bezier(.2, .85, .25, 1);
         }
         .head {

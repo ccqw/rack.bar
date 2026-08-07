@@ -40,6 +40,23 @@ const KEYPAD_ROWS: readonly (readonly string[])[] = [
 // Spoken labels for the non-digit keys; digits announce as themselves.
 const KEY_ARIA: Record<string, string> = { del: 'Delete', '.': 'Decimal point' };
 
+// The delete key's face (RBAR-46): the handoff renders a backspace glyph, drawn here as
+// an inline SVG so the source stays ASCII. Decorative -- the button's aria-label
+// ("Delete") is the announcement, so the drawing is hidden from assistive tech.
+const DEL_ICON = `<svg width="22" height="16" viewBox="0 0 22 16" fill="none"
+    aria-hidden="true"><path d="M8 1.25h10.25a2.5 2.5 0 0 1 2.5 2.5v8.5a2.5 2.5 0 0
+    1-2.5 2.5H8a2.5 2.5 0 0 1-1.84-.81L1.9 9.35a2 2 0 0 1 0-2.7l4.26-4.59A2.5 2.5 0 0
+    1 8 1.25Z" stroke="currentColor" stroke-width="1.6"
+    stroke-linejoin="round"/><path d="M10.75 5.6l4.3 4.8m0-4.8l-4.3 4.8"
+    stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+
+// The dedicated exact line's checkmark (RBAR-46, prototype L235 "[check] exact"): the
+// prototype's literal checkmark character, drawn as an inline SVG for the same
+// ASCII-only reason. Decorative; the line's text ("exact") carries the announcement.
+const CHECK_ICON = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+    aria-hidden="true"><path d="M1.5 5.5L4 8l4.5-6" stroke="currentColor"
+    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private valueEl!: HTMLButtonElement;
@@ -204,7 +221,7 @@ class RackEntry extends HTMLElement {
     const keys = KEYPAD_ROWS.flat()
       .map(
         (k) => `<button type="button" class="key" data-key="${k}"
-                  aria-label="${KEY_ARIA[k] ?? k}">${k}</button>`,
+                  aria-label="${KEY_ARIA[k] ?? k}">${k === 'del' ? DEL_ICON : k}</button>`,
       )
       .join('');
 
@@ -263,9 +280,19 @@ class RackEntry extends HTMLElement {
            there is NO dim scrim -- the prototype keeps the bar bright above the sheet, so
            the lifter watches the plates resolve live while typing (Caitlin's fidelity call,
            overriding the ticket's "dim scrim" AC). Handoff SUNKEN fill (#101216), 1px top
-           border, 24px top corners; safe-area pad clears the home indicator. */
-        @keyframes rack-rise {
-          from { transform: translateY(100%); } to { transform: translateY(0); }
+           border, 24px top corners; safe-area pad clears the home indicator.
+
+           Entrance motion (RBAR-46, prototype L229 "sheetIn .2s ease-out"): the keypad's
+           sheetIn is ease-out WITH an opacity fade -- deliberately softer than the setup
+           sheet's springier cubic-bezier, so the two sheets no longer share one easing.
+           Split BUTTON_FX-style for reduced motion: everyone gets the fade (opacity is
+           not motion), only a no-preference lifter gets the translate rise. */
+        @keyframes rack-sheet-fade {
+          from { opacity: 0; } to { opacity: 1; }
+        }
+        @keyframes rack-sheet-rise {
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
         .sheet[hidden] { display: none; }
         .sheet {
@@ -275,8 +302,11 @@ class RackEntry extends HTMLElement {
           border-top: 1px solid var(--rack-border);
           border-radius: var(--rack-radius-sheet) var(--rack-radius-sheet) 0 0;
           padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
-          box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, .7);
-          animation: rack-rise .2s cubic-bezier(.2, .85, .25, 1);
+          box-shadow: var(--rack-shadow-sheet);
+          animation: rack-sheet-fade .2s ease-out;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .sheet { animation: rack-sheet-rise .2s ease-out; }
         }
         /* The sheet's own readout: the big live value, its secondary unit, and the live
            "on the bar" load line (the field behind the sheet is covered). */
@@ -303,31 +333,45 @@ class RackEntry extends HTMLElement {
         }
         .sub .load { color: var(--rack-accent); }
         .sub .load[hidden] { display: none; }
+        /* The dedicated exact line (RBAR-46, prototype L235 "[check] exact"): when the
+           decoded Total lands exactly on the Target, the accent delta line gives way to
+           this quiet mono confirmation. The prototype's type spec is character-for-
+           character the section-label recipe (600 11px mono, .14em, uppercase,
+           text-muted), so it borrows SECTION_LABEL rather than restating the numbers. */
+        .sub .load.exact {
+          display: inline-flex; align-items: center; gap: 5px;
+          ${SECTION_LABEL}
+        }
         .keypad {
           display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
         }
+        /* A key (RBAR-46, prototype L240): a RAISED fill (#15171a) lifted off the sunken
+           sheet -- not transparent -- on the sheet-control 13px radius. 44px is both the
+           prototype's min-height and the touch-target floor. */
         .key {
-          min-height: 56px; /* big touch targets */
-          font-family: var(--rack-font-num); font-size: 22px; font-weight: 600;
-          color: var(--rack-fg); background: transparent;
-          border: 1px solid var(--rack-line); border-radius: var(--rack-radius);
+          min-height: 44px;
+          font-family: var(--rack-font-num); font-size: 20px; font-weight: 600;
+          color: var(--rack-fg); background: var(--rack-raised);
+          border: 1px solid var(--rack-line);
+          border-radius: var(--rack-radius-sheet-control);
           cursor: pointer;
         }
-        .key[data-key="del"] { font-size: 16px; color: var(--rack-muted); }
+        .key svg { display: block; margin: 0 auto; }
         .key:active { background: var(--rack-line); }
         .key:focus-visible { outline: 2px solid var(--rack-accent); }
-        /* Footer: Clear (ghost, an edit) + Done (accent, the dismiss). */
-        .foot { display: flex; gap: 8px; margin-top: 14px; }
+        /* Footer (RBAR-46, prototype L244-245): Clear (ghost, an edit) + Done (accent,
+           the dismiss), 42px on the sheet-control radius, Hanken 600 13px / 700 14px. */
+        .foot { display: flex; gap: 8px; margin-top: 8px; }
         .clear, .done {
-          flex: 1; min-height: 48px; font: inherit; font-size: 15px;
-          border-radius: var(--rack-radius); cursor: pointer;
+          flex: 1; min-height: 42px; font: inherit;
+          border-radius: var(--rack-radius-sheet-control); cursor: pointer;
         }
         .clear {
-          font-weight: 600; color: var(--rack-muted);
+          font-size: 13px; font-weight: 600; color: var(--rack-muted);
           background: transparent; border: 1px solid var(--rack-line);
         }
         .done {
-          font-weight: 700; color: var(--rack-bg);
+          font-size: 14px; font-weight: 700; color: var(--rack-bg);
           background: var(--rack-accent); border: none;
         }
         .clear:focus-visible, .done:focus-visible {
@@ -423,13 +467,34 @@ class RackEntry extends HTMLElement {
     this.emitKeypadClose();
   }
 
-  // The sheet's "on the bar" load line: the console's decoded status, or hidden when there
-  // is nothing decoded (an untouched default / empty field). The line is a live region
-  // (RBAR-53), so only a REAL text change touches the DOM -- re-pushing the same line
+  // The load line as last rendered (the raw console string, pre-exact-split), so an
+  // idempotent re-push is detected against what was actually fed -- the rendered DOM no
+  // longer mirrors the string verbatim in the exact case, so textContent can't be the
+  // comparison key anymore.
+  private renderedLoadLine = '';
+
+  // The sheet's "on the bar" load line: the console's decoded status, or hidden when
+  // there is nothing decoded (an untouched default / empty field). The line is a live
+  // region (RBAR-53), so only a REAL change touches the DOM -- re-pushing the same line
   // (an idempotent console re-render) must not re-announce it.
+  //
+  // The EXACT state (RBAR-46, prototype L235): when the Total lands exactly on the
+  // Target the prototype swaps the accent delta line for a dedicated quiet
+  // "[check] exact" mono line -- the big live number already IS the exact Total, so
+  // repeating it would say nothing. The console's onBarLine marks that state with its
+  // "(exact)" tail (elements/console.ts), so the sheet keys off that suffix; the
+  // announcement becomes just "exact" (the check drawing is aria-hidden).
   private renderLoadLine(): void {
     const text = this._loadLine ?? '';
-    if (this.liveLoadEl.textContent !== text) this.liveLoadEl.textContent = text;
+    if (this.renderedLoadLine === text) return;
+    this.renderedLoadLine = text;
+    if (text.endsWith('(exact)')) {
+      this.liveLoadEl.classList.add('exact');
+      this.liveLoadEl.innerHTML = `${CHECK_ICON}exact`;
+    } else {
+      this.liveLoadEl.classList.remove('exact');
+      this.liveLoadEl.textContent = text;
+    }
     this.liveLoadEl.hidden = text === '';
   }
 
