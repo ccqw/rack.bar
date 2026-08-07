@@ -81,18 +81,22 @@ class RackPalette extends HTMLElement {
            navigation, margins pinned so the head row's flex geometry is unchanged. */
         .label { ${SECTION_LABEL} margin: 0; }
         /* The "Sleeve full" warning (RBAR-54): the status pill's uppercase-mono
-           state-dot vocabulary in the danger ink (--rack-danger is the over-capacity
-           red) -- real text beside the label, not color/opacity alone. */
+           state-dot vocabulary in the ACCENT ink, per the handoff (L210 -- #f5c518 is
+           --rb-accent there) and matching By Weight's "Bar at capacity" twin (accent
+           dot, L142). Accent = attention in this world; danger red is reserved for
+           destructive Clear. Accent also reads at ~11:1 on Platform Black where the
+           red sat near 4:1, and does not clash with the lit red discs beside it.
+           Real text beside the label, not color/opacity alone. */
         .full {
           display: inline-flex; align-items: center; gap: 5px;
           font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
           letter-spacing: .1em; text-transform: uppercase; line-height: 1;
-          color: var(--rack-danger);
+          color: var(--rack-accent);
         }
         .full[hidden] { display: none; }
         .full .dot {
           width: 5px; height: 5px; border-radius: 999px; flex: none;
-          background: var(--rack-danger);
+          background: var(--rack-accent);
         }
         .keys {
           display: grid; grid-template-columns: repeat(${columns}, 1fr);

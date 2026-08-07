@@ -108,6 +108,21 @@ describe('<rack-palette> (the Encode add-affordance)', () => {
       expect(warning(el).textContent).toContain('Sleeve full');
     });
 
+    it('warns in the accent ink, per the handoff and the capacity-pill twin', () => {
+      // Handoff L210 sets the warning in #f5c518 == --rb-accent (its L40 map), the
+      // same treatment as By Weight's "Bar at capacity" dot (L142). Accent means
+      // attention here; danger red belongs to destructive Clear -- and red text
+      // reads ~4:1 on Platform Black beside lit red discs, which is what got this
+      // flagged by eye in the first place.
+      const el = mountPalette();
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const start = css.indexOf('.full {');
+      const rule = css.slice(start, css.indexOf('}', start));
+      expect(start).toBeGreaterThan(-1);
+      expect(rule).toContain('var(--rack-accent)');
+      expect(css).not.toContain('var(--rack-danger)');
+    });
+
     it('clears as soon as a removal frees room', () => {
       const el = mountPalette();
       el.sideMm = 401;
