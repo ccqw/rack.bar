@@ -2001,3 +2001,46 @@ describe('announceLine', () => {
     expect(announceLine(315, 'lb')).toBe('315 pounds');
   });
 });
+
+// The Total is the page's biggest number and reads as tappable -- so it is (RBAR-57):
+// tapping it opens the keypad, the same edit the small Target value button offers.
+describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
+  const sheet = (el: HTMLElement) =>
+    entry(el).shadowRoot!.querySelector<HTMLElement>('.sheet')!;
+  const totalTap = (el: HTMLElement) =>
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-total-tap]')!;
+
+  it('tapping the Total in By Weight opens the keypad sheet', () => {
+    const el = mountConsole();
+    expect(sheet(el).hidden).toBe(true);
+    totalTap(el).click();
+    expect(sheet(el).hidden).toBe(false);
+  });
+
+  it('a second tap while open leaves the sheet open -- an edit affordance, not a toggle', () => {
+    const el = mountConsole();
+    totalTap(el).click();
+    totalTap(el).click();
+    expect(sheet(el).hidden).toBe(false);
+  });
+
+  it('is inert in By Plates: disabled, keypad stays closed', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    expect(totalTap(el).disabled).toBe(true);
+    totalTap(el).click();
+    expect(sheet(el).hidden).toBe(true);
+  });
+
+  it('re-enables on the way back to By Weight', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    modeBtn(el, 'decode').click();
+    expect(totalTap(el).disabled).toBe(false);
+  });
+
+  it('keeps the Total output inside the tap target (share/fullscreen hooks intact)', () => {
+    const el = mountConsole();
+    expect(totalTap(el).querySelector('[data-total]')).not.toBeNull();
+  });
+});

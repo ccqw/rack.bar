@@ -443,6 +443,12 @@ class RackEntry extends HTMLElement {
     this.renderValue();
   }
 
+  /** Open the keypad sheet if closed. The console's Total-tap affordance (RBAR-57):
+   * an edit entry point, not a toggle, so an already-open sheet stays open. */
+  open(): void {
+    if (this.sheet && this.sheet.hidden) this.openKeypad();
+  }
+
   // Show the keypad sheet. Reflect the open state on the value button so assistive tech
   // announces the expanded pad, and tell the console (RBAR-53): while the sheet is open
   // its load line is the single live announcement source, so the console mutes its own.

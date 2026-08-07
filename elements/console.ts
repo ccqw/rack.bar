@@ -45,6 +45,7 @@ type Sleeve = HTMLElement & {
 };
 type Entry = HTMLElement & {
   display(value: number | null): void;
+  open(): void;
   barKg: number;
   unit: Unit;
   loadLine: string | null;
@@ -79,6 +80,7 @@ class RackConsole extends HTMLElement {
   private share!: Share;
   private fullscreen!: Fullscreen;
   private totalNum!: HTMLElement;
+  private totalTap!: HTMLButtonElement;
   private totalUnit!: HTMLElement;
   private secondary!: HTMLButtonElement;
   private status!: HTMLElement;
@@ -321,6 +323,18 @@ class RackConsole extends HTMLElement {
         .readout output .tu {
           font-size: 21px; font-weight: 600; color: var(--rack-text-dim);
         }
+        /* The Total is the page's biggest number and reads as tappable -- so it is
+           (RBAR-57): tapping it opens the keypad, the same edit the small Target
+           value button offers. A bare wrapper: every visual belongs to the output
+           inside, and the By-Plates disabled state (no keypad there) must not dim
+           the Total, so no :disabled restyle beyond the cursor. */
+        .totaltap {
+          display: block; width: 100%; padding: 0; margin: 0; border: 0;
+          background: none; color: inherit; text-align: inherit; font: inherit;
+          cursor: pointer;
+        }
+        .totaltap:disabled { cursor: default; }
+        .totaltap:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 4px; }
         /* The Secondary readout: the same Total in the other unit, tap to hide/show
            (ADR-0006/0010). A quiet line under the prominent Total. */
         .secondary {
@@ -477,8 +491,10 @@ class RackConsole extends HTMLElement {
               <button type="button" data-unit="lb" aria-pressed="false">lb</button>
             </div>
           </div>
-          <output data-total><span data-total-num>${DEFAULT_BAR_KG}</span><span
-            class="tu" data-total-unit> kg</span></output>
+          <button type="button" class="totaltap" data-total-tap
+            ><output data-total><span data-total-num>${DEFAULT_BAR_KG}</span><span
+              class="tu" data-total-unit> kg</span></output
+          ></button>
           <div class="statusline">
             <button type="button" class="secondary" data-secondary></button>
             <span class="status" data-status hidden
@@ -531,6 +547,7 @@ class RackConsole extends HTMLElement {
     this.fullscreen = this.root.querySelector('rack-fullscreen') as Fullscreen;
     this.totalNum = this.root.querySelector('[data-total-num]')!;
     this.totalUnit = this.root.querySelector('[data-total-unit]')!;
+    this.totalTap = this.root.querySelector('[data-total-tap]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
@@ -564,6 +581,9 @@ class RackConsole extends HTMLElement {
       this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
       this.render();
     });
+    // The big Total opens the keypad too (RBAR-57): it reads as tappable, so it is.
+    // Open-only -- closing (the commit) stays with Done / the value re-tap.
+    this.totalTap.addEventListener('click', () => this.entry.open());
     // A recent chip tap re-applies that Target: seed the field, decode it, and move it
     // back to the front of the history (a re-use is a fresh commit).
     this.recentsRow.addEventListener('recentapply', (e) => {
@@ -776,6 +796,9 @@ class RackConsole extends HTMLElement {
     this.renderUnitToggle(unit);
     this.renderSecondary(unit);
     this.entry.hidden = this.mode !== 'decode';
+    // The Total-tap affordance is By-Weight only (RBAR-57): By Plates has no keypad,
+    // so the wrapper goes inert there (its look never changes -- see .totaltap).
+    this.totalTap.disabled = this.mode !== 'decode';
     // The Recent row is a By-Weight (Decode) affordance: shown only there, and only once
     // there is something to show (the row also self-hides when empty -- ADR-0009).
     this.recentsRow.hidden = this.mode !== 'decode' || this.recents.length === 0;
