@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-05T00:00:00Z",
+  "title": "Design System: rack.bar",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Plate Yellow",
+        "canonical": "#f5c518",
+        "tonalRamp": ["oklch(15% 0.17 85)", "oklch(27% 0.17 85)", "oklch(38% 0.17 85)", "oklch(50% 0.17 85)", "oklch(61% 0.17 85)", "oklch(73% 0.17 85)", "oklch(84% 0.17 85)", "oklch(95% 0.1 85)"]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Platform Black",
+        "canonical": "#0d0e10",
+        "tonalRamp": ["oklch(15% 0.006 260)", "oklch(26% 0.006 260)", "oklch(38% 0.006 260)", "oklch(49% 0.006 260)", "oklch(61% 0.006 260)", "oklch(72% 0.006 260)", "oklch(84% 0.006 260)", "oklch(95% 0.006 260)"]
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "Red-Plate Danger",
+        "canonical": "#e0263a",
+        "tonalRamp": ["oklch(15% 0.16 20)", "oklch(26% 0.18 20)", "oklch(38% 0.2 20)", "oklch(49% 0.21 20)", "oklch(58% 0.21 20)", "oklch(70% 0.16 20)", "oklch(84% 0.09 20)", "oklch(95% 0.03 20)"]
+      },
+      "success": {
+        "role": "semantic",
+        "displayName": "Exact-Hit Green",
+        "canonical": "#4caf6a",
+        "tonalRamp": ["oklch(15% 0.09 150)", "oklch(26% 0.11 150)", "oklch(38% 0.12 150)", "oklch(50% 0.13 150)", "oklch(66% 0.13 150)", "oklch(76% 0.12 150)", "oklch(86% 0.09 150)", "oklch(95% 0.04 150)"]
+      },
+      "plate-red": {
+        "role": "domain",
+        "displayName": "25 / 2.5 kg Red",
+        "canonical": "#e0263a",
+        "tonalRamp": ["oklch(15% 0.16 20)", "oklch(26% 0.18 20)", "oklch(38% 0.2 20)", "oklch(49% 0.21 20)", "oklch(58% 0.21 20)", "oklch(70% 0.16 20)", "oklch(84% 0.09 20)", "oklch(95% 0.03 20)"]
+      },
+      "plate-blue": {
+        "role": "domain",
+        "displayName": "20 / 2.0 kg Blue",
+        "canonical": "#2563c9",
+        "tonalRamp": ["oklch(15% 0.1 260)", "oklch(26% 0.13 260)", "oklch(38% 0.16 260)", "oklch(50% 0.17 260)", "oklch(62% 0.15 260)", "oklch(73% 0.12 260)", "oklch(84% 0.08 260)", "oklch(95% 0.03 260)"]
+      },
+      "plate-yellow": {
+        "role": "domain",
+        "displayName": "15 / 1.5 kg Yellow",
+        "canonical": "#f5c518",
+        "tonalRamp": ["oklch(15% 0.17 85)", "oklch(27% 0.17 85)", "oklch(38% 0.17 85)", "oklch(50% 0.17 85)", "oklch(61% 0.17 85)", "oklch(73% 0.17 85)", "oklch(84% 0.17 85)", "oklch(95% 0.1 85)"]
+      },
+      "plate-green": {
+        "role": "domain",
+        "displayName": "10 / 1.0 kg Green",
+        "canonical": "#25a45a",
+        "tonalRamp": ["oklch(15% 0.09 155)", "oklch(26% 0.12 155)", "oklch(38% 0.14 155)", "oklch(50% 0.15 155)", "oklch(63% 0.15 155)", "oklch(75% 0.13 155)", "oklch(86% 0.09 155)", "oklch(95% 0.04 155)"]
+      },
+      "plate-white": {
+        "role": "domain",
+        "displayName": "5 / 0.5 kg White",
+        "canonical": "#eef0f2",
+        "tonalRamp": ["oklch(15% 0.004 240)", "oklch(26% 0.004 240)", "oklch(38% 0.004 240)", "oklch(50% 0.004 240)", "oklch(62% 0.004 240)", "oklch(73% 0.004 240)", "oklch(84% 0.004 240)", "oklch(95% 0.004 240)"]
+      },
+      "plate-iron": {
+        "role": "domain",
+        "displayName": "Training Iron",
+        "canonical": "#34383e",
+        "tonalRamp": ["oklch(15% 0.01 250)", "oklch(24% 0.012 250)", "oklch(32% 0.012 250)", "oklch(44% 0.012 250)", "oklch(56% 0.012 250)", "oklch(68% 0.01 250)", "oklch(82% 0.008 250)", "oklch(95% 0.005 250)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display Readout", "purpose": "The achieved Total (54px; 58px in the fullscreen rack card). Tabular numerals; rolls on change." },
+      "headline": { "displayName": "Target Value", "purpose": "The tappable Target number that opens the keypad." },
+      "title": { "displayName": "Title", "purpose": "Sheet titles and the wordmark." },
+      "body": { "displayName": "Body", "purpose": "Running copy, control labels, captions (12-14px)." },
+      "label": { "displayName": "Section Label", "purpose": "Uppercase mono micro-labels: Target, Recent, On the bar; unit toggles; plate numerals." }
+    },
+    "shadows": [
+      { "name": "disc", "value": "inset 0 0 0 1px rgba(255,255,255,.1), 0 2px 6px rgba(0,0,0,.25)", "purpose": "Rims and lifts a plate-colored disc, chip, or palette key. The only shadow on in-flow UI." },
+      { "name": "sheet", "value": "0 -18px 44px -18px rgba(0,0,0,.7)", "purpose": "Lifts a rising bottom sheet (keypad, Setup) off the surface." },
+      { "name": "modal", "value": "0 30px 60px -20px rgba(0,0,0,.7)", "purpose": "Lifts the centered share card above the modal scrim." }
+    ],
+    "motion": [
+      { "name": "press", "value": "transform .09s; scale(.955) on :active", "purpose": "The physical press every control gives back." },
+      { "name": "color-transition", "value": "0.16s", "purpose": "Hover/state color shifts on buttons and chips." },
+      { "name": "numRoll", "value": ".26s ease-out", "purpose": "Display numbers roll up on change." },
+      { "name": "sheetIn", "value": ".2s cubic-bezier(.2, .85, .25, 1)", "purpose": "Bottom sheets rise from the viewport bottom." },
+      { "name": "popIn", "value": ".16s cubic-bezier(.2, .85, .25, 1)", "purpose": "Help popover entrance." },
+      { "name": "cardIn", "value": ".24s cubic-bezier(.2, .85, .25, 1)", "purpose": "Share card entrance." },
+      { "name": "fadeIn", "value": ".16s", "purpose": "Scrims behind sheets and modals." }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "384px", "purpose": "The single design frame; the app is one phone column with no wider layout today." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one accent action per surface: Done, Copy summary, the round-up affordance.",
+      "html": "<button class=\"ds-btn-primary\">Done</button>",
+      "css": ".ds-btn-primary { background: var(--rack-accent, #f5c518); color: var(--rack-accent-ink, #0d0e10); font-family: var(--rack-font, 'Hanken Grotesk', sans-serif); font-size: 14px; font-weight: 700; border: none; border-radius: 999px; padding: 10px 18px; min-height: 36px; cursor: pointer; transition: filter .16s, transform .09s; } .ds-btn-primary:hover { filter: brightness(1.06); } .ds-btn-primary:focus-visible { outline: 2px solid var(--rack-accent, #f5c518); outline-offset: 2px; } .ds-btn-primary:active { transform: scale(.955); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary/dismiss actions: Close, Clear (Clear hovers to danger red).",
+      "html": "<button class=\"ds-btn-ghost\">Close</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: var(--rack-text-secondary, #aab0b7); font-family: var(--rack-font, 'Hanken Grotesk', sans-serif); font-size: 14px; font-weight: 600; border: 1px solid var(--rack-border, #20242a); border-radius: 999px; padding: 10px 18px; min-height: 36px; cursor: pointer; transition: color .16s, border-color .16s, transform .09s; } .ds-btn-ghost:hover { color: var(--rack-text, #f4f4f5); border-color: var(--rack-border-muted, #2a2f35); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--rack-border-active, #3a4047); outline-offset: 2px; } .ds-btn-ghost:active { transform: scale(.955); }"
+    },
+    {
+      "name": "Mode Toggle",
+      "kind": "nav",
+      "refersTo": "segment-active",
+      "description": "The Enter weight / Add plates segmented control -- the app's one navigation.",
+      "html": "<div class=\"ds-mode-track\"><button class=\"ds-mode-seg ds-mode-seg--active\">Enter weight</button><button class=\"ds-mode-seg\">Add plates</button></div>",
+      "css": ".ds-mode-track { display: inline-flex; width: 100%; background: var(--rack-raised, #15171a); border: 1px solid var(--rack-border, #20242a); border-radius: 999px; padding: 4px; gap: 4px; } .ds-mode-seg { flex: 1; background: transparent; color: var(--rack-text-dim, #8b929a); font-family: var(--rack-font, 'Hanken Grotesk', sans-serif); font-size: 14px; font-weight: 600; border: none; border-radius: 999px; padding: 9px 12px; cursor: pointer; transition: color .16s, background .16s, transform .09s; } .ds-mode-seg:hover { color: var(--rack-text-secondary, #aab0b7); } .ds-mode-seg:active { transform: scale(.955); } .ds-mode-seg--active { background: var(--rack-accent, #f5c518); color: var(--rack-accent-ink, #0d0e10); font-weight: 700; } .ds-mode-seg--active:hover { color: var(--rack-accent-ink, #0d0e10); }"
+    },
+    {
+      "name": "Loaded Chip",
+      "kind": "chip",
+      "refersTo": "chip-recent",
+      "description": "A plate on the bar: DISC_FILL gradient over the plate hex, disc shadow, mono numeral.",
+      "html": "<span class=\"ds-chip-loaded\" style=\"--disc:#e0263a; color:#fff;\">25&#8202;&times;&#8202;2</span>",
+      "css": ".ds-chip-loaded { display: inline-flex; align-items: center; background: linear-gradient(180deg, color-mix(in srgb, var(--disc, #e0263a) 95%, #fff), var(--disc, #e0263a)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1), 0 2px 6px rgba(0,0,0,.25); font-family: var(--rack-font-num, 'JetBrains Mono', monospace); font-size: 13px; font-weight: 700; border-radius: 999px; padding: 7px 13px; cursor: pointer; transition: transform .09s; } .ds-chip-loaded:active { transform: scale(.955); }"
+    },
+    {
+      "name": "Recent Chip",
+      "kind": "chip",
+      "refersTo": "chip-recent",
+      "description": "A recent Target as an outline pill; tap re-applies it.",
+      "html": "<button class=\"ds-chip-recent\">100&#8202;kg</button>",
+      "css": ".ds-chip-recent { background: transparent; color: var(--rack-text, #f4f4f5); font-family: var(--rack-font-num, 'JetBrains Mono', monospace); font-size: 13px; font-weight: 600; border: 1px solid var(--rack-border, #20242a); border-radius: 999px; padding: 7px 13px; cursor: pointer; transition: border-color .16s, transform .09s; } .ds-chip-recent:hover { border-color: var(--rack-border-active, #3a4047); } .ds-chip-recent:focus-visible { outline: 2px solid var(--rack-border-active, #3a4047); outline-offset: 2px; } .ds-chip-recent:active { transform: scale(.955); }"
+    },
+    {
+      "name": "Selector Tile",
+      "kind": "input",
+      "refersTo": "tile-selector-active",
+      "description": "A Setup-sheet choice tile (bar weight, collars): selected fill + border-active ring when chosen.",
+      "html": "<div style=\"display:flex; gap:8px;\"><button class=\"ds-tile ds-tile--active\"><strong>20 kg</strong><span>44 lb</span></button><button class=\"ds-tile\"><strong>15 kg</strong><span>33 lb</span></button></div>",
+      "css": ".ds-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; background: transparent; color: var(--rack-text-secondary, #aab0b7); font-family: var(--rack-font, 'Hanken Grotesk', sans-serif); font-size: 12px; border: 1px solid var(--rack-border, #20242a); border-radius: 11px; padding: 12px 18px; cursor: pointer; transition: border-color .16s, background .16s, transform .09s; } .ds-tile strong { font-size: 15px; font-weight: 700; color: var(--rack-text, #f4f4f5); } .ds-tile:hover { border-color: var(--rack-border-muted, #2a2f35); } .ds-tile:active { transform: scale(.955); } .ds-tile--active { background: var(--rack-selected, #272b30); border-color: var(--rack-border-active, #3a4047); }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "custom",
+      "refersTo": "segment-active",
+      "description": "The result verdict beside the readout: Exact (green dot) / N over (solid accent) / N short (outline).",
+      "html": "<div style=\"display:flex; gap:8px; align-items:center;\"><span class=\"ds-status ds-status--exact\"><i class=\"ds-status-dot\"></i>Exact</span><span class=\"ds-status ds-status--over\">2.5 over</span><span class=\"ds-status ds-status--short\">1 short</span></div>",
+      "css": ".ds-status { display: inline-flex; align-items: center; gap: 6px; font-family: var(--rack-font-num, 'JetBrains Mono', monospace); font-size: 11px; font-weight: 600; letter-spacing: .04em; border-radius: 999px; padding: 4px 10px; } .ds-status--exact { color: var(--rack-text-secondary, #aab0b7); } .ds-status-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--rack-success, #4caf6a); } .ds-status--over { background: var(--rack-accent, #f5c518); color: var(--rack-accent-ink, #0d0e10); font-weight: 700; } .ds-status--short { border: 1px solid var(--rack-border-muted, #2a2f35); color: var(--rack-text-secondary, #aab0b7); }"
+    },
+    {
+      "name": "Keypad Sheet",
+      "kind": "input",
+      "refersTo": "button-primary",
+      "description": "The weight-entry bottom sheet: live tnum readout, 3-column key grid at card radius (the pill language's one squared-off zone), ghost Clear + accent Done. Deliberately scrimless in the app. Rendered here statically; in the app it is fixed to the viewport bottom and rises with sheetIn.",
+      "html": "<div class=\"ds-keypad-sheet\"><div class=\"ds-keypad-live\"><span class=\"ds-keypad-num\">142.5</span><span class=\"ds-keypad-unit\">kg</span></div><div class=\"ds-keypad-sub\"><span>314 lb</span><span class=\"ds-keypad-load\">On the bar: 142.5 kg</span></div><div class=\"ds-keypad-grid\"><button class=\"ds-key\">1</button><button class=\"ds-key\">2</button><button class=\"ds-key\">3</button><button class=\"ds-key\">4</button><button class=\"ds-key\">5</button><button class=\"ds-key\">6</button><button class=\"ds-key\">7</button><button class=\"ds-key\">8</button><button class=\"ds-key\">9</button><button class=\"ds-key\">.</button><button class=\"ds-key\">0</button><button class=\"ds-key ds-key--del\">del</button></div><div class=\"ds-keypad-foot\"><button class=\"ds-keypad-clear\">Clear</button><button class=\"ds-keypad-done\">Done</button></div></div>",
+      "css": ".ds-keypad-sheet { max-width: 360px; background: var(--rack-sunken, #101216); border-top: 1px solid var(--rack-border, #20242a); border-radius: 24px 24px 0 0; padding: 16px; box-shadow: 0 -20px 50px -20px rgba(0,0,0,.7); } .ds-keypad-live { text-align: center; margin-bottom: 4px; } .ds-keypad-num { font-family: var(--rack-font, 'Hanken Grotesk', sans-serif); font-size: 46px; font-weight: 800; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--rack-text, #f4f4f5); } .ds-keypad-unit { font-size: 18px; font-weight: 700; color: var(--rack-text-dim, #8b929a); margin-left: 4px; } .ds-keypad-sub { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-bottom: 14px; font-family: var(--rack-font-num, 'JetBrains Mono', monospace); font-size: 13px; color: var(--rack-text-dim, #8b929a); } .ds-keypad-load { color: var(--rack-accent, #f5c518); } .ds-keypad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; } .ds-key { min-height: 56px; font-family: var(--rack-font-num, 'JetBrains Mono', monospace); font-size: 22px; font-weight: 600; color: var(--rack-text, #f4f4f5); background: transparent; border: 1px solid var(--rack-border, #20242a); border-radius: 14px; cursor: pointer; transition: background .16s; } .ds-key:hover { background: var(--rack-raised, #15171a); } .ds-key:active { background: var(--rack-border, #20242a); } .ds-key:focus-visible { outline: 2px solid var(--rack-accent, #f5c518); } .ds-key--del { font-size: 16px; color: var(--rack-text-dim, #8b929a); } .ds-keypad-foot { display: flex; gap: 8px; margin-top: 14px; } .ds-keypad-clear { flex: 1; min-height: 48px; font-family: var(--rack-font, 'Hanken Grotesk', sans-serif); font-size: 15px; font-weight: 600; color: var(--rack-text-dim, #8b929a); background: transparent; border: 1px solid var(--rack-border, #20242a); border-radius: 14px; cursor: pointer; } .ds-keypad-done { flex: 1; min-height: 48px; font-family: var(--rack-font, 'Hanken Grotesk', sans-serif); font-size: 15px; font-weight: 700; color: var(--rack-accent-ink, #0d0e10); background: var(--rack-accent, #f5c518); border: none; border-radius: 14px; cursor: pointer; } .ds-keypad-clear:focus-visible, .ds-keypad-done:focus-visible { outline: 2px solid var(--rack-accent, #f5c518); outline-offset: 2px; }"
+    },
+    {
+      "name": "Section Label",
+      "kind": "custom",
+      "refersTo": "label",
+      "description": "The uppercase mono micro-label heading every zone: Target, Recent, On the bar.",
+      "html": "<span class=\"ds-section-label\">On the bar</span>",
+      "css": ".ds-section-label { font-family: var(--rack-font-num, 'JetBrains Mono', monospace); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--rack-text-muted, #9aa1a9); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Platform Instrument",
+    "overview": "rack.bar looks like a precision instrument that lives on the competition platform. The venue supplies the world: black rubber underfoot, chrome sleeve under arena light, and the only real color in the room is the plates themselves. The instrument supplies the character: engineered, glanceable, chalk-proof -- monospaced numerals that never jitter, one yellow that means \"act here,\" and controls big enough to hit between sets with taped thumbs. The voice is sharp, physical, gym-native. The anti-reference is the generic calculator app: no gradient-happy dashboards, no floating cards, no colors that mean nothing. Every hue on screen is either the near-monochrome chrome of the instrument or the domain-true color of a plate a lifter would name out loud (\"throw a red on\").",
+    "keyCharacteristics": [
+      "Near-black tonal surfaces; saturated color is reserved for plates and the single accent.",
+      "Monospaced, tabular numerals everywhere a weight is displayed.",
+      "Pill geometry for controls; discs and sheets are the only large shapes.",
+      "Flat at rest; shadow means a physically real thing (a disc's rim, an overlay hovering above the app).",
+      "One accent (Plate Yellow) marking the active segment and the primary action."
+    ],
+    "rules": [
+      { "name": "The Plates Own the Color Rule", "body": "UI chrome stays near-monochrome; saturated color belongs to the plates and to the one accent that borrows a plate's hex. Never introduce a new saturated color for interface purposes.", "section": "colors" },
+      { "name": "The Domain Color Rule", "body": "Plate hexes are physical facts (CONTEXT.md). Color is never the sole channel: a numeral or shape always disambiguates alongside it.", "section": "colors" },
+      { "name": "The Tabular Digits Rule", "body": "Every weight readout uses tabular/monospaced numerals (tnum or the mono face) so digits never jitter as values change.", "section": "typography" },
+      { "name": "The Engraved Numeral Rule", "body": "A disc's weight is stamped on it: rotated -90 degrees, JetBrains Mono 800, ink chosen for contrast against the plate color (dark on white/yellow, white otherwise).", "section": "typography" },
+      { "name": "The Physical Lift Rule", "body": "Shadow means physicality, never decoration: a disc has a rim because a plate does; a sheet casts a shadow because it hovers above the app. Nothing else gets one.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do style every surface through --rack-* tokens in tokens.css -- one source of truth per value (ADR-0001); reach for the precise named tier (e.g. --rack-border-strong), never the legacy collapsed aliases (--rack-bg, --rack-muted, --rack-line) in new code.",
+      "Do use the shared DISC_FILL gradient + disc shadow for any plate-colored surface, with per-color ink (dark on white/yellow, white otherwise).",
+      "Do pair every color-coded element with a numeral or shape cue -- color is never the sole channel.",
+      "Do keep touch targets at 44px minimum with the press-scale feedback; chalk-hands usability is a product commitment.",
+      "Do use tabular/mono numerals for every weight readout, rolling on change (numRoll .26s)."
+    ],
+    "donts": [
+      "Don't introduce new saturated interface colors; the plates own the color (accent yellow is the 15 kg plate's hex, danger the 25 kg red).",
+      "Don't restyle, lighten, or \"theme\" the plate palette -- the hexes are domain facts lifters navigate by.",
+      "Don't add shadows to resting UI; depth at rest is tonal (the surface ladder). Shadow is reserved for discs and overlays (the Physical Lift Rule).",
+      "Don't gradient the share card's chips -- flat fill + inset ring is the spec'd, deliberate exception.",
+      "Don't add a scrim behind the keypad or an outside-tap dismissal -- its scrimless brightness is a deliberate fidelity call so the bar stays live while typing.",
+      "Don't diverge from the design handoff's look (docs/design-handoff/) in build slices; aesthetic changes route through a design pass."
+    ]
+  }
+}
