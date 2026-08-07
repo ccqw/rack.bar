@@ -393,8 +393,7 @@ class RackConsole extends HTMLElement {
         }
         /* The row's own [hidden] is plain hidden semantics (fully out of the
            column in By Plates) -- the explicit display:none is needed because the
-           flex display above would otherwise beat the UA sheet's [hidden] rule.
-           The in-flow reservation trick below belongs to the BUTTON's [hidden]. */
+           flex display above would otherwise beat the UA sheet's [hidden] rule. */
         .rounduprow[hidden] { display: none; }
         /* The over-target opt-in: a quiet, deliberately un-pushy round-up control
            (ADR-0003 -- never auto-selected). Metrics per the handoff (prototype
@@ -405,17 +404,13 @@ class RackConsole extends HTMLElement {
           background: transparent; border: 1px solid var(--rack-border-muted);
           border-radius: 999px; padding: 8px 15px; cursor: pointer;
         }
-        /* Round-up reservation (RBAR-52): in By Weight a hidden offer keeps its
-           row IN FLOW -- swapped by visibility, with an explicit display to beat the
-           UA sheet's [hidden] display:none -- so the Target row + steppers below
-           never move when the offer appears/disappears. The ::before zero-width
-           space holds the line box (and so the row height) while the text is
-           cleared. visibility:hidden also drops the control from the a11y tree and
-           from hit-testing, exactly as display:none did. */
-        .roundup[hidden] { display: inline-block; visibility: hidden; }
-        /* Scoped to the hidden state: generated content joins the accessible name
-           (accname 2F), so the visible button must not carry the ZWSP. */
-        .roundup[hidden]::before { content: "\\200b"; }
+        /* Round-up reservation (RBAR-52): the geometry guarantee -- the Target row
+           + steppers below never move when the offer appears/disappears -- is
+           carried by the ROW's min-height above (RBAR-47), so the hidden button
+           simply leaves the layout. It must not stay a zero-content flex item:
+           the row centers its children, and an invisible-but-in-flow button would
+           shove the at-capacity caption off center. */
+        .roundup[hidden] { display: none; }
         .roundup:focus-visible { outline: 2px solid var(--rack-accent); }
         /* The at-capacity caption (RBAR-47, prototype L142): "Bar at capacity" as a
            borderless accent caption in the round-up row -- the same uppercase-mono
@@ -1042,7 +1037,10 @@ export function onBarLine(
   if (shownTotal === shownTarget) return `${head} (exact)`;
   const mag = fmtNum(Math.abs(shownTotal - shownTarget));
   if (shownTotal > shownTarget) return `${head} (${mag} over)`;
-  if (atCapacity) return `${head} (at capacity)`;
+  // At capacity the shortfall still rides along (RBAR-47: the magnitude of the miss
+  // is never lost): while the sheet is open it is the ONLY surface saying it -- the
+  // sheet covers the pill and announce() goes quiet.
+  if (atCapacity) return `${head} (${mag} under, at capacity)`;
   return `${head} (${mag} under)`;
 }
 

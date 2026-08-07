@@ -48,8 +48,11 @@ class RackRecents extends HTMLElement {
     return this._targets;
   }
 
-  /** The display Unit the chip faces read in (the store stays kg). Re-renders. */
+  /** The display Unit the chip faces read in (the store stays kg). Re-renders.
+   * Unchanged values return early: the console re-feeds every property on each of
+   * its renders, and an echoed write must not rebuild (and re-scroll) the rail. */
   set unit(u: Unit) {
+    if (u === this._unit) return;
     this._unit = u;
     if (this.rail) this.renderChips();
   }
@@ -60,6 +63,7 @@ class RackRecents extends HTMLElement {
   /** The current Target (kg) or null. The chip naming it (within ACTIVE_EPS) gets the
    * selected treatment; a tap moves it locally, this property is the console's say. */
   set target(kg: number | null) {
+    if (kg === this._target) return;
     this._target = kg;
     if (this.rail) this.renderChips();
   }
@@ -132,6 +136,10 @@ class RackRecents extends HTMLElement {
   // Unit; the accessible name keeps the full "<n> <unit>" reading.
   private renderChips(): void {
     this.hidden = this._targets.length === 0;
+    // Preserve the horizontal scroll position across the re-render (as loaded.ts
+    // does): replacing innerHTML resets scrollLeft to 0, which would yank a
+    // nudged-along rail back to the newest end whenever the console re-renders.
+    const scrollLeft = this.rail.scrollLeft;
     this.rail.innerHTML = this._targets
       .map((kg) => {
         const on = this._target !== null && Math.abs(kg - this._target) < ACTIVE_EPS;
@@ -142,6 +150,7 @@ class RackRecents extends HTMLElement {
                 class="face">${shownIn(kg, this._unit)}</span></button>`;
       })
       .join('');
+    this.rail.scrollLeft = scrollLeft;
     this.rail.querySelectorAll<HTMLButtonElement>('[data-target]').forEach((chip) =>
       chip.addEventListener('click', () => this.apply(Number(chip.dataset.target))),
     );

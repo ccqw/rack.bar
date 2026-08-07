@@ -338,7 +338,7 @@ class RackEntry extends HTMLElement {
            this quiet mono confirmation. The prototype's type spec is character-for-
            character the section-label recipe (600 11px mono, .14em, uppercase,
            text-muted), so it borrows SECTION_LABEL rather than restating the numbers. */
-        .sub .load.exact {
+        .sub .load.exact:not([hidden]) {
           display: inline-flex; align-items: center; gap: 5px;
           ${SECTION_LABEL}
         }

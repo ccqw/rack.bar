@@ -354,11 +354,14 @@ describe('<rack-app> header fidelity (RBAR-45)', () => {
     expect(p).toContain('letter-spacing: .04em');
   });
 
-  it('the chevron keeps a fixed secondary stroke and a .15s rotate transition', () => {
+  it('the chevron keeps a fixed secondary stroke; the .15s rotate ease is motion-gated', () => {
     const { root } = mountApp();
     const path = pill(root).querySelector('.chev path')!;
     expect(path.getAttribute('stroke')).toBe('var(--rack-text-secondary)');
-    expect(rule(root, '.pill .chev {')).toContain('transition: transform .15s');
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.pill \.chev \{ transition: transform \.15s; \}/,
+    );
     expect(rule(root, '.pill[aria-expanded="true"] .chev')).toContain('rotate(180deg)');
   });
 });

@@ -67,6 +67,10 @@ class RackHelp extends HTMLElement {
       <style>
         ${BOX_SIZING}${BUTTON_FX}
         :host { position: relative; display: inline-flex; }
+        /* Entrance split BUTTON_FX-style for reduced motion (as entry.ts's sheet):
+           everyone gets the fade (opacity is not motion), only a no-preference
+           lifter gets the -6px drop + scale (popIn L22). */
+        @keyframes rack-pop-fade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes rack-pop { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: none; } }
         /* The circular help icon: a raised idle chip (prototype helpBtnStyle) that
            picks up the accent when open, mirroring the Setup pill. */
@@ -94,7 +98,10 @@ class RackHelp extends HTMLElement {
           box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .7);
           display: flex; flex-direction: column; gap: 9px;
           transform-origin: top left;
-          animation: rack-pop .16s cubic-bezier(.2, .85, .25, 1);
+          animation: rack-pop-fade .16s cubic-bezier(.2, .85, .25, 1);
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .popover { animation: rack-pop .16s cubic-bezier(.2, .85, .25, 1); }
         }
         .popover[hidden] { display: none; }
         /* An h2 since RBAR-53 (heading navigation); flex item of the popover column, so

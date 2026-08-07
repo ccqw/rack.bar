@@ -147,11 +147,14 @@ describe('<rack-help> fidelity (RBAR-45)', () => {
     expect(rule(root, '.popover {')).toContain('var(--rack-radius-sheet-control)');
   });
 
-  it('the pop-in animation drops in from -6px at .97 scale', () => {
+  it('the pop-in fades for everyone; the -6px/.97 drop is reduced-motion-gated', () => {
     const { root } = mountHelp();
     const css = root.querySelector('style')!.textContent!;
     expect(css).toContain('translateY(-6px) scale(.97)');
-    expect(rule(root, '.popover {')).toContain('animation: rack-pop .16s');
+    expect(rule(root, '.popover {')).toContain('animation: rack-pop-fade .16s');
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.popover \{ animation: rack-pop \.16s/,
+    );
   });
 
   it('the body ink is two-tier: running copy popover-ink, strong full white', () => {

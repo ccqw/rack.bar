@@ -1375,8 +1375,12 @@ describe('onBarLine deriver (RBAR-22 keypad sheet)', () => {
     expect(onBarLine(101, 100.5, 'kg', false)).toBe('On the bar: 101 kg (0.5 over)');
   });
 
-  it('reads a physically-full short Side as "(at capacity)"', () => {
-    expect(onBarLine(720, 720.3, 'kg', true)).toBe('On the bar: 720 kg (at capacity)');
+  it('reads a physically-full short Side with BOTH facts (RBAR-47)', () => {
+    // The sheet covers the pill and mutes announce() while open, so this line is
+    // the only surface carrying the shortfall -- it must not drop the magnitude.
+    expect(onBarLine(720, 720.3, 'kg', true)).toBe(
+      'On the bar: 720 kg (0.3 under, at capacity)',
+    );
   });
 
   it('keys off the displayed unit so it is honest in lb', () => {
@@ -1561,7 +1565,7 @@ describe('<rack-console> Encode respects the sleeve cap (RBAR-31, ADR-0012)', ()
   });
 
   // The "Sleeve full" warning beside the palette's Add label (RBAR-54): the By-Plates
-  // counterpart of By Weight's "Bar at capacity" pill. Console-level wiring check --
+  // counterpart of By Weight's "Bar at capacity" caption. Console-level wiring check --
   // the appear/clear/partial states themselves are locked in palette.test.ts.
   it('surfaces "Sleeve full" beside Add when the last-fitting Plate goes on, clearing on removal (RBAR-54)', () => {
     const el = mountConsole();
@@ -1709,17 +1713,14 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
   const consoleCss = () =>
     mountConsole().shadowRoot!.querySelector('style')!.textContent!;
 
-  it('keeps a hidden offer in flow: visibility swap + zero-width line-box holder', () => {
-    const css = consoleCss();
-    const hiddenRule = ruleBody(css, '.roundup[hidden]');
-    expect(hiddenRule).toContain('visibility: hidden');
-    expect(hiddenRule).not.toContain('display: none');
-    // The UA sheet's [hidden] display:none must be beaten explicitly, or the row
-    // still collapses out of flow.
-    expect(hiddenRule).toContain('display: inline-block');
-    // Scoped to [hidden]: generated content joins the accessible name (accname
-    // step 2F), so the visible button must not carry the ZWSP.
-    expect(ruleBody(css, '.roundup[hidden]::before')).toContain('content: "\\200b"');
+  it('drops a hidden offer from the row entirely: the reservation lives on the row', () => {
+    // RBAR-52's geometry guarantee is carried by .rounduprow's min-height (locked
+    // below); the hidden button must NOT stay in flow -- the row centers its
+    // children, so an invisible flex item would shove the at-capacity caption
+    // off center (RBAR-47).
+    const hiddenRule = ruleBody(consoleCss(), '.roundup[hidden]');
+    expect(hiddenRule).toContain('display: none');
+    expect(hiddenRule).not.toContain('visibility');
   });
 
   it('pins the round-up row at 36px on top of the in-flow reservation (RBAR-47, prototype L140)', () => {

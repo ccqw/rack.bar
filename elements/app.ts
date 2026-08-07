@@ -93,7 +93,12 @@ class RackApp extends HTMLElement {
         .pill:hover { color: var(--rack-fg); }
         .pill:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .pill .sliders { display: block; flex: none; }
-        .pill .chev { display: block; transition: transform .15s; }
+        .pill .chev { display: block; }
+        /* The rotate eases only for lifters who have not asked motion off; the
+           end states themselves are instant either way (BUTTON_FX convention). */
+        @media (prefers-reduced-motion: no-preference) {
+          .pill .chev { transition: transform .15s; }
+        }
         .pill[aria-expanded="true"] .chev { transform: rotate(180deg); }
         main {
           flex: 1; display: flex; align-items: center; justify-content: center;
