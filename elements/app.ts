@@ -100,8 +100,11 @@ class RackApp extends HTMLElement {
           .pill .chev { transition: transform .15s; }
         }
         .pill[aria-expanded="true"] .chev { transform: rotate(180deg); }
+        /* Top-anchored, not vertically centered (prototype L75 is a plain
+           column): centering re-floats the whole console whenever the mode
+           swap changes its height, so the toggle and bar jump on every switch. */
         main {
-          flex: 1; display: flex; align-items: center; justify-content: center;
+          flex: 1; display: flex; align-items: flex-start; justify-content: center;
           padding: 2vh 5vw 6vh;
         }
       </style>

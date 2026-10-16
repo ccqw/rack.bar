@@ -365,3 +365,15 @@ describe('<rack-app> header fidelity (RBAR-45)', () => {
     expect(rule(root, '.pill[aria-expanded="true"] .chev')).toContain('rotate(180deg)');
   });
 });
+
+describe('rack-app layout', () => {
+  afterEach(() => document.body.replaceChildren());
+
+  it('top-anchors main so a mode swap cannot re-float the console', () => {
+    const { root } = mountApp();
+    const css = root.querySelector('style')!.textContent!;
+    const main = css.match(/main\s*\{([^}]*)\}/)![1];
+    expect(main).toMatch(/align-items:\s*flex-start/);
+    expect(main).not.toMatch(/align-items:\s*center/);
+  });
+});
