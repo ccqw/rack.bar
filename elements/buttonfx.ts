@@ -13,8 +13,19 @@
 // colour/opacity transitions apply to everyone; the transform press-scale and its
 // transition are gated behind prefers-reduced-motion so a reduced-motion lifter gets the
 // colour feedback without the scale jump.
+//
+// The mobile tap rule (RBAR-59, the prototype's base button rule, rack.bar.dc.html L26)
+// rides along: touch-action: manipulation stops iOS reading two quick taps as
+// double-tap-to-zoom (pinch zoom survives), and the tap-highlight flash and
+// long-press text selection are suppressed. Safari still needs the -webkit- prefix
+// on user-select. index.html sets touch-action on html as well, so the gaps between
+// controls are covered app-wide.
 export const BUTTON_FX = `
   button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
     transition: background-color .16s ease, border-color .16s ease,
                 color .16s ease, opacity .16s ease;
   }
