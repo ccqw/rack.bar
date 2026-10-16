@@ -75,3 +75,9 @@ sleeve-full shortfall carries no `over`, in the core rather than hidden by the v
 (which is how RBAR-28 handled it over the uncapped core). So the RBAR-11 "always
 offer the round-up when under" rule reads: always offer it when one physically
 exists. See ADR-0012.
+
+**Refined 2026-10-15 (RBAR-60):** "at or under the Target" is judged against the
+Target *as read* in the active unit -- the console solves to the top of the
+reading's rounding bucket (`decodeWithin` + `displayCeilingKg`), so typing back a
+displayed Total lands on it. The raw-kg overshoot is under one displayed unit and
+never reads as over. See the ADR-0010 amendment.

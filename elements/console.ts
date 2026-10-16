@@ -12,8 +12,8 @@
 // and whether the Secondary readout shows, persisted console-side (rackbar.unit /
 // rackbar.secondary) -- the line ADR-0009 drew, putting Target-display state with the
 // console. The app pushes the rig config down (barKg, collarKg, plateSet); the chosen
-// plate set selects the Inventory to solve against and can FORCE the unit (the iron set
-// is lb-only), so the unit toggle derives free-vs-locked from the set.
+// plate set selects the Inventory to solve against. The unit toggle is free on every set
+// (RBAR-60, ADR-0010 amendment): a kg lifter can load the iron set by kg Targets.
 import './entry.ts';
 import './palette.ts';
 import './loaded.ts';
@@ -21,7 +21,7 @@ import './sleeve.ts';
 import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
-import { decode } from '../lib/decode.ts';
+import { decodeWithin } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
@@ -34,7 +34,7 @@ import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import type { LoadSummary } from '../lib/summary.ts';
-import { format, shownIn } from '../lib/units.ts';
+import { format, shownIn, displayCeilingKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
@@ -65,8 +65,8 @@ type Mode = 'decode' | 'encode';
 // canonically in kg (ADR-0006); the row renders it in the active unit (RBAR-17).
 const RECENTS_KEY = 'rackbar.recents';
 // The Target display state, console-owned and console-persisted (ADR-0010): the
-// lifter's free Primary-unit choice (used on the Competition set) and whether the
-// Secondary readout shows.
+// lifter's Primary-unit choice (one choice for every plate set, RBAR-60) and whether
+// the Secondary readout shows.
 const UNIT_KEY = 'rackbar.unit';
 const SECONDARY_KEY = 'rackbar.secondary';
 
@@ -110,12 +110,12 @@ class RackConsole extends HTMLElement {
   private _barKg = DEFAULT_BAR_KG;
   private _collarKg = DEFAULT_COLLAR_KG;
   // The active plate set (RBAR-17, ADR-0010): selects the Inventory to decode/encode
-  // against and whether the display unit is locked. Defaults to Competition (kg Eleiko);
+  // against. Defaults to Competition (kg Eleiko);
   // the app sets it from Setup.
   private _plateSetKey: PlateSetKey = 'comp';
-  // The lifter's free Primary-unit choice and Secondary-visible preference (ADR-0010).
-  // unitPref is honored on the Competition set; the Training set forces lb (see
-  // activeUnit). Both restore from storage on connect and persist on change.
+  // The lifter's Primary-unit choice and Secondary-visible preference (ADR-0010).
+  // unitPref holds on every plate set, and a set switch keeps it (RBAR-60). Both
+  // restore from storage on connect and persist on change.
   private unitPref: Unit = 'kg';
   private showSecondary = true;
   // Decode-only: the current decode() result and whether the over-target opt-in is on
@@ -158,8 +158,8 @@ class RackConsole extends HTMLElement {
   }
 
   /**
-   * The active plate set (RBAR-17, ADR-0010). Switching it changes the Inventory and may
-   * force the unit (training -> lb). The Plates do not cross sets, so a hand-built Encode
+   * The active plate set (RBAR-17, ADR-0010). Switching it changes the Inventory; the
+   * display unit is the lifter's and is kept (RBAR-60). The Plates do not cross sets, so a hand-built Encode
    * loadout is reset to the bare rig; a Decode Target is unit-agnostic kg, so it
    * re-solves on the new rig (the same weight on the new Plates). The app pairs this with
    * a barKg change to the set's default -- set barKg first so the re-decode sees it.
@@ -190,12 +190,10 @@ class RackConsole extends HTMLElement {
     return plateSetFor(this._plateSetKey).inventory;
   }
 
-  // The effective display Unit: the set forces it when locked (the iron set is lb-only),
-  // otherwise the lifter's free choice. A locked set never overwrites unitPref, so
-  // toggling sets back and forth restores the lifter's Competition choice (ADR-0010).
+  // The display Unit: the lifter's choice on every plate set. The iron set used to force
+  // lb (ADR-0010); RBAR-60 freed it -- a kg lifter loads iron by kg Targets too.
   private activeUnit(): Unit {
-    const set = plateSetFor(this._plateSetKey);
-    return set.unitLocked ? set.unit : this.unitPref;
+    return this.unitPref;
   }
 
   // The effective Bar baseline the core loads from: Bar + 2 x Collar (ADR-0008). Every
@@ -284,8 +282,7 @@ class RackConsole extends HTMLElement {
         /* The kg|lb Primary unit toggle: a small segmented control on the same raised
            track (prototype L122). Its active is the SELECTED GREY, not the accent --
            the accent-active belongs to the mode toggle alone (sUnitBtn, L406).
-           Disabled (locked) when the plate set fixes the unit -- the iron set is
-           lb-only (ADR-0010). */
+           Free on every plate set (RBAR-60). */
         .units {
           display: inline-flex; padding: 2px;
           background: var(--rack-raised);
@@ -303,7 +300,6 @@ class RackConsole extends HTMLElement {
           font-weight: 700;
           color: var(--rack-text); background: var(--rack-selected);
         }
-        .units button:disabled { cursor: default; opacity: .55; }
         .units button:focus-visible { outline: 2px solid var(--rack-accent); }
         /* The big Total (handoff 4a): Hanken 800 / 54px / -.025em with tabular figures.
            Hanken is proportional, so tnum must be explicit -- it "stayed on" only while
@@ -664,13 +660,19 @@ class RackConsole extends HTMLElement {
     this.render(); // initial state: Decode, a bare rig, no Target typed yet
   }
 
-  // Adopt a Primary-unit choice from the toggle: ignored on a locked set (the toggle is
-  // disabled there anyway), else record it, persist, and re-render every surface in it.
+  // Adopt a Primary-unit choice from the toggle: record it, persist, and re-render every
+  // surface in it. A live Target re-solves for its reading in the new unit (RBAR-60, as
+  // the prototype's setUnit re-decodes): the at-or-under bucket changes with the unit, so
+  // keeping the old loadout could read over. A round-up the lifter chose is left alone --
+  // they opted over on purpose, and the toggle must not silently undo it.
   private chooseUnit(unit: Unit): void {
-    if (plateSetFor(this._plateSetKey).unitLocked) return;
     if (unit === this.unitPref) return;
     this.unitPref = unit;
     writePersisted(UNIT_KEY, unit);
+    if (this.mode === 'decode' && this.decoded && !this.showingOver) {
+      this.decodeTo(this.decoded.primary.total - this.decoded.primary.delta);
+      return; // decodeTo renders
+    }
     this.render();
   }
 
@@ -742,10 +744,20 @@ class RackConsole extends HTMLElement {
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
   // cleared, so the lifter is never silently left over Target (ADR-0003). A null Target
-  // (empty field) clears to the bare Bar. Solved against the active set's Inventory.
+  // (empty field) clears to the bare Bar. Solved against the active set's Inventory, at
+  // or under everything the Target's READING covers in the active unit (RBAR-60): a
+  // typed-back displayed Total must land on itself, not a Plate step below it.
   private decodeTo(target: number | null): void {
     this.showingOver = false;
-    this.decoded = target === null ? null : decode(target, this.baselineKg(), this.inventory());
+    this.decoded =
+      target === null
+        ? null
+        : decodeWithin(
+            target,
+            displayCeilingKg(target, this.activeUnit()),
+            this.baselineKg(),
+            this.inventory(),
+          );
     this.side = this.decoded ? this.decoded.primary.side : [];
     this.render();
   }
@@ -905,13 +917,10 @@ class RackConsole extends HTMLElement {
     this.announcer.textContent = text;
   }
 
-  // Reflect the active Primary unit on the kg|lb toggle, and disable it when the plate
-  // set locks the unit (the iron set is lb-only -- ADR-0010).
+  // Reflect the active Primary unit on the kg|lb toggle.
   private renderUnitToggle(unit: Unit): void {
-    const locked = plateSetFor(this._plateSetKey).unitLocked;
     this.unitButtons.forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.unit === unit));
-      b.disabled = locked;
     });
   }
 

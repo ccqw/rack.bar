@@ -207,3 +207,33 @@ function searchFill(
   visit(0, perSideKg, sleeveMm, 0);
   return bestSide;
 }
+
+/**
+ * Decode at or under a `ceiling` at or above the Target, reporting every `delta`
+ * against the real `target` (RBAR-60). The shell passes the top of the Target's
+ * displayed reading (units.ts displayCeilingKg): a Target typed as "55 lb" is
+ * 24.95 kg, yet the 25 kg load also reads 55 lb, so "at or under what the lifter
+ * typed" means at or under everything that reading covers. Solving to the raw kg
+ * would land a whole Plate step low on any reading that rounds down -- the
+ * ADR-0010 displayed-unit exactness rule carried from the status pill into the
+ * solve itself. The overshoot is below one displayed unit, so it never reads as over.
+ *
+ * The core stays unit-free (ADR-0010): it sees only the two kg numbers. Deltas stay
+ * Target-relative so `total - delta` still recovers the Target the lifter typed;
+ * a primary may carry a tiny positive delta (inside the reading), and `over`, when
+ * present, is strictly above the ceiling.
+ */
+export function decodeWithin(
+  target: number,
+  ceiling: number,
+  bar: number = DEFAULT_BAR_KG,
+  inventory: readonly Plate[] = ELEIKO_KG,
+  sleeveMm: number = SLEEVE_MM,
+): Decoded {
+  if (!Number.isFinite(target)) return decode(target, bar, inventory, sleeveMm);
+  const solved = decode(Math.max(ceiling, target), bar, inventory, sleeveMm);
+  const rebase = (l: Loadout): Loadout => ({ ...l, delta: l.total - target });
+  return solved.over
+    ? { primary: rebase(solved.primary), over: rebase(solved.over) }
+    : { primary: rebase(solved.primary) };
+}

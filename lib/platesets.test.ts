@@ -13,10 +13,9 @@ describe('plate sets (RBAR-17, ADR-0010)', () => {
     expect(PLATE_SET_KEYS).toEqual(['comp', 'training']);
   });
 
-  it('bundles the Competition set: Eleiko, kg, free toggle, kg Bars, default 20 kg', () => {
+  it('bundles the Competition set: Eleiko, kg, kg Bars, default 20 kg', () => {
     const comp = PLATE_SETS.comp;
     expect(comp.unit).toBe('kg');
-    expect(comp.unitLocked).toBe(false); // a kg bar may still be read in lb
     expect(comp.inventory).toBe(ELEIKO_KG);
     expect(comp.bars).toEqual([20, 15, 5]);
     expect(comp.defaultBarKg).toBe(20);
@@ -24,10 +23,9 @@ describe('plate sets (RBAR-17, ADR-0010)', () => {
     expect(comp.shortLabel).toBe('Comp'); // the compact header-pill caption (RBAR-30)
   });
 
-  it('bundles the Training set: iron, lb-locked, a single 45 lb Bar', () => {
+  it('bundles the Training set: iron, stamped in lb, a single 45 lb Bar', () => {
     const tr = PLATE_SETS.training;
     expect(tr.unit).toBe('lb');
-    expect(tr.unitLocked).toBe(true); // an iron rack is lb-only
     expect(tr.inventory).toBe(IRON_LB);
     expect(tr.bars).toEqual([lbToKg(45)]);
     expect(tr.defaultBarKg).toBe(lbToKg(45));

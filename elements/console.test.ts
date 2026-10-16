@@ -1022,30 +1022,46 @@ describe('<rack-console> display unit toggle (RBAR-17, ADR-0010)', () => {
 });
 
 describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
-  it('decodes against the iron Inventory and forces lb when Training is chosen', () => {
+  it('decodes against the iron Inventory and keeps the chosen unit (RBAR-60)', () => {
     const el = mountConsole();
     el.barKg = lbToKg(45); // the app pairs the set with its default Bar
     el.plateSet = 'training';
-    // unit is forced to lb and the toggle is locked
-    expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true');
-    expect(unitBtn(el, 'kg').disabled).toBe(true);
-    expect(unitBtn(el, 'lb').disabled).toBe(true);
+    // the default kg choice survives the switch, and the toggle is live (no lock)
+    expect(unitBtn(el, 'kg').getAttribute('aria-pressed')).toBe('true');
+    expect(unitBtn(el, 'kg').disabled).toBe(false);
+    expect(unitBtn(el, 'lb').disabled).toBe(false);
+    unitBtn(el, 'lb').click();
     // a whole-lb Target lands exactly on the iron grid
     type(el, '135'); // 45 lb Bar + one 45 lb pair
     expect(total(el)).toBe('135 lb');
     expect(discs(el).length).toBe(1);
   });
 
-  it('restores a free kg|lb toggle when switching back to Competition', () => {
+  it('keeps an lb choice across set switches both ways (RBAR-60)', () => {
     const el = mountConsole();
-    unitBtn(el, 'lb').click(); // free lb choice on Competition, persisted as the pref
+    unitBtn(el, 'lb').click(); // lb on Competition, persisted as the pref
     el.barKg = lbToKg(45);
-    el.plateSet = 'training'; // forced lb (toggle locked)
-    expect(unitBtn(el, 'kg').disabled).toBe(true);
+    el.plateSet = 'training';
+    expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true');
+    unitBtn(el, 'kg').click(); // a kg choice made ON Training holds too
+    expect(localStorage.getItem('rackbar.unit')).toBe('kg');
     el.barKg = 20;
     el.plateSet = 'comp';
-    expect(unitBtn(el, 'kg').disabled).toBe(false); // free again
-    expect(unitBtn(el, 'lb').getAttribute('aria-pressed')).toBe('true'); // remembered lb pref
+    expect(unitBtn(el, 'kg').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('enters and reads kg on the iron set (RBAR-60)', () => {
+    const el = mountConsole();
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    // 100 kg = 220.46 lb; the iron grid at or under it is 220 lb = 99.79 kg
+    type(el, '100');
+    expect(total(el)).toBe('99.79 kg');
+    expect(statusKind(el)).toBe('short');
+    expect(statusText(el)).toBe('0.21 kg short');
+    expect(over(el).hidden).toBe(false); // the 225 lb round-up is offered
+    expect(discs(el).every((d) => d.dataset.color === 'iron')).toBe(true);
+    expect(secondaryEl(el).textContent).toBe('220 lb');
   });
 
   it('re-solves a standing Decode Target against the new set when the plate set changes', () => {
@@ -1054,6 +1070,7 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
     const el = mountConsole();
     type(el, '100'); // comp: 25 + 15 Eleiko, exact
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(['25', '15']);
+    unitBtn(el, 'lb').click(); // read the iron rig in lb (the set no longer forces it)
     el.barKg = lbToKg(45);
     el.plateSet = 'training';
     // the Target persisted and re-solved on iron: a non-empty all-iron Side Load, in lb,
@@ -1081,6 +1098,7 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
     tapAdd(el, 25);
     tapAdd(el, 20); // an Eleiko loadout
     expect(discs(el).length).toBe(2);
+    unitBtn(el, 'lb').click(); // read the iron rig in lb (the set no longer forces it)
     el.barKg = lbToKg(45);
     el.plateSet = 'training'; // iron rig -- the Eleiko Plates are gone
     expect(discs(el).length).toBe(0);
@@ -1097,6 +1115,7 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
     tapAdd(el, 25);
     tapAdd(el, 20); // an Eleiko loadout
     modeBtn(el, 'decode').click(); // carried, decoded === null
+    unitBtn(el, 'lb').click(); // read the iron rig in lb (the set no longer forces it)
     el.barKg = lbToKg(45);
     el.plateSet = 'training';
     modeBtn(el, 'encode').click();
@@ -1221,6 +1240,7 @@ describe('<rack-console> (Share card)', () => {
 
   it('reads iron faces and lb through the card on the Training set', () => {
     const el = mountConsole();
+    unitBtn(el, 'lb').click(); // the lifter reads the iron rig in lb
     el.barKg = lbToKg(45);
     el.plateSet = 'training';
     type(el, '135'); // 45 lb iron Bar + 2 x 45 lb iron = 135 lb
@@ -2042,5 +2062,58 @@ describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
   it('keeps the Total output inside the tap target (share/fullscreen hooks intact)', () => {
     const el = mountConsole();
     expect(totalTap(el).querySelector('[data-total]')).not.toBeNull();
+  });
+});
+
+// RBAR-60: a reading is rounded (whole lb, kg to 2 dp), so typing back a Total the
+// lifter can SEE must land on it. Before RBAR-60 the solve compared against the raw kg
+// of the typed reading -- 55 lb is 24.95 kg, just under the 25 kg load that reads
+// 55 lb -- and fell a whole Plate step low on every reading that rounds down
+// (114 achievable Competition Totals in lb, 33 of 72 iron Totals in kg).
+describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
+  it('lands every iron Total read in kg back on itself, Exact', () => {
+    const el = mountConsole();
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    const misses: string[] = [];
+    for (let lb = 45; lb <= 400; lb += 5) {
+      const reading = String(Number(lbToKg(lb).toFixed(2)));
+      type(el, reading);
+      if (total(el) !== `${reading} kg` || statusKind(el) !== 'exact') {
+        misses.push(`${lb} lb read ${reading} kg -> ${total(el)} ${statusKind(el)}`);
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it('lands every Competition Total read in lb back on itself, Exact', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    const misses: string[] = [];
+    // the Eleiko grid on a 20 kg Bar: every whole kg (the 0.5 kg change Plate, paired)
+    for (let kg = 20; kg <= 250; kg += 1) {
+      const reading = String(Math.round(kg / 0.45359237));
+      type(el, reading);
+      if (total(el) !== `${reading} lb` || statusKind(el) !== 'exact') {
+        misses.push(`${kg} kg read ${reading} lb -> ${total(el)} ${statusKind(el)}`);
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it('re-solves for the new reading when the unit toggles, never reading over', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    type(el, '55'); // 24.95 kg; the 25 kg load reads 55 lb
+    expect(total(el)).toBe('55 lb');
+    expect(statusKind(el)).toBe('exact');
+    // In kg the Target reads 24.95 and 25 kg would read 0.05 over -- the at-or-under
+    // rule (ADR-0003) re-solves below it instead.
+    unitBtn(el, 'kg').click();
+    expect(statusKind(el)).toBe('short');
+    // and toggling back restores the Exact 55 lb load
+    unitBtn(el, 'lb').click();
+    expect(total(el)).toBe('55 lb');
+    expect(statusKind(el)).toBe('exact');
   });
 });

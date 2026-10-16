@@ -117,3 +117,39 @@ on the Plate model. The iron Plates carry their own mm dimensions (from the hand
 `IRON` table), so the sleeve sizes them under the same single fit-to-width scale with
 no new logic. The only view additions are an `--rack-plate-iron` color token and
 dark-plate ink for the iron discs and palette keys.
+
+## Amendment (2026-10-15, RBAR-60): the unit toggle is free on every set
+
+**The lock is retired.** "Training forces lb and disables the kg|lb toggle (an iron
+rack has no kg)" was wrong for real use: the rack has no kg Plates, but the lifter's
+programme can be in kg. A lifter who trains on Eleiko at a big gym and on iron at home
+wants to type the same kg Targets on both. The handoff prototype agreed all along --
+its `setUnit` works on either set; only its `setPlateSet` picks a unit at switch time.
+
+- The kg|lb toggle is live on every set. `PlateSet.unitLocked` is removed; a set's
+  `unit` now only names its stamped labels (Bar pill, Setup Bar tiles, iron faces).
+- **Switching set keeps the lifter's unit** (Caitlin's call). This deliberately
+  diverges from the prototype's switch-time reset (training -> lb, comp -> kg): one
+  remembered `rackbar.unit` for both sets, so a kg lifter is never flipped to lb.
+- kg readouts on iron use the same <= 2 dp rule as everywhere (the prototype's
+  `toFixed(2)`); e.g. 135 lb reads 61.23 kg.
+
+**Decode solves to the Target's reading, not its raw kg.** Freeing the toggle exposed a
+gap in the displayed-unit exactness rule above: it judged *status* on the displayed
+numbers but still *solved* at or under the raw kg. A reading that rounds down sits
+just below the load it stands for -- "55 lb" is 24.95 kg, but the 25 kg load also
+reads 55 lb -- so typing back a displayed Total landed a whole Plate step low (114
+achievable Competition Totals in lb on main; 33 of 72 iron Totals in kg once kg was
+allowed on iron). The rule now reaches the solve:
+
+- `units.ts displayCeilingKg(kg, unit)` gives the top of the reading's rounding bucket
+  (half a display step: 0.5 lb, or 0.005 kg). The console solves with
+  `decode.ts decodeWithin(target, ceiling, ...)`, which decodes at or under the ceiling
+  but reports every `delta` against the real Target, so `target = total - delta`
+  still holds. The core stays unit-free: it only sees two kg numbers.
+- This refines **ADR-0003**: "never overshoots" now means never overshoots the
+  Target *as read*. The overshoot of the raw kg is under one displayed unit, so it
+  can never show as over; the status pill, round-up offer and keypad line are unchanged.
+- A unit toggle re-solves a live Target for the new reading (as the prototype's
+  `setUnit` re-decodes), since the bucket changes with the unit; a round-up the lifter
+  chose is left in place.

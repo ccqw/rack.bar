@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decode } from './decode.ts';
+import { decode, decodeWithin } from './decode.ts';
 import {
   ELEIKO_KG,
   IRON_LB,
@@ -411,6 +411,51 @@ describe('the sleeve caps decode (RBAR-31, ADR-0012)', () => {
       }
       const { primary } = decode(target);
       expect(Math.round(sideLoadKg(primary.side) * 2), `target ${target}`).toBe(optimal2);
+    }
+  });
+});
+
+// RBAR-60: decodeWithin solves at-or-under a CEILING (the top of the Target's displayed
+// reading, computed by the shell) but reports every delta against the real Target, so
+// the shell's `target = total - delta` derivation never drifts to the ceiling.
+describe('decodeWithin (RBAR-60)', () => {
+  const ironBar = lbToKg(45);
+
+  it('reaches a load inside the ceiling that plain decode misses', () => {
+    // Target 29.48 kg; 65 lb of iron = 29.4835 kg is just over it
+    expect(decode(29.48, ironBar, IRON_LB).primary.total).toBeCloseTo(lbToKg(60), 9);
+    const { primary } = decodeWithin(29.48, 29.485, ironBar, IRON_LB);
+    expect(primary.total).toBeCloseTo(lbToKg(65), 9);
+  });
+
+  it('measures every delta from the real Target, not the ceiling', () => {
+    const target = 29.48;
+    const { primary, over } = decodeWithin(target, 29.485, ironBar, IRON_LB);
+    expect(primary.total - primary.delta).toBeCloseTo(target, 12);
+    expect(over).toBeDefined();
+    expect(over!.total - over!.delta).toBeCloseTo(target, 12);
+    expect(over!.total).toBeGreaterThan(29.485); // the round-up is past the ceiling
+  });
+
+  it('equals plain decode when the ceiling is the Target', () => {
+    for (const t of [0, 19, 61, 100.5, 142.5, 300]) {
+      expect(decodeWithin(t, t)).toEqual(decode(t));
+    }
+  });
+
+  it('degrades a non-finite Target exactly like decode', () => {
+    expect(decodeWithin(Number.NaN, Number.NaN)).toEqual(decode(Number.NaN));
+  });
+
+  it('every achievable iron Total, read back in kg, solves to itself (oracle)', () => {
+    // Independent of the loader: the iron grid is every 5 lb from the 45 lb Bar. For
+    // each, the kg reading (2 dp) fed back through its own ceiling must land on it.
+    for (let lb = 45; lb <= 400; lb += 5) {
+      const real = lbToKg(lb);
+      const read = Number(real.toFixed(2));
+      const ceiling = read + 0.005 - 1e-9;
+      const { primary } = decodeWithin(read, ceiling, ironBar, IRON_LB);
+      expect(primary.total, `${lb} lb read as ${read} kg`).toBeCloseTo(real, 9);
     }
   });
 });

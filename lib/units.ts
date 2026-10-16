@@ -74,3 +74,17 @@ export function stepFor(unit: Unit): number {
 export function format(kg: number, unit: Unit): string {
   return `${shownIn(kg, unit)} ${unit}`;
 }
+
+/**
+ * The top of the rounding bucket a reading of `kg` in `unit` covers (RBAR-60): the
+ * largest kg weight that still shows the same number (shownIn). Decode solves to
+ * this ceiling so a Target typed as a displayed reading reaches every load that
+ * reads the same (see decode.ts decodeWithin). Never below `kg`; a non-finite
+ * value passes through (decode degrades it).
+ */
+export function displayCeilingKg(kg: number, unit: Unit): number {
+  if (!Number.isFinite(kg)) return kg;
+  // Half a display step, minus a hair so the top still rounds back to the reading.
+  const top = shownIn(kg, unit) + (unit === 'lb' ? 0.5 : 0.005) - 1e-9;
+  return Math.max(kg, unit === 'lb' ? lbToKg(top) : top);
+}
