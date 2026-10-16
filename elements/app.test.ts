@@ -65,10 +65,13 @@ describe('<rack-app> (app shell + Setup wiring, RBAR-15)', () => {
     expect(pill(root).textContent!.toLowerCase()).toContain('bar');
   });
 
-  it('captions the Setup pill with the plate-set short name + a leading icon (RBAR-30)', () => {
+  it('captions the Setup pill on ONE line: Bar, middot, set short name (RBAR-45)', () => {
     const { root } = mountApp();
-    // Default set is Competition -> the compact "Comp" caption rides beside the Bar.
-    expect(pill(root).querySelector('[data-pill-set]')!.textContent).toBe('Comp');
+    // Default rig -> "20 kg bar <middot> Comp", the handoff's single-line pill
+    // (prototype L82/L912). The set caption rides the same line, after a middot.
+    expect(pill(root).querySelector('[data-pill-label]')!.textContent).toBe(
+      '20 kg bar \u00B7 Comp',
+    );
     // The sliders/setup glyph leads the pill (handoff section 1, screenshot 01).
     expect(pill(root).querySelector('[data-pill-icon]')).not.toBeNull();
   });
@@ -262,7 +265,10 @@ describe('<rack-app> plate-set wiring (RBAR-17, ADR-0010)', () => {
     expect(consoleEl(root).plateSet).toBe('training');
     expect(consoleEl(root).barKg).toBe(lbToKg(45)); // the set's default Bar
     expect(pill(root).textContent).toContain('45'); // "45 lb bar"
-    expect(pill(root).querySelector('[data-pill-set]')!.textContent).toBe('Training'); // caption follows the set
+    // The one-line caption follows the set (RBAR-45): "45 lb bar <middot> Training".
+    expect(pill(root).querySelector('[data-pill-label]')!.textContent).toBe(
+      '45 lb bar \u00B7 Training',
+    );
     expect(localStorage.getItem(PLATESET_KEY)).toBe('training');
     expect(localStorage.getItem(KEY)).toBe(String(lbToKg(45)));
   });
@@ -313,5 +319,61 @@ describe('heading structure (RBAR-53)', () => {
     expect(h1s.length).toBe(1);
     expect(h1s[0].textContent).toBe('rack.bar');
     expect(countH1(root)).toBe(1); // no nested shadow root adds another
+  });
+});
+
+// RBAR-45: header fidelity locks. The wordmark scale (prototype L79), the raised
+// mono Setup pill (L82), and the fixed-ink chevron (caretStyle L913) are handoff
+// values; lock the load-bearing declarations so a refactor cannot drift them.
+describe('<rack-app> header fidelity (RBAR-45)', () => {
+  beforeEach(() => localStorage.clear());
+
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('the wordmark is 800 20px at the tight -.025em tracking', () => {
+    const { root } = mountApp();
+    const wm = rule(root, '.wordmark {');
+    expect(wm).toContain('font-weight: 800');
+    expect(wm).toContain('font-size: 20px');
+    expect(wm).toContain('letter-spacing: -.025em');
+  });
+
+  it('the pill is a raised mono chip: raised fill, secondary ink, 600 11px/.04em', () => {
+    const { root } = mountApp();
+    const p = rule(root, '.pill {');
+    expect(p).toContain('background: var(--rack-raised)');
+    expect(p).toContain('color: var(--rack-text-secondary)');
+    expect(p).toContain('var(--rack-font-num)');
+    expect(p).toContain('font-size: 11px');
+    expect(p).toContain('font-weight: 600');
+    expect(p).toContain('letter-spacing: .04em');
+  });
+
+  it('the chevron keeps a fixed secondary stroke; the .15s rotate ease is motion-gated', () => {
+    const { root } = mountApp();
+    const path = pill(root).querySelector('.chev path')!;
+    expect(path.getAttribute('stroke')).toBe('var(--rack-text-secondary)');
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.pill \.chev \{ transition: transform \.15s; \}/,
+    );
+    expect(rule(root, '.pill[aria-expanded="true"] .chev')).toContain('rotate(180deg)');
+  });
+});
+
+describe('rack-app layout', () => {
+  afterEach(() => document.body.replaceChildren());
+
+  it('top-anchors main so a mode swap cannot re-float the console', () => {
+    const { root } = mountApp();
+    const css = root.querySelector('style')!.textContent!;
+    const main = css.match(/main\s*\{([^}]*)\}/)![1];
+    expect(main).toMatch(/align-items:\s*flex-start/);
+    expect(main).not.toMatch(/align-items:\s*center/);
   });
 });

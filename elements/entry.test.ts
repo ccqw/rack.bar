@@ -743,14 +743,17 @@ describe('keypad sheet announcements (RBAR-53)', () => {
     const line = root.querySelector<HTMLElement>('[data-live-load]')!;
     expect(line.getAttribute('role')).toBe('status');
     expect(line.hidden).toBe(true); // nothing decoded yet
-    el.loadLine = 'On the bar: 100 kg (exact)';
+    el.loadLine = 'On the bar: 100 kg (2.5 under)';
     expect(line.hidden).toBe(false);
-    expect(line.textContent).toBe('On the bar: 100 kg (exact)');
+    expect(line.textContent).toBe('On the bar: 100 kg (2.5 under)');
     el.loadLine = null;
     expect(line.hidden).toBe(true);
   });
 
   it('re-setting an unchanged load line does not touch the region (no re-announce)', () => {
+    // Deliberately the EXACT variant: since RBAR-46 that state re-renders as the
+    // dedicated svg+text line, so the idempotence guard must key off the fed string,
+    // not the (now diverged) rendered DOM.
     const { el, root } = mountEntry();
     el.loadLine = 'On the bar: 100 kg (exact)';
     const line = root.querySelector<HTMLElement>('[data-live-load]')!;
@@ -760,5 +763,105 @@ describe('keypad sheet announcements (RBAR-53)', () => {
     const records = mo.takeRecords();
     mo.disconnect();
     expect(records.length).toBe(0);
+  });
+});
+
+// RBAR-46: keypad surface fidelity. The keys sit RAISED off the sunken sheet, the
+// footer matches the prototype's compact metrics, the sheet consumes the shared shadow
+// token and eases in with a fade, the exact state gets its dedicated line back, and the
+// delete key wears the handoff's backspace glyph (as an inline SVG -- ASCII source).
+// happy-dom computes no layout, so the metric checks text-lock the rule bodies; the
+// rendered check is the browser pass.
+describe('keypad surface fidelity (RBAR-46)', () => {
+  // `occurrence` picks a later match when the selector text nests inside an earlier
+  // rule head (".done {" is the tail of ".clear, .done {").
+  function rule(root: ShadowRoot, selector: string, occurrence = 0): string {
+    const css = root.querySelector('style')!.textContent!;
+    let start = -1;
+    for (let i = 0; i <= occurrence; i++) start = css.indexOf(selector, start + 1);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('raises the keys off the sheet: raised fill, 13px radius, 44px, mono 600 20px', () => {
+    const { root } = mountEntry();
+    const key = rule(root, '.key {');
+    expect(key).toContain('background: var(--rack-raised)'); // no longer transparent
+    expect(key).toContain('border-radius: var(--rack-radius-sheet-control)');
+    expect(key).toContain('min-height: 44px'); // prototype height IS the touch floor
+    expect(key).toContain('font-size: 20px');
+    expect(key).toContain('font-weight: 600');
+  });
+
+  it('sets the footer at 42px on the sheet-control radius (prototype L244-245)', () => {
+    const { root } = mountEntry();
+    const shared = rule(root, '.clear, .done');
+    expect(shared).toContain('min-height: 42px');
+    expect(shared).toContain('border-radius: var(--rack-radius-sheet-control)');
+    const clear = rule(root, '.clear {');
+    expect(clear).toContain('font-size: 13px');
+    expect(clear).toContain('font-weight: 600');
+    const done = rule(root, '.done {', 1); // occurrence 0 is inside ".clear, .done {"
+    expect(done).toContain('font-size: 14px');
+    expect(done).toContain('font-weight: 700');
+  });
+
+  it('lifts the sheet with the shared --rack-shadow-sheet token, not a literal', () => {
+    const { root } = mountEntry();
+    const sheet = rule(root, '.sheet {');
+    expect(sheet).toContain('box-shadow: var(--rack-shadow-sheet)');
+  });
+
+  it('eases the sheet in with a .2s ease-out fade; the rise is reduced-motion-gated', () => {
+    const { root } = mountEntry();
+    const css = root.querySelector('style')!.textContent!;
+    // everyone gets the opacity fade (not motion) ...
+    expect(rule(root, '.sheet {')).toContain('animation: rack-sheet-fade .2s ease-out');
+    // ... only a no-preference lifter gets the translate rise, fade included
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.sheet \{ animation: rack-sheet-rise \.2s ease-out; \}/,
+    );
+    expect(css).toMatch(/rack-sheet-rise \{\s*from \{ transform: translateY\(100%\); opacity: 0; \}/);
+  });
+
+  it('shows the dedicated exact line when the Total lands exactly (prototype L235)', () => {
+    const { el, root } = mountEntry();
+    el.loadLine = 'On the bar: 100 kg (exact)';
+    const line = root.querySelector<HTMLElement>('[data-live-load]')!;
+    expect(line.hidden).toBe(false);
+    expect(line.classList.contains('exact')).toBe(true);
+    expect(line.textContent).toBe('exact'); // the announcement is just "exact"
+    const check = line.querySelector('svg')!; // the checkmark drawing, decorative
+    expect(check).not.toBeNull();
+    expect(check.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('returns to the accent delta line when the Total moves off exact', () => {
+    const { el, root } = mountEntry();
+    el.loadLine = 'On the bar: 100 kg (exact)';
+    el.loadLine = 'On the bar: 101 kg (1 over)';
+    const line = root.querySelector<HTMLElement>('[data-live-load]')!;
+    expect(line.classList.contains('exact')).toBe(false);
+    expect(line.textContent).toBe('On the bar: 101 kg (1 over)');
+    expect(line.querySelector('svg')).toBeNull();
+  });
+
+  it('styles the exact line as the quiet mono confirmation (section-label recipe)', () => {
+    const { root } = mountEntry();
+    const exact = rule(root, '.sub .load.exact');
+    expect(exact).toContain('font-size: 11px');
+    expect(exact).toContain('letter-spacing: .14em');
+    expect(exact).toContain('text-transform: uppercase');
+    expect(exact).toContain('var(--rack-text-muted)'); // the 9aa1a9 tier
+  });
+
+  it('renders the delete key face as an inline SVG, keeping its "Delete" label', () => {
+    const { root } = mountEntry();
+    const del = root.querySelector<HTMLButtonElement>('[data-key="del"]')!;
+    expect(del.getAttribute('aria-label')).toBe('Delete'); // the announcement, unchanged
+    const icon = del.querySelector('svg')!;
+    expect(icon).not.toBeNull();
+    expect(icon.getAttribute('aria-hidden')).toBe('true'); // decorative drawing
+    expect(del.textContent!.trim()).toBe(''); // no "del" text on the face anymore
   });
 });

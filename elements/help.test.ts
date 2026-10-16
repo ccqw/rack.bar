@@ -116,3 +116,50 @@ describe('<rack-help> (the how-it-works popover, RBAR-21)', () => {
     expect(popover(root).hidden).toBe(false);
   });
 });
+
+// RBAR-45: help fidelity locks. The idle button chip (prototype helpBtnStyle L916),
+// the popover card radius (L84), the popIn drop (L22), and the two-tier body ink
+// (L86-87) are handoff values; lock them so a refactor cannot drift them.
+describe('<rack-help> fidelity (RBAR-45)', () => {
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('the idle toggle is a raised chip: active fill, muted border, secondary ink', () => {
+    const { root } = mountHelp();
+    const t = rule(root, '.toggle {');
+    expect(t).toContain('background: var(--rack-active)');
+    expect(t).toContain('var(--rack-border-muted)');
+    expect(t).toContain('color: var(--rack-text-secondary)');
+  });
+
+  it('the open toggle keeps the accent treatment', () => {
+    const { root } = mountHelp();
+    const open = rule(root, '.toggle[aria-expanded="true"]');
+    expect(open).toContain('var(--rack-accent)');
+  });
+
+  it('the popover card rounds at the sheet-control radius', () => {
+    const { root } = mountHelp();
+    expect(rule(root, '.popover {')).toContain('var(--rack-radius-sheet-control)');
+  });
+
+  it('the pop-in fades for everyone; the -6px/.97 drop is reduced-motion-gated', () => {
+    const { root } = mountHelp();
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toContain('translateY(-6px) scale(.97)');
+    expect(rule(root, '.popover {')).toContain('animation: rack-pop-fade .16s');
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.popover \{ animation: rack-pop \.16s/,
+    );
+  });
+
+  it('the body ink is two-tier: running copy popover-ink, strong full white', () => {
+    const { root } = mountHelp();
+    expect(rule(root, '.step .body {')).toContain('var(--rack-popover-ink)');
+    expect(rule(root, '.step .body strong')).toContain('var(--rack-text)');
+  });
+});

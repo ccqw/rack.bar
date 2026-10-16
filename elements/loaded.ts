@@ -21,6 +21,8 @@ import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
+import { NUDGE_BUTTONS, NUDGE_STYLE, wireNudges } from './nudge.ts';
+import type { NudgeRail } from './nudge.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
 
 class RackLoaded extends HTMLElement {
@@ -28,9 +30,7 @@ class RackLoaded extends HTMLElement {
   private rail!: HTMLElement;
   private onbar!: HTMLElement;
   private emptyHint!: HTMLElement;
-  private nudgeL!: HTMLButtonElement;
-  private nudgeR!: HTMLButtonElement;
-  private resize?: ResizeObserver;
+  private nudges?: NudgeRail;
 
   private _side: readonly Plate[] = [];
 
@@ -119,23 +119,11 @@ class RackLoaded extends HTMLElement {
         .chip[data-color="iron"] { color: #fff; }
         .chip .mult { font-family: var(--rack-font-num); font-size: 11px; opacity: .55; }
         .chip:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
-        /* The overflow nudge arrows: a fade-gradient button each side, hidden until the
-           rail can scroll that way. They tap-scroll the rail (handoff 4b). */
-        .nudge {
-          position: absolute; top: 0; bottom: 0; width: 42px; padding: 0;
-          display: none; align-items: center; border: none; cursor: pointer; z-index: 1;
-          color: var(--rack-muted);
-        }
-        .nudge.show { display: flex; }
-        .nudge.left {
-          left: 0; justify-content: flex-start; padding-left: 3px;
-          background: linear-gradient(90deg, var(--rack-bg) 34%, transparent);
-        }
-        .nudge.right {
-          right: 0; justify-content: flex-end; padding-right: 3px;
-          background: linear-gradient(270deg, var(--rack-bg) 34%, transparent);
-        }
-        .nudge:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* The overflow nudge arrows: a fade-gradient button each side, hidden until
+           the rail can scroll that way. They tap-scroll the rail (handoff 4b). The
+           shared pattern (elements/nudge.ts, RBAR-37) -- <rack-recents> wears the
+           same arrows. */
+        ${NUDGE_STYLE}
         /* The empty hint: what shows on a bare Bar, centered in the reserved slot. */
         .empty { align-self: center; text-align: center; }
         .empty[hidden] { display: none; }
@@ -153,18 +141,7 @@ class RackLoaded extends HTMLElement {
           </div>
           <div class="viewport" data-viewport>
             <div class="rail" data-rail role="list" aria-label="Plates on the bar"></div>
-            <button type="button" class="nudge left" data-nudge="left" aria-label="Scroll left">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M11.5 3L7 8l4.5 5M7 3L2.5 8 7 13" stroke="currentColor"
-                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
-              </svg>
-            </button>
-            <button type="button" class="nudge right" data-nudge="right" aria-label="Scroll right">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M4.5 3L9 8l-4.5 5M9 3l4.5 5L9 13" stroke="currentColor"
-                      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
-              </svg>
-            </button>
+            ${NUDGE_BUTTONS}
           </div>
         </div>
         <div class="empty" data-empty>
@@ -175,24 +152,16 @@ class RackLoaded extends HTMLElement {
     this.rail = this.root.querySelector('[data-rail]')!;
     this.onbar = this.root.querySelector('[data-onbar]')!;
     this.emptyHint = this.root.querySelector('[data-empty]')!;
-    this.nudgeL = this.root.querySelector('[data-nudge="left"]')!;
-    this.nudgeR = this.root.querySelector('[data-nudge="right"]')!;
 
     this.root.querySelector('[data-clear]')!.addEventListener('click', () => this.clear());
-    this.nudgeL.addEventListener('click', () => this.nudge(-1));
-    this.nudgeR.addEventListener('click', () => this.nudge(1));
-    // Re-measure the overflow when the rail scrolls or its width changes. ResizeObserver,
-    // not requestAnimationFrame, so it keeps working in a backgrounded tab.
-    this.rail.addEventListener('scroll', () => this.measureOverflow());
-    this.resize = new ResizeObserver(() => this.measureOverflow());
-    this.resize.observe(this.rail);
+    this.nudges = wireNudges(this.rail, this.root);
 
     this.renderChips();
   }
 
   disconnectedCallback(): void {
-    this.resize?.disconnect();
-    this.resize = undefined;
+    this.nudges?.disconnect();
+    this.nudges = undefined;
   }
 
   // Render the chip row from the Side Load: one chip per `groupSide` run, plus the
@@ -244,24 +213,7 @@ class RackLoaded extends HTMLElement {
     );
     this.rail.scrollLeft = scrollLeft;
 
-    this.measureOverflow();
-  }
-
-  // Show a nudge arrow only when the rail can scroll that way. In a non-overflowing rail
-  // (or a zero-width test DOM) both stay hidden -- the chips just sit inline.
-  private measureOverflow(): void {
-    const max = this.rail.scrollWidth - this.rail.clientWidth;
-    const x = this.rail.scrollLeft;
-    this.nudgeL.classList.toggle('show', x > 1);
-    this.nudgeR.classList.toggle('show', x < max - 1);
-  }
-
-  // Tap-scroll the rail by most of a viewport (a generous minimum on a narrow column).
-  private nudge(dir: number): void {
-    this.rail.scrollBy({
-      left: dir * Math.max(120, this.rail.clientWidth * 0.6),
-      behavior: 'smooth',
-    });
+    this.nudges?.measure();
   }
 
   // Tap a chip: name the Plate to drop to the console; it applies the pure removePlate

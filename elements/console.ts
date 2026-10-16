@@ -45,11 +45,16 @@ type Sleeve = HTMLElement & {
 };
 type Entry = HTMLElement & {
   display(value: number | null): void;
+  open(): void;
   barKg: number;
   unit: Unit;
   loadLine: string | null;
 };
-type Recents = HTMLElement & { targets: readonly number[]; unit: Unit };
+type Recents = HTMLElement & {
+  targets: readonly number[];
+  unit: Unit;
+  target: number | null;
+};
 type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
 type Share = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
@@ -75,13 +80,17 @@ class RackConsole extends HTMLElement {
   private share!: Share;
   private fullscreen!: Fullscreen;
   private totalNum!: HTMLElement;
+  private totalTap!: HTMLButtonElement;
   private totalUnit!: HTMLElement;
   private secondary!: HTMLButtonElement;
   private status!: HTMLElement;
   private statusLabel!: HTMLElement;
   private barnote!: HTMLElement;
+  private vizLabel!: HTMLElement;
   private announcer!: HTMLElement;
   private over!: HTMLButtonElement;
+  private overRow!: HTMLElement;
+  private atcap!: HTMLElement;
   private unitButtons!: NodeListOf<HTMLButtonElement>;
   private modeButtons!: NodeListOf<HTMLButtonElement>;
 
@@ -239,14 +248,21 @@ class RackConsole extends HTMLElement {
         }
         .modes button:focus-visible { outline: 2px solid var(--rack-accent); }
         rack-entry[hidden], rack-palette[hidden] { display: none; }
-        /* The bar visualizer block: the sleeve, with the fullscreen control floated at
-           its top-right corner (handoff section 3) -- it blows the loaded Bar up to a
-           landscape, glanceable card (RBAR-18). */
-        .viz { position: relative; }
+        /* The bar visualizer block (handoff section 3, prototype L98): a head row --
+           the contextual label top-left, the fullscreen control top-right (RBAR-18/35)
+           -- then the sleeve, 10px apart (the prototype column's gap). */
+        .viz { display: flex; flex-direction: column; gap: 10px; }
+        .vizhead {
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        /* The contextual label (RBAR-35, prototype L101): what the bar block shows
+           right now -- "per side" once loaded, else the mode's empty-state prompt.
+           The shared section-label recipe; uppercase comes from it, so the copy stays
+           plain-cased in the DOM exactly like the prototype's vm. */
+        .vizlabel { ${SECTION_LABEL} }
         .fullscreen {
-          position: absolute; top: 0; right: 0; z-index: 1;
           width: 36px; height: 36px; display: flex; align-items: center;
-          justify-content: center; padding: 0;
+          justify-content: center; padding: 0; flex: none;
           color: var(--rack-muted); background: transparent;
           border: 1px solid var(--rack-line); border-radius: 10px; cursor: pointer;
         }
@@ -307,6 +323,18 @@ class RackConsole extends HTMLElement {
         .readout output .tu {
           font-size: 21px; font-weight: 600; color: var(--rack-text-dim);
         }
+        /* The Total is the page's biggest number and reads as tappable -- so it is
+           (RBAR-57): tapping it opens the keypad, the same edit the small Target
+           value button offers. A bare wrapper: every visual belongs to the output
+           inside, and the By-Plates disabled state (no keypad there) must not dim
+           the Total, so no :disabled restyle beyond the cursor. */
+        .totaltap {
+          display: block; width: 100%; padding: 0; margin: 0; border: 0;
+          background: none; color: inherit; text-align: inherit; font: inherit;
+          cursor: pointer;
+        }
+        .totaltap:disabled { cursor: default; }
+        .totaltap:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 4px; }
         /* The Secondary readout: the same Total in the other unit, tap to hide/show
            (ADR-0006/0010). A quiet line under the prominent Total. */
         .secondary {
@@ -321,10 +349,13 @@ class RackConsole extends HTMLElement {
           display: flex; align-items: center; justify-content: center;
           gap: 9px; margin-top: 2px; min-height: 22px;
         }
-        /* The status pill (RBAR-28): the Total's Exact / N over / N short / Bar at
-           capacity indicator. A quiet uppercase mono pill with a state dot. Over is the
-           one solid variant (accent fill, ink text) -- the handoff's emphasis on going
-           over Target; the rest are outline pills. */
+        /* The status pill (RBAR-28): the Total's Exact / N over / N short indicator
+           (at capacity the pill keeps the shortfall; the .atcap caption below names
+           the capacity fact -- RBAR-47). A quiet uppercase mono pill with a state
+           dot. Over is the one solid variant (accent fill, ink text) -- the
+           handoff's emphasis on going over Target; the rest are outline pills. This
+           recipe (10px / 4px 10px) must hold in EVERY state, including "status
+           over" -- see the RBAR-56 note on the round-up row rules. */
         .status {
           display: inline-flex; align-items: center; gap: 6px;
           font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
@@ -360,30 +391,56 @@ class RackConsole extends HTMLElement {
         /* By Plates never shows the note; collapse fully (after [hidden], same
            specificity -- source order lets display:none win). */
         .barnote.collapsed { display: none; }
-        /* The over-target opt-in: a quiet, deliberately un-pushy round-up control
-           (ADR-0003 -- never auto-selected). */
-        .over {
-          align-self: center;
-          font: inherit; font-size: 14px; color: var(--rack-accent);
-          background: transparent; border: 1px solid var(--rack-line);
-          border-radius: 999px; padding: 8px 16px; cursor: pointer;
+        /* The round-up row (RBAR-47, prototype L140): one fixed 36px flex row shared
+           by the round-up opt-in and the at-capacity caption (they are mutually
+           exclusive -- the core carries no over exactly when the sleeve is full,
+           ADR-0012). The explicit min-height pins the row in EVERY state, on top of
+           RBAR-52's in-flow reservation below. The row collapses out of the column
+           in By Plates (no round-up row there). NOTE: the button's own class is
+           "roundup", NOT "over" -- the status pill carries "status over" as its
+           state classes, and an unscoped over-class button rule used to inflate the
+           pill on every exact->over crossing (RBAR-56). No selector in this sheet
+           may start with a bare over class (text-locked in console.test.ts). */
+        .rounduprow {
+          display: flex; align-items: center; justify-content: center;
+          min-height: 36px;
         }
-        /* Round-up row reservation (RBAR-52): in By Weight a hidden offer keeps its
-           row IN FLOW -- swapped by visibility, with an explicit display to beat the
-           UA sheet's [hidden] display:none -- so the Target row + steppers below
-           never move when the offer appears/disappears. The ::before zero-width
-           space holds the line box (and so the row height) while the text is
-           cleared. visibility:hidden also drops the control from the a11y tree and
-           from hit-testing, exactly as display:none did. */
-        .over[hidden] { display: inline-block; visibility: hidden; }
-        /* Scoped to the hidden state: generated content joins the accessible name
-           (accname 2F), so the visible button must not carry the ZWSP. */
-        .over[hidden]::before { content: "\\200b"; }
-        /* By Plates has no round-up row to reserve: there the control collapses
-           fully. Declared AFTER .over[hidden] -- equal specificity, so source order
-           is what lets display:none win when both apply. */
-        .over.collapsed { display: none; }
-        .over:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* The row's own [hidden] is plain hidden semantics (fully out of the
+           column in By Plates) -- the explicit display:none is needed because the
+           flex display above would otherwise beat the UA sheet's [hidden] rule. */
+        .rounduprow[hidden] { display: none; }
+        /* The over-target opt-in: a quiet, deliberately un-pushy round-up control
+           (ADR-0003 -- never auto-selected). Metrics per the handoff (prototype
+           L140-141): Hanken 600 12px, muted border, 8px 15px pad. */
+        .roundup {
+          font-family: var(--rack-font); font-size: 12px; font-weight: 600;
+          color: var(--rack-accent);
+          background: transparent; border: 1px solid var(--rack-border-muted);
+          border-radius: 999px; padding: 8px 15px; cursor: pointer;
+        }
+        /* Round-up reservation (RBAR-52): the geometry guarantee -- the Target row
+           + steppers below never move when the offer appears/disappears -- is
+           carried by the ROW's min-height above (RBAR-47), so the hidden button
+           simply leaves the layout. It must not stay a zero-content flex item:
+           the row centers its children, and an invisible-but-in-flow button would
+           shove the at-capacity caption off center. */
+        .roundup[hidden] { display: none; }
+        .roundup:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* The at-capacity caption (RBAR-47, prototype L142): "Bar at capacity" as a
+           borderless accent caption in the round-up row -- the same uppercase-mono
+           accent-dot vocabulary as the palette's "Sleeve full" warning (RBAR-54).
+           The pill above keeps the shortfall; this names the capacity fact. */
+        .atcap {
+          display: inline-flex; align-items: center; gap: 6px;
+          font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
+          letter-spacing: .1em; text-transform: uppercase; line-height: 1;
+          color: var(--rack-accent);
+        }
+        .atcap[hidden] { display: none; }
+        .atcap .dot {
+          width: 5px; height: 5px; border-radius: 999px; flex: none;
+          background: var(--rack-accent);
+        }
         /* The Share control: a quiet pill that opens the loading card (RBAR-19). Always
            available -- the card reflects whatever is on the Bar, bare or loaded. */
         .share {
@@ -411,13 +468,19 @@ class RackConsole extends HTMLElement {
              the Add palette in By Plates). One DOM order serves both modes -- the editors
              toggle by the hidden attribute, so the visible column reads right either way. -->
         <div class="viz">
-          <button type="button" class="fullscreen" data-fullscreen aria-label="Full screen">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
-                    stroke="currentColor" stroke-width="1.6"
-                    stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-          </button>
+          <!-- The head row (RBAR-35): the contextual label at the left edge, the
+               existing fullscreen control right-aligned on the same row (it used to
+               float alone). The label's text is state-driven (see render). -->
+          <div class="vizhead">
+            <span class="vizlabel" data-viz-label></span>
+            <button type="button" class="fullscreen" data-fullscreen aria-label="Full screen">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
+                      stroke="currentColor" stroke-width="1.6"
+                      stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </button>
+          </div>
           <rack-sleeve></rack-sleeve>
         </div>
         <div class="readout">
@@ -428,8 +491,10 @@ class RackConsole extends HTMLElement {
               <button type="button" data-unit="lb" aria-pressed="false">lb</button>
             </div>
           </div>
-          <output data-total><span data-total-num>${DEFAULT_BAR_KG}</span><span
-            class="tu" data-total-unit> kg</span></output>
+          <button type="button" class="totaltap" data-total-tap
+            ><output data-total><span data-total-num>${DEFAULT_BAR_KG}</span><span
+              class="tu" data-total-unit> kg</span></output
+          ></button>
           <div class="statusline">
             <button type="button" class="secondary" data-secondary></button>
             <span class="status" data-status hidden
@@ -442,8 +507,16 @@ class RackConsole extends HTMLElement {
                the sighted readout above IS this information. -->
           <div class="sr" data-announce role="status"></div>
         </div>
-        <!-- The round-up opt-in sits under the Total (handoff 4a), above the Target block. -->
-        <button type="button" class="over" data-over hidden></button>
+        <!-- The round-up row sits under the Total (handoff 4a), above the Target block:
+             the round-up opt-in OR the at-capacity caption (never both -- ADR-0012).
+             The wrapper's "over" class is the block-order token only (blockToken in
+             console.test.ts); every style rule is scoped to .rounduprow/.roundup/.atcap
+             so the "status over" pill can never match a round-up rule (RBAR-56). -->
+        <div class="over rounduprow" data-roundup-row>
+          <button type="button" class="roundup" data-over hidden></button>
+          <span class="atcap" data-atcap hidden
+            ><span class="dot" aria-hidden="true"></span>Bar at capacity</span>
+        </div>
         <rack-entry></rack-entry>
         <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
              (RBAR-20). Hidden until the lifter has committed a Target. -->
@@ -474,12 +547,16 @@ class RackConsole extends HTMLElement {
     this.fullscreen = this.root.querySelector('rack-fullscreen') as Fullscreen;
     this.totalNum = this.root.querySelector('[data-total-num]')!;
     this.totalUnit = this.root.querySelector('[data-total-unit]')!;
+    this.totalTap = this.root.querySelector('[data-total-tap]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
     this.barnote = this.root.querySelector('[data-barnote]')!;
+    this.vizLabel = this.root.querySelector('[data-viz-label]')!;
     this.announcer = this.root.querySelector('[data-announce]')!;
     this.over = this.root.querySelector('[data-over]')!;
+    this.overRow = this.root.querySelector('[data-roundup-row]')!;
+    this.atcap = this.root.querySelector('[data-atcap]')!;
     this.unitButtons = this.root.querySelectorAll('[data-unit]');
     this.modeButtons = this.root.querySelectorAll('[data-mode]');
 
@@ -504,6 +581,9 @@ class RackConsole extends HTMLElement {
       this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
       this.render();
     });
+    // The big Total opens the keypad too (RBAR-57): it reads as tappable, so it is.
+    // Open-only -- closing (the commit) stays with Done / the value re-tap.
+    this.totalTap.addEventListener('click', () => this.entry.open());
     // A recent chip tap re-applies that Target: seed the field, decode it, and move it
     // back to the front of the history (a re-use is a fresh commit).
     this.recentsRow.addEventListener('recentapply', (e) => {
@@ -690,8 +770,25 @@ class RackConsole extends HTMLElement {
     const unit = this.activeUnit();
     this.sleeve.sideLoad = this.side;
     this.sleeve.interactive = this.mode === 'encode';
+    // The bar block's contextual label (RBAR-35, prototype L924): "per side" whenever
+    // anything is loaded (either mode -- the shared Side Load is the fact it names),
+    // else the active mode's empty-state prompt. Uppercasing is the CSS's job.
+    this.vizLabel.textContent =
+      this.side.length > 0
+        ? 'per side'
+        : this.mode === 'encode'
+          ? 'Tap a plate to load'
+          : 'Enter a weight';
     this.entry.unit = unit;
     this.recentsRow.unit = unit;
+    // The Recent rail highlights the chip matching the live Target (RBAR-37): fed in
+    // canonical kg, so a chip applied in lb still matches its own echo. Fed HERE, before
+    // the mode-visibility writes below -- the rail re-renders on this setter and
+    // recomputes its own emptiness-hidden, which would otherwise undo the Encode hide.
+    this.recentsRow.target =
+      this.mode === 'decode' && this.decoded
+        ? this.decoded.primary.total - this.decoded.primary.delta
+        : null;
     // Value and suffix split (RBAR-39): only the value rolls; the suffix just tracks
     // the active unit. Together they still read "142 kg" (format's shape).
     rollText(this.totalNum, String(shownIn(encode(this.side, this.baselineKg()), unit)));
@@ -699,6 +796,9 @@ class RackConsole extends HTMLElement {
     this.renderUnitToggle(unit);
     this.renderSecondary(unit);
     this.entry.hidden = this.mode !== 'decode';
+    // The Total-tap affordance is By-Weight only (RBAR-57): By Plates has no keypad,
+    // so the wrapper goes inert there (its look never changes -- see .totaltap).
+    this.totalTap.disabled = this.mode !== 'decode';
     // The Recent row is a By-Weight (Decode) affordance: shown only there, and only once
     // there is something to show (the row also self-hides when empty -- ADR-0009).
     this.recentsRow.hidden = this.mode !== 'decode' || this.recents.length === 0;
@@ -711,9 +811,11 @@ class RackConsole extends HTMLElement {
     this.loadedRow.hidden = this.mode !== 'encode';
     this.loadedRow.side = this.side;
     // The round-up row is a By-Weight fixture (RBAR-52): reserved there even with no
-    // offer on hand (hidden keeps it in flow -- see the .over[hidden] rule), collapsed
-    // out of the column entirely in By Plates, which has no such row.
-    this.over.classList.toggle('collapsed', this.mode !== 'decode');
+    // offer on hand (the BUTTON's hidden keeps it in flow -- see the
+    // .roundup[hidden] rule), dropped out of the column entirely in By Plates,
+    // which has no such row. Since RBAR-47 the whole row goes (it also hosts the
+    // at-capacity caption), via its own plain [hidden].
+    this.overRow.hidden = this.mode !== 'decode';
     this.barnote.classList.toggle('collapsed', this.mode !== 'decode');
     this.modeButtons.forEach((b) =>
       b.setAttribute('aria-pressed', String(b.dataset.mode === this.mode)),
@@ -749,11 +851,20 @@ class RackConsole extends HTMLElement {
       // call sites keep reading exactly the DISPLAYED numbers (ADR-0010). The below-Bar
       // note rides along -- the copy-truth explanation (RBAR-55) must reach screen
       // readers too, or the "reads as a malfunction" experience survives aurally.
+      const pill = statusPill(
+        shownIn(shown.total, unit),
+        shownIn(targetKg, unit),
+        unit,
+        atCap,
+      );
+      // The at-capacity caption (RBAR-47): the pill keeps the shortfall, the caption
+      // names the capacity fact in the round-up row (which the absent offer vacated --
+      // ADR-0012 ties the two). The spoken line carries BOTH facts.
+      this.atcap.hidden = pill.kind !== 'capacity';
       const line = announceLine(
         shownIn(shown.total, unit),
         unit,
-        statusPill(shownIn(shown.total, unit), shownIn(targetKg, unit), unit, atCap)
-          .label,
+        pill.kind === 'capacity' ? `${pill.label}, bar at capacity` : pill.label,
       );
       this.announce(note === null ? line : `${line}. ${note}`);
     } else {
@@ -762,6 +873,7 @@ class RackConsole extends HTMLElement {
       this.statusLabel.textContent = '';
       this.over.hidden = true;
       this.over.textContent = '';
+      this.atcap.hidden = true; // capacity is a decode-outcome caption (RBAR-47)
       this.entry.loadLine = null; // nothing decoded -> the keypad sheet hides the line
       this.barnote.hidden = true;
       this.barnote.textContent = '';
@@ -887,7 +999,9 @@ function fmtNum(n: number): string {
   return String(Number(n.toFixed(2)));
 }
 
-/** The state the Total status pill is in (RBAR-28). */
+/** The state the Total status pill is in (RBAR-28). `capacity` is a short Total the
+ * lifter cannot close (the sleeve is full, ADR-0012): the pill still reads the
+ * shortfall -- the separate at-capacity caption names the capacity fact (RBAR-47). */
 export type StatusKind = 'exact' | 'over' | 'short' | 'capacity';
 
 /** A resolved status pill: its `kind` (drives the styling) and its plain-language copy. */
@@ -903,10 +1017,13 @@ export interface Status {
  *
  *   equal               -> Exact (a green-dot reassurance)
  *   Total above Target  -> "N over" (the round-up opt-in AND the sub-baseline floor case)
- *   Total below Target  -> "N short", or "Bar at capacity" when the Side is physically
- *                          full (`atCapacity`) so the miss cannot be closed
+ *   Total below Target  -> "N short"; when the Side is physically full (`atCapacity`)
+ *                          the kind is `capacity` but the LABEL keeps the shortfall
+ *                          (RBAR-47, prototype L138) -- "Bar at capacity" renders as
+ *                          its own accent caption in the round-up row, so the
+ *                          magnitude of the miss is never lost.
  *
- * Capacity only overrides the SHORT reading -- an over or exact Total is never masked.
+ * Capacity only qualifies the SHORT reading -- an over or exact Total is never masked.
  */
 export function statusPill(
   shownTotal: number,
@@ -917,7 +1034,7 @@ export function statusPill(
   if (shownTotal === shownTarget) return { kind: 'exact', label: 'Exact' };
   const mag = fmtNum(Math.abs(shownTotal - shownTarget));
   if (shownTotal > shownTarget) return { kind: 'over', label: `${mag} ${unit} over` };
-  if (atCapacity) return { kind: 'capacity', label: 'Bar at capacity' };
+  if (atCapacity) return { kind: 'capacity', label: `${mag} ${unit} short` };
   return { kind: 'short', label: `${mag} ${unit} short` };
 }
 
@@ -943,7 +1060,10 @@ export function onBarLine(
   if (shownTotal === shownTarget) return `${head} (exact)`;
   const mag = fmtNum(Math.abs(shownTotal - shownTarget));
   if (shownTotal > shownTarget) return `${head} (${mag} over)`;
-  if (atCapacity) return `${head} (at capacity)`;
+  // At capacity the shortfall still rides along (RBAR-47: the magnitude of the miss
+  // is never lost): while the sheet is open it is the ONLY surface saying it -- the
+  // sheet covers the pill and announce() goes quiet.
+  if (atCapacity) return `${head} (${mag} under, at capacity)`;
   return `${head} (${mag} under)`;
 }
 
