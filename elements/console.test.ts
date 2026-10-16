@@ -2101,19 +2101,47 @@ describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
     expect(misses).toEqual([]);
   });
 
-  it('re-solves for the new reading when the unit toggles, never reading over', () => {
+  it('keeps an Exact load put across a unit toggle: the toggle is display-only', () => {
     const el = mountConsole();
     unitBtn(el, 'lb').click();
     type(el, '55'); // 24.95 kg; the 25 kg load reads 55 lb
     expect(total(el)).toBe('55 lb');
     expect(statusKind(el)).toBe('exact');
-    // In kg the Target reads 24.95 and 25 kg would read 0.05 over -- the at-or-under
-    // rule (ADR-0003) re-solves below it instead.
+    const plates = discs(el).map((d) => d.dataset.kg);
+    // In kg the typed 24.95 would sit under the 25 kg load; the Exact load is what the
+    // lifter meant, so the Target becomes it rather than dropping a Plate step.
     unitBtn(el, 'kg').click();
-    expect(statusKind(el)).toBe('short');
-    // and toggling back restores the Exact 55 lb load
+    expect(total(el)).toBe('25 kg');
+    expect(statusKind(el)).toBe('exact');
+    expect(entryValue(el)).toBe('25');
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(plates);
     unitBtn(el, 'lb').click();
     expect(total(el)).toBe('55 lb');
-    expect(statusKind(el)).toBe('exact');
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(plates);
   });
+
+  it('still commits the re-expressed Target to Recents after an Exact toggle', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    type(el, '55');
+    unitBtn(el, 'kg').click(); // the Target becomes the 25 kg load
+    valueBtn(el).click(); // open
+    valueBtn(el).click(); // close -> commit
+    expect(recentLabels(el)).toEqual([25]);
+  });
+
+  it('turns a chosen round-up that now reads Exact into the primary, not a stale over', () => {
+    // Audit stage 2: 100.95 kg -> primary 100, round up to 101. In lb the Target reads
+    // 223 and so does 101 kg -- it is no longer over. Keeping the stale over offered
+    // "Use 220 lb", stepping the lifter down to a short load.
+    const el = mountConsole();
+    type(el, '100.95');
+    over(el).click();
+    expect(total(el)).toBe('101 kg');
+    unitBtn(el, 'lb').click();
+    expect(total(el)).toBe('223 lb');
+    expect(statusKind(el)).toBe('exact');
+    expect(over(el).hidden).toBe(true);
+  });
+
 });

@@ -45,6 +45,7 @@ type Sleeve = HTMLElement & {
 };
 type Entry = HTMLElement & {
   display(value: number | null): void;
+  retarget(kg: number): void;
   open(): void;
   barKg: number;
   unit: Unit;
@@ -661,19 +662,40 @@ class RackConsole extends HTMLElement {
   }
 
   // Adopt a Primary-unit choice from the toggle: record it, persist, and re-render every
-  // surface in it. A live Target re-solves for its reading in the new unit (RBAR-60, as
-  // the prototype's setUnit re-decodes): the at-or-under bucket changes with the unit, so
-  // keeping the old loadout could read over. A round-up the lifter chose is left alone --
-  // they opted over on purpose, and the toggle must not silently undo it.
+  // surface in it. With a live Target the toggle should feel display-only (RBAR-60,
+  // Caitlin's call): the Plates on the bar never move. Two cases --
+  //  - The load read Exact in the old unit: that load IS what the lifter meant, so the
+  //    Target becomes the load itself, re-read in the new unit (55 lb -> 25 kg, Exact).
+  //    Re-solving the typed kg instead would read 24.95 kg and drop a Plate step.
+  //  - Otherwise re-solve for the Target's reading in the new unit (its at-or-under
+  //    bucket changed). A chosen round-up stays chosen only while the same load is still
+  //    the round-up; if the new reading makes it the Exact primary (100.95 kg -> 223 lb,
+  //    and 101 kg reads 223 lb), it is shown as the primary instead -- never a stale
+  //    "over" whose "use" button would step the lifter down to a short load.
   private chooseUnit(unit: Unit): void {
     if (unit === this.unitPref) return;
+    const was = this.unitPref;
     this.unitPref = unit;
     writePersisted(UNIT_KEY, unit);
-    if (this.mode === 'decode' && this.decoded && !this.showingOver) {
-      this.decodeTo(this.decoded.primary.total - this.decoded.primary.delta);
+    if (this.mode !== 'decode' || !this.decoded) {
+      this.render();
+      return;
+    }
+    const { primary, over } = this.decoded;
+    const target = primary.total - primary.delta;
+    if (!this.showingOver && shownIn(primary.total, was) === shownIn(target, was)) {
+      this.entry.retarget(primary.total);
+      this.decodeTo(primary.total);
       return; // decodeTo renders
     }
-    this.render();
+    const chosenOver = this.showingOver && over ? over.total : null;
+    this.decodeTo(target); // clears showingOver, renders
+    const next = this.decoded as Decoded | null;
+    if (chosenOver !== null && next?.over && Math.abs(next.over.total - chosenOver) < 1e-9) {
+      this.showingOver = true;
+      this.side = next.over.side;
+      this.render();
+    }
   }
 
   // Restore the persisted Primary-unit choice; a missing/blocked/garbage value -> kg
