@@ -14,7 +14,8 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 - Eleiko kilogram plate set, color scheme -- the competition Plates are kg.
 - **Pounds** ships as two distinct layers, both in v1 (both built under RBAR-17):
   - A kg/lb display + entry switch over the kg set -- a Primary unit with a
-    Secondary readout alongside (ADR-0006). Display only; no lb plates.
+    Secondary readout alongside (ADR-0006). Display only; no lb plates. (RBAR-60
+    later freed the switch on the iron set too.)
   - A real **pounds plate set** -- a plain-iron lb Inventory + lb bar, chosen via a
     plate-set switch, so the shown Plates match a US gym's rack and the solver runs
     natively in lb. Pulled forward from Later by the design pass.

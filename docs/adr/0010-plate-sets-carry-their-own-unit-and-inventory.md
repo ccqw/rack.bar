@@ -73,6 +73,10 @@ no-op because iron targets land on the lb grid.)
 
 Two controls could contradict (pick Training, then toggle to kg). The rule:
 
+> **Superseded 2026-10-15 (RBAR-60):** the toggle is free on every set and a set
+> switch keeps the lifter's unit -- see the amendment at the end. The two
+> forced/remembered bullets below are the original v1 rule, kept for history.
+
 - **Choosing a set forces its native Unit.** Training forces lb and **disables** the
   kg|lb toggle (an iron rack has no kg). Competition leaves the toggle **free**.
 - The lifter's free choice on the Competition set is **remembered**: switching to
@@ -101,7 +105,8 @@ split that ADR-0007 and ADR-0009 introduced):
   display state console-side for the same reason (it is the Target's home). The unit
   toggle renders in the console (beside the By Weight / By Plates toggle, per the
   handoff). The app pushes `plateSet` down to the console as a property; the console
-  derives the forced-vs-free Unit rule from it.
+  derives the forced-vs-free Unit rule from it (retired by RBAR-60: there is no
+  forced Unit now).
 
 This **supersedes ADR-0006's sketch** that the unit preference is "the app's only
 persisted state, app-side." Read ADR-0006's persistence note as its principle
@@ -139,8 +144,8 @@ gap in the displayed-unit exactness rule above: it judged *status* on the displa
 numbers but still *solved* at or under the raw kg. A reading that rounds down sits
 just below the load it stands for -- "55 lb" is 24.95 kg, but the 25 kg load also
 reads 55 lb -- so typing back a displayed Total landed a whole Plate step low (114
-achievable Competition Totals in lb on main; 33 of 72 iron Totals in kg once kg was
-allowed on iron). The rule now reaches the solve:
+of the 231 achievable Competition Totals from 20 to 250 kg, read in lb, on main; 33 of
+the 72 iron Totals from 45 to 400 lb, read in kg, once kg was allowed on iron). The rule now reaches the solve:
 
 - `units.ts displayCeilingKg(kg, unit)` gives the top of the reading's rounding bucket
   (half a display step: 0.5 lb, or 0.005 kg). The console solves with

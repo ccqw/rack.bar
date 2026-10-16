@@ -2069,7 +2069,8 @@ describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
 // lifter can SEE must land on it. Before RBAR-60 the solve compared against the raw kg
 // of the typed reading -- 55 lb is 24.95 kg, just under the 25 kg load that reads
 // 55 lb -- and fell a whole Plate step low on every reading that rounds down
-// (114 achievable Competition Totals in lb, 33 of 72 iron Totals in kg).
+// (114 of the 231 achievable Competition Totals from 20 to 250 kg, read in lb; 33 of
+// 72 iron Totals from 45 to 400 lb, read in kg).
 describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
   it('lands every iron Total read in kg back on itself, Exact', () => {
     const el = mountConsole();
@@ -2121,7 +2122,7 @@ describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
   });
 
   it('re-solves a short load on a toggle, landing heavier when the new reading allows', () => {
-    // Audit stage 3: 27.2 kg on iron is short at 55 lb (60 lb = 27.2155 kg reads
+    // RBAR-60: 27.2 kg on iron is short at 55 lb (60 lb = 27.2155 kg reads
     // 27.22). In lb the Target reads 60, and 60 lb of iron meets it exactly -- the
     // re-solve may move the Plates UP, never down.
     const el = mountConsole();
@@ -2146,7 +2147,7 @@ describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
   });
 
   it('turns a chosen round-up that now reads Exact into the primary, not a stale over', () => {
-    // Audit stage 2: 100.95 kg -> primary 100, round up to 101. In lb the Target reads
+    // RBAR-60: 100.95 kg -> primary 100, round up to 101. In lb the Target reads
     // 223 and so does 101 kg -- it is no longer over. Keeping the stale over offered
     // "Use 220 lb", stepping the lifter down to a short load.
     const el = mountConsole();

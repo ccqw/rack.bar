@@ -111,8 +111,7 @@ class RackConsole extends HTMLElement {
   private _barKg = DEFAULT_BAR_KG;
   private _collarKg = DEFAULT_COLLAR_KG;
   // The active plate set (RBAR-17, ADR-0010): selects the Inventory to decode/encode
-  // against. Defaults to Competition (kg Eleiko);
-  // the app sets it from Setup.
+  // against. Defaults to Competition (kg Eleiko); the app sets it from Setup.
   private _plateSetKey: PlateSetKey = 'comp';
   // The lifter's Primary-unit choice and Secondary-visible preference (ADR-0010).
   // unitPref holds on every plate set, and a set switch keeps it (RBAR-60). Both
@@ -160,8 +159,8 @@ class RackConsole extends HTMLElement {
 
   /**
    * The active plate set (RBAR-17, ADR-0010). Switching it changes the Inventory; the
-   * display unit is the lifter's and is kept (RBAR-60). The Plates do not cross sets, so a hand-built Encode
-   * loadout is reset to the bare rig; a Decode Target is unit-agnostic kg, so it
+   * display unit is the lifter's and is kept (RBAR-60). The Plates do not cross sets,
+   * so a hand-built Encode loadout is reset to the bare rig; a Decode Target is unit-agnostic kg, so it
    * re-solves on the new rig (the same weight on the new Plates). The app pairs this with
    * a barKg change to the set's default -- set barKg first so the re-decode sees it.
    */
@@ -629,8 +628,8 @@ class RackConsole extends HTMLElement {
     this.root
       .querySelector('[data-fullscreen]')!
       .addEventListener('click', () => this.openFullscreen());
-    // The kg|lb Primary unit toggle (ADR-0010). Honored only on an unlocked set; the
-    // chosen unit persists and the surfaces re-render in it.
+    // The kg|lb Primary unit toggle (ADR-0010), live on every plate set (RBAR-60); the
+    // chosen unit persists and the surfaces re-render in it (see chooseUnit).
     this.unitButtons.forEach((b) =>
       b.addEventListener('click', () => {
         const unit = b.dataset.unit;
