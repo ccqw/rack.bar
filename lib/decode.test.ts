@@ -443,6 +443,12 @@ describe('decodeWithin (RBAR-60)', () => {
     }
   });
 
+  it('treats a non-finite ceiling as no widening, and clamps a low one up', () => {
+    expect(decodeWithin(61, Number.NaN)).toEqual(decode(61));
+    expect(decodeWithin(61, Infinity)).toEqual(decode(61));
+    expect(decodeWithin(61, 50)).toEqual(decode(61));
+  });
+
   it('degrades a non-finite Target exactly like decode', () => {
     expect(decodeWithin(Number.NaN, Number.NaN)).toEqual(decode(Number.NaN));
   });
