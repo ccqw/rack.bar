@@ -114,6 +114,16 @@ describe('<rack-recents> (active chip, RBAR-37)', () => {
     expect(selected(root)).toEqual([false]);
   });
 
+  it('also matches a Target that reads the same in the display Unit (RBAR-60)', () => {
+    const { el, root } = mountRecents();
+    el.targets = [25.4]; // 56 lb, stored canonically to 2 dp
+    el.unit = 'lb';
+    el.target = 25.5; // re-expressed as its 25.5 kg load: still reads 56 lb
+    expect(selected(root)).toEqual([true]);
+    el.unit = 'kg'; // in kg the two read 25.4 vs 25.5 -- different Targets
+    expect(selected(root)).toEqual([false]);
+  });
+
   it('selects no chip when there is no current Target', () => {
     const { el, root } = mountRecents();
     el.targets = [120, 100];

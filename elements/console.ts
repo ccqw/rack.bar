@@ -662,13 +662,16 @@ class RackConsole extends HTMLElement {
   }
 
   // Adopt a Primary-unit choice from the toggle: record it, persist, and re-render every
-  // surface in it. With a live Target the toggle should feel display-only (RBAR-60,
-  // Caitlin's call): the Plates on the bar never move. Two cases --
+  // surface in it. With a live Target an Exact load never moves (RBAR-60, Caitlin's
+  // call). Two cases --
   //  - The load read Exact in the old unit: that load IS what the lifter meant, so the
   //    Target becomes the load itself, re-read in the new unit (55 lb -> 25 kg, Exact).
   //    Re-solving the typed kg instead would read 24.95 kg and drop a Plate step.
   //  - Otherwise re-solve for the Target's reading in the new unit (its at-or-under
-  //    bucket changed). A chosen round-up stays chosen only while the same load is still
+  //    bucket changed). A short load can only move UP -- the new reading may admit a
+  //    heavier load (27.2 kg on iron reads 60 lb, which 60 lb of iron meets) -- never
+  //    down: the old load is at or under the Target, so the new ceiling still covers
+  //    it. A chosen round-up stays chosen only while the same load is still
   //    the round-up; if the new reading makes it the Exact primary (100.95 kg -> 223 lb,
   //    and 101 kg reads 223 lb), it is shown as the primary instead -- never a stale
   //    "over" whose "use" button would step the lifter down to a short load.

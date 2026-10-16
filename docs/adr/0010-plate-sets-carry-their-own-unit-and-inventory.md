@@ -150,11 +150,14 @@ allowed on iron). The rule now reaches the solve:
 - This refines **ADR-0003**: "never overshoots" now means never overshoots the
   Target *as read*. The overshoot of the raw kg is under one displayed unit, so it
   can never show as over; the status pill, round-up offer and keypad line are unchanged.
-- **A unit toggle never moves the Plates on the bar** (Caitlin's call). If the load
-  read Exact in the old unit, that load is what the lifter meant: the Target becomes
-  the load, re-read in the new unit (type 55 lb = 24.95 kg; toggling to kg shows the
-  25 kg load as 25 kg, Exact, rather than dropping a Plate step). Otherwise the Target
-  re-solves for its reading in the new unit (the prototype's `setUnit` re-decodes too).
+- **A unit toggle never moves an Exact load, and never moves any load down**
+  (Caitlin's call). If the load read Exact in the old unit, that load is what the
+  lifter meant: the Target becomes the load, re-read in the new unit (type 55 lb =
+  24.95 kg; toggling to kg shows the 25 kg load as 25 kg, Exact, rather than dropping
+  a Plate step). A short load re-solves for the Target's reading in the new unit (the
+  prototype's `setUnit` re-decodes too); that can only land heavier -- the new reading
+  may admit a load the old one did not (27.2 kg on iron reads 60 lb, which 60 lb of
+  iron meets exactly).
   A chosen round-up stays chosen only while the same load is still the round-up; when
   the new reading makes it the Exact primary (100.95 kg -> 223 lb, and 101 kg reads
   223 lb) it is shown as the primary, never as a stale "over" whose "use" button would

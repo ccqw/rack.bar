@@ -2120,6 +2120,21 @@ describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
     expect(discs(el).map((d) => d.dataset.kg)).toEqual(plates);
   });
 
+  it('re-solves a short load on a toggle, landing heavier when the new reading allows', () => {
+    // Audit stage 3: 27.2 kg on iron is short at 55 lb (60 lb = 27.2155 kg reads
+    // 27.22). In lb the Target reads 60, and 60 lb of iron meets it exactly -- the
+    // re-solve may move the Plates UP, never down.
+    const el = mountConsole();
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    type(el, '27.2');
+    expect(total(el)).toBe('24.95 kg');
+    expect(statusKind(el)).toBe('short');
+    unitBtn(el, 'lb').click();
+    expect(total(el)).toBe('60 lb');
+    expect(statusKind(el)).toBe('exact');
+  });
+
   it('still commits the re-expressed Target to Recents after an Exact toggle', () => {
     const el = mountConsole();
     unitBtn(el, 'lb').click();
