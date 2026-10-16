@@ -16,6 +16,12 @@
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; }
+    /* RBAR-59: two quick taps must stay two taps on iPhone, not double-tap-to-zoom.
+       manipulation disables only double-tap zoom (pinch still works, so the viewport
+       meta keeps user scaling). touch-action is not inherited; the browser intersects
+       it across the touched element's ancestors, so setting it on the root covers
+       every shadow root and the gaps between controls. */
+    html { touch-action: manipulation; }
     body {
       background: var(--rack-bg);
       color: var(--rack-fg);
