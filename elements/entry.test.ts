@@ -6,6 +6,7 @@ import type { Unit } from '../lib/units.ts';
 
 type Entry = HTMLElement & {
   display(value: number | null): void;
+  retarget(kg: number): void;
   barKg: number;
   unit: Unit;
   loadLine: string | null;
@@ -863,5 +864,76 @@ describe('keypad surface fidelity (RBAR-46)', () => {
     expect(icon).not.toBeNull();
     expect(icon.getAttribute('aria-hidden')).toBe('true'); // decorative drawing
     expect(del.textContent!.trim()).toBe(''); // no "del" text on the face anymore
+  });
+});
+
+// RBAR-60: an Exact unit toggle re-expresses the lifter's Target as its load (55 lb
+// typed = 24.95 kg; the 25 kg load reads 55 lb too). retarget is a REFORMAT of the
+// lifter's own value -- silent, and the RBAR-38 commit contract still decides closes.
+describe('<rack-entry> retarget (RBAR-60)', () => {
+  const shown = (root: ShadowRoot) =>
+    root.querySelector<HTMLElement>('[data-value-num]')!.textContent;
+  function closeSpy(el: HTMLElement): ReturnType<typeof vi.fn> {
+    const seen = vi.fn();
+    el.addEventListener('keypadclose', (e) =>
+      seen((e as CustomEvent<{ target: number | null }>).detail.target),
+    );
+    return seen;
+  }
+
+  it('re-expresses a typed Target without emitting target', () => {
+    const { el, root } = mountEntry();
+    el.unit = 'lb';
+    ['5', '5'].forEach((k) => key(root, k));
+    const seen = targetSpy(el);
+    el.retarget(25);
+    expect(shown(root)).toBe('55'); // still reads 55 in lb
+    expect(seen).not.toHaveBeenCalled(); // the console decodes it itself
+  });
+
+  it('then reads the new kg in the new unit once the unit flips', () => {
+    const { el, root } = mountEntry();
+    el.unit = 'lb';
+    ['5', '5'].forEach((k) => key(root, k));
+    el.retarget(25); // the console calls this before render flips the unit
+    el.unit = 'kg';
+    expect(shown(root)).toBe('25'); // not 24.95
+  });
+
+  it('commits the NEW kg on close after a typed Target is retargeted', () => {
+    const { el, root } = mountEntry();
+    const seen = closeSpy(el);
+    el.unit = 'lb';
+    ['5', '5'].forEach((k) => key(root, k));
+    el.retarget(25);
+    el.unit = 'kg';
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-value]'); // close -> commit
+    expect(seen).toHaveBeenLastCalledWith(25);
+  });
+
+  it('keeps a display()-seeded Target a seed: close still commits null', () => {
+    // A Recent chip tap seeds via display(); an Exact toggle after it must not turn an
+    // idle peek into a Recents entry.
+    const { el, root } = mountEntry();
+    const seen = closeSpy(el);
+    el.unit = 'lb';
+    el.display(lbToKg(55));
+    el.retarget(25);
+    el.unit = 'kg';
+    tap(root, '[data-value]'); // open
+    tap(root, '[data-value]'); // close
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
+  it('is a no-op on an empty field', () => {
+    const { el, root } = mountEntry();
+    const seen = closeSpy(el);
+    key(root, 'clear'); // empty the field (a fresh entry is seeded with the Bar)
+    el.retarget(25);
+    expect(root.querySelector('[data-value]')!.classList.contains('empty')).toBe(true);
+    tap(root, '[data-value]');
+    tap(root, '[data-value]');
+    expect(seen).toHaveBeenLastCalledWith(null);
   });
 });

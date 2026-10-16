@@ -1081,6 +1081,18 @@ describe('<rack-console> plate set (RBAR-17, ADR-0010)', () => {
     expect(total(el)).not.toBe('45 lb');
   });
 
+  it('re-solves a standing kg Target on iron and keeps reading kg (RBAR-60)', () => {
+    const el = mountConsole();
+    type(el, '100'); // comp: 25 + 15, exact
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training'; // no forced lb: the kg choice holds
+    expect(unitBtn(el, 'kg').getAttribute('aria-pressed')).toBe('true');
+    expect(total(el)).toBe('99.79 kg'); // 220 lb of iron, at or under 100 kg
+    expect(statusKind(el)).toBe('short');
+    expect(discs(el).every((d) => d.dataset.color === 'iron')).toBe(true);
+    expect(secondaryEl(el).textContent).toBe('220 lb');
+  });
+
   it('swaps the Encode palette to the iron denominations on Training', () => {
     const el = mountConsole();
     el.barKg = lbToKg(45);
@@ -1236,6 +1248,16 @@ describe('<rack-console> (Share card)', () => {
     // The push folds the Collar too: the achieved Total reads off baselineKg(), the same
     // folded baseline the card shows -- a bare-Bar encode here would mis-record 100.
     expect(recentLabels(el)).toEqual([105]);
+  });
+
+  it('reads kg through the card on the Training set, faces still stamped lb (RBAR-60)', () => {
+    const el = mountConsole();
+    el.barKg = lbToKg(45);
+    el.plateSet = 'training';
+    type(el, '61.23'); // 135 lb read in kg
+    shareBtn(el).click();
+    expect(shareText(el, '[data-total]')).toBe('61.23 kg');
+    expect(shareChips(el)).toEqual(['1x 45']); // the stamped lb face
   });
 
   it('reads iron faces and lb through the card on the Training set', () => {
@@ -2134,6 +2156,46 @@ describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
     unitBtn(el, 'lb').click();
     expect(total(el)).toBe('60 lb');
     expect(statusKind(el)).toBe('exact');
+  });
+
+  it('keeps a sub-Bar Target across a unit toggle (no retarget to the bare Bar)', () => {
+    // A Target under the empty Bar reads as the Bar's floor, not Exact -- the toggle
+    // must keep the lifter's typed number, not snap the Target to the Bar.
+    const el = mountConsole();
+    type(el, '10');
+    expect(total(el)).toBe('20 kg');
+    expect(barnote(el).hidden).toBe(false);
+    unitBtn(el, 'lb').click();
+    expect(total(el)).toBe('44 lb');
+    expect(entryValue(el)).toBe('22');
+    expect(barnote(el).hidden).toBe(false);
+    unitBtn(el, 'kg').click();
+    expect(entryValue(el)).toBe('10');
+  });
+
+  it('an Exact toggle mid-entry: the next key replaces the re-expressed draft', () => {
+    const el = mountConsole();
+    unitBtn(el, 'lb').click();
+    valueBtn(el).click(); // open the keypad
+    type(el, '55');
+    unitBtn(el, 'kg').click(); // the sheet has no scrim: the toggle is live
+    expect(entryValue(el)).toBe('25');
+    entry(el)
+      .shadowRoot!.querySelector<HTMLButtonElement>('[data-key="5"]')!
+      .click();
+    expect(entryValue(el)).toBe('5'); // replaced, not "255"
+    expect(total(el)).toBe('20 kg'); // 5 kg is under the bare Bar
+  });
+
+  it('a unit toggle in By Plates re-reads the hand-built Side, never re-solves', () => {
+    const el = mountConsole();
+    modeBtn(el, 'encode').click();
+    tapAdd(el, 25);
+    tapAdd(el, 20);
+    const plates = discs(el).map((d) => d.dataset.kg);
+    unitBtn(el, 'lb').click();
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(plates);
+    expect(total(el)).toBe('243 lb'); // 110 kg
   });
 
   it('still commits the re-expressed Target to Recents after an Exact toggle', () => {
