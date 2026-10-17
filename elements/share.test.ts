@@ -103,7 +103,7 @@ describe('<rack-share>', () => {
     expect(cap).toContain('lb bar');
   });
 
-  it('Copy writes the plain-text summary to the clipboard and confirms', async () => {
+  it('Copy writes the loading summary to the clipboard and confirms', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     const { el, root } = mount();
@@ -112,7 +112,8 @@ describe('<rack-share>', () => {
     copy.click();
     await Promise.resolve();
     await Promise.resolve();
-    // The copied text carries the same set name the caption shows (ADR-0011 no-drift).
+    // The wiring check: the clipboard gets the same `loadingSummary` text the share
+    // sheet sends (the literal lines are pinned in the next test).
     expect(writeText).toHaveBeenCalledWith(loadingSummary(LOADED));
     expect(copy.textContent).toContain('Copied');
     vi.unstubAllGlobals();
@@ -164,6 +165,89 @@ describe('<rack-share>', () => {
       expect(writeText).not.toHaveBeenCalled();
       // The sheet is its own feedback; the button never claims a copy.
       expect(btn.textContent).toBe('Share');
+    });
+
+    it('a cancelled sheet (DOMException AbortError) is silent', async () => {
+      const share = vi.fn().mockRejectedValue(new DOMException('cancelled', 'AbortError'));
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const btn = openWith({ share, clipboard: { writeText } });
+      btn.click();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(writeText).not.toHaveBeenCalled();
+      expect(btn.textContent).toBe('Share');
+    });
+
+    it('a share failure with no clipboard claims nothing', async () => {
+      const share = vi.fn().mockRejectedValue(new Error('NotAllowedError'));
+      const btn = openWith({ share });
+      btn.click();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(btn.textContent).toBe('Share');
+    });
+
+    it('a non-Error rejection still falls back to the clipboard', async () => {
+      const share = vi.fn().mockRejectedValue('nope');
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const btn = openWith({ share, clipboard: { writeText } });
+      btn.click();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a re-tap while the sheet is open (no second share, no fallback)', async () => {
+      let settle!: () => void;
+      const share = vi.fn(() => new Promise<void>((r) => (settle = r)));
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const btn = openWith({ share, clipboard: { writeText } });
+      btn.click();
+      btn.click(); // sheet still up
+      expect(share).toHaveBeenCalledTimes(1);
+      settle();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      btn.click(); // sheet closed: a new tap shares again
+      expect(share).toHaveBeenCalledTimes(2);
+      expect(writeText).not.toHaveBeenCalled();
+    });
+
+    it('a share failure after the card closed leaves the clipboard alone', async () => {
+      let fail!: (e: unknown) => void;
+      const share = vi.fn(() => new Promise<void>((_, rej) => (fail = rej)));
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', { share, clipboard: { writeText } });
+      const { el, root } = mount();
+      el.open();
+      (root.querySelector('[data-copy]') as HTMLButtonElement).click();
+      el.close();
+      fail(new Error('NotAllowedError'));
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(writeText).not.toHaveBeenCalled();
+    });
+
+    it('the shared text names no plate set; the caption still does', async () => {
+      const share = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', { share });
+      const { el, root } = mount();
+      el.plateSet = 'training';
+      el.open();
+      (root.querySelector('[data-copy]') as HTMLButtonElement).click();
+      expect((share.mock.calls[0]![0] as { text: string }).text).not.toContain('Training');
+      expect(root.querySelector('[data-caption]')!.textContent).toContain('Training');
+    });
+
+    it('after a share-fallback copy, the label reverts to "Share"', async () => {
+      vi.useFakeTimers();
+      try {
+        const share = vi.fn().mockRejectedValue(new Error('NotAllowedError'));
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        const btn = openWith({ share, clipboard: { writeText } });
+        btn.click();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(btn.textContent).toBe('Copied');
+        await vi.advanceTimersByTimeAsync(1600);
+        expect(btn.textContent).toBe('Share');
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('a cancelled sheet (AbortError) is silent: no clipboard write, no label change', async () => {

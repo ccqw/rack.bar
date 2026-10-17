@@ -41,6 +41,8 @@ class RackShare extends HTMLElement {
   // The pending "Copied" -> resting-label revert, so a rapid re-tap or a close can
   // cancel it rather than letting a stale timer overwrite a fresh label.
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
+  // True while a native share sheet is open (RBAR-64), so a re-tap is ignored.
+  private sharing = false;
 
   // The load to summarise. The console sets this before open(); a bare default keeps a
   // pre-seed render harmless. Assigning re-renders while open so a live change shows.
@@ -233,8 +235,8 @@ class RackShare extends HTMLElement {
     this.render();
   }
 
-  // Render every surface from the current load. The Total and config read in the load's
-  // Unit; the secondary reads the other. The Side Load folds into colour chips (or a
+  // Render every surface from the current load. The Total reads in the load's Unit;
+  // the secondary reads the other, and the config caption is dual-unit. The Side Load folds into colour chips (or a
   // bare-bar line) via the same lib/summary fold the shared text uses (ADR-0011).
   private render(): void {
     const { side, barKg, collarKg, unit } = this._load;
@@ -270,22 +272,33 @@ class RackShare extends HTMLElement {
   // "Share" and opens the native share sheet (which has its own Copy action); a
   // cancelled sheet (AbortError) is silent, and any other share failure falls back to
   // the clipboard. Without Web Share the button reads "Copy summary" and writes the
-  // clipboard directly. Both APIs need a secure context.
+  // clipboard directly. Both APIs need a secure context. A tap while a sheet is still
+  // open is ignored (a second share() would reject and wrongly fall back), and a
+  // failure that lands after the card closed writes nothing.
   private copy(): void {
     const text = loadingSummary(this._load);
     if (!canShare()) {
       this.writeClipboard(text);
       return;
     }
-    navigator.share({ text }).then(
-      () => {
-        /* the sheet is its own feedback; never claim a copy */
-      },
-      (err: unknown) => {
-        if (err instanceof Error && err.name === 'AbortError') return; // lifter cancelled
-        this.writeClipboard(text);
-      },
-    );
+    if (this.sharing) return;
+    this.sharing = true;
+    navigator
+      .share({ text })
+      .then(
+        () => {
+          /* the sheet is its own feedback; never claim a copy */
+        },
+        (err: unknown) => {
+          // Match by name: a DOMException need not be an Error subclass everywhere.
+          if ((err as { name?: unknown } | null)?.name === 'AbortError') return; // cancelled
+          if (this.hidden) return; // the card closed meanwhile: leave the clipboard alone
+          this.writeClipboard(text);
+        },
+      )
+      .finally(() => {
+        this.sharing = false;
+      });
   }
 
   // Write `text` to the clipboard and confirm with a transient "Copied" (ADR-0011). The

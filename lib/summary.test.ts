@@ -161,6 +161,7 @@ describe('loadingSummary', () => {
     ]);
   });
 
+  // Pins the URL itself: every other case compares against the SHARE_LINK constant.
   it('links the app on the closing line', () => {
     expect(SHARE_LINK).toBe('https://rack.bar');
   });
@@ -172,12 +173,14 @@ describe('loadingSummary', () => {
         barKg: 15,
         collarKg: 0,
         unit: 'kg',
-      }).slice(1, 5),
+      }),
     ).toEqual([
+      `rack.bar ${MID} 64 kg ${MID} per side`, // the 15 kg Bar + 2 x 24.5
       `${BLUE_SQ} 20 ${TIMES} 1`,
       `${RED_DOT} 2.5 ${TIMES} 1`,
       `${YELLOW_DOT} 1.5 ${TIMES} 1`,
       `${WHITE_DOT} 0.5 ${TIMES} 1`,
+      SHARE_LINK,
     ]);
   });
 
@@ -256,9 +259,16 @@ describe('loadingSummary', () => {
 
   it('builds its Plate lines from groupSide, so it cannot drift from the card chips', () => {
     const side = [eleiko(25), eleiko(20), eleiko(20), eleiko(5), eleiko(1), eleiko(0.5)];
-    const groups = groupSide(side);
     const plateLines = lines({ side, barKg: 20, collarKg: 0, unit: 'kg' }).slice(1, -1);
-    expect(plateLines).toEqual(groups.map((g) => `${g.emoji} ${g.face} ${TIMES} ${g.count}`));
+    // One line per groupSide group, in the same order and counts as the chips.
+    expect(plateLines).toHaveLength(groupSide(side).length);
+    expect(plateLines).toEqual([
+      `${RED_SQ} 25 ${TIMES} 1`,
+      `${BLUE_SQ} 20 ${TIMES} 2`,
+      `${WHITE_SQ} 5 ${TIMES} 1`,
+      `${GREEN_DOT} 1 ${TIMES} 1`,
+      `${WHITE_DOT} 0.5 ${TIMES} 1`,
+    ]);
   });
 
   it('a sleeve-full Side is one short line, and the paste stays short', () => {

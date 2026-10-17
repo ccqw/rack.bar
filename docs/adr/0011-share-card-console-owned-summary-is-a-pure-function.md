@@ -105,3 +105,5 @@ Without Web Share the button reads **Copy summary** and writes the clipboard. Th
 "Copied" confirmation still flips only on a successful clipboard write; a completed
 share shows no confirmation (the sheet is its own feedback). Both APIs need a secure
 context (https or localhost).
+A tap while a sheet is still open is ignored, and a share failure that lands after
+the card closed writes nothing to the clipboard.

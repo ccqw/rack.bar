@@ -6,7 +6,8 @@
 //
 // Plate faces stay the Plate's own stamp (`label ?? kg`): kg on the Eleiko set even
 // when the display Unit is lb (the same kg-face-under-an-lb-readout convention the
-// sleeve and palette use). The Total and config lines carry the Unit via `format`.
+// sleeve and palette use). The Total carries the display Unit via `format`; the
+// config caption is dual-unit.
 import type { Plate, PlateColor } from './plates.ts';
 import { barWithCollars, totalKg } from './plates.ts';
 import { format, shownIn, toLbWhole } from './units.ts';
@@ -24,7 +25,7 @@ export interface LoadSummary {
   readonly barKg: number;
   /** The per-Side Collar, in kg (0 = None). */
   readonly collarKg: number;
-  /** The display Unit the Total and config read in; the secondary reads the other. */
+  /** The display Unit the Total reads in; the secondary reads the other. */
   readonly unit: Unit;
 }
 
