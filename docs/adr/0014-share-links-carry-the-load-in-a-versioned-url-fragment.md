@@ -61,11 +61,11 @@ and never returns a half-valid load. A mangled link degrades to a normal boot, t
 same validate-at-the-boundary posture as the persisted rig (ADR-0007/0010). It rejects
 the whole link on:
 
-- a fragment over 512 characters (checked before any splitting), or malformed
-  percent-encoding;
-- `v` missing or not exactly `1`; any duplicate key (known or not);
+- a fragment over 512 characters (checked before any splitting);
+- `v` missing or not exactly `1`; a duplicate known key; a known key with no `=` or
+  with malformed percent-encoding in its value;
 - `s` not an offered Plate set; `b` not one of that set's Bars by stamp; `c` not an
-  offered Collar; `u` not `kg`/`lb`; `m` not `w`/`p`; a known key with no `=`;
+  offered Collar; `u` not `kg`/`lb`; `m` not `w`/`p`;
 - a `p` face not in that set's Inventory; a count not an integer 1..99 (no leading
   zero); an empty token; a Side Load past the Sleeve (the ADR-0012 `plateFitsMm`
   comparison, walked heaviest-first);
@@ -73,10 +73,21 @@ the whole link on:
   `t` <= 0 or over 1000 kg after rounding to 2 dp.
 
 Tolerated, and canonicalized: keys in any order, missing optional keys, an explicit
-`1x`, repeated or unsorted faces (re-sorted heaviest-first), empty `&` segments, a
-leading `#`, and percent-encoded separators (a messenger may turn `,` into `%2C`).
-**Unknown keys are ignored**, so a later additive v1 field does not break an older
-client.
+`1x`, repeated or unsorted faces (re-sorted heaviest-first), leading zeros in a
+decimal, empty `&` segments, a leading `#`, and percent-encoded values (a messenger
+may turn `,` into `%2C`). The fragment is split on `&` and `=` BEFORE each value is
+decoded, so an encoded `%26` / `%3D` can never become a separator and smuggle in a
+key. **Unknown keys are ignored** -- even duplicated, valueless or badly escaped -- so
+a later additive v1 field does not break an older client.
+
+The serializer holds the same line from the other side: `serializeLink` returns null
+for a load it cannot represent exactly (a Bar or Collar the set does not offer, a
+Plate from the other set, a Side out of order or past the Sleeve, a Target that is not
+finite, rounds to <= 0, or is over the cap). Refusing beats a link that opens to a
+different load -- an off-menu 20.4 kg Bar would round onto the `45lb` stamp, and a red
+Eleiko `25` on a Training load would open as an iron 25 lb. Every link it does write
+parses back to the same load. A missing `u` takes the recipient's Unit, which the
+shell must pass (`parseLink`'s second argument is required).
 
 ## Decision: the link applies transiently
 
@@ -107,5 +118,9 @@ to apply and the load half the console's, keeping the ADR-0007/0009/0011 split.
 
 Invariants are property-tested in `lib/properties.test.ts` ("Share link properties"):
 the round trip over every showable load, canonical form as a fixed point, idempotent
-canonicalization of non-canonical links, never-throw fuzzing, and Sleeve/Bar validity
-of everything accepted.
+canonicalization of non-canonical links, never-throw fuzzing, Sleeve/Bar validity
+of everything accepted, whole-lb Target read-back, and the serializer refusing exactly
+the unrepresentable loads.
+
+`LinkState` is a union split on `mode`, so only a decode-mode load can carry a
+Target (an encode load with a stale Target does not type-check).

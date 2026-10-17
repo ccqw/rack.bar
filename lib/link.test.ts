@@ -20,6 +20,11 @@ const lb = (face: string): Plate => {
   return p;
 };
 
+// The tests read links as a kg recipient unless a case says otherwise.
+const parse = (fragment: string) => parseLink(fragment, 'kg');
+// The Target of a parsed load (only decode mode carries one).
+const targetOf = (s: LinkState | null) => (s?.mode === 'decode' ? s.targetKg : undefined);
+
 const BASE = 'v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140';
 
 describe('serializeLink / linkUrl: the four plan examples (ADR-0014)', () => {
@@ -76,12 +81,12 @@ describe('serializeLink / linkUrl: the four plan examples (ADR-0014)', () => {
   });
 
   it('shares the one origin constant with the summary closing line (RBAR-64)', () => {
-    const s = parseLink(BASE)!;
+    const s = parse(BASE)!;
     expect(linkUrl(s)).toBe(`${SHARE_LINK}/#${BASE}`);
   });
 
   it('names the Training set 20 kg Bar by its own kg stamp (RBAR-63)', () => {
-    const s = parseLink('v=1&s=training&b=20kg&m=p&p=45')!;
+    const s = parse('v=1&s=training&b=20kg&m=p&p=45')!;
     expect(s.barKg).toBe(20);
     expect(serializeLink(s)).toBe('v=1&s=training&b=20kg&m=p&c=0&u=kg&p=45');
   });
@@ -89,7 +94,7 @@ describe('serializeLink / linkUrl: the four plan examples (ADR-0014)', () => {
 
 describe('parseLink: accepted links (ADR-0014)', () => {
   it('parses each plan example back to its state', () => {
-    expect(parseLink(BASE)).toEqual({
+    expect(parse(BASE)).toEqual({
       set: 'comp',
       barKg: 20,
       collarKg: 0,
@@ -98,7 +103,7 @@ describe('parseLink: accepted links (ADR-0014)', () => {
       side: [kg(25), kg(25), kg(10)],
       targetKg: 140,
     });
-    expect(parseLink('v=1&s=training&b=45lb&m=w&c=0&u=lb&p=2x45&t=102.06')).toEqual({
+    expect(parse('v=1&s=training&b=45lb&m=w&c=0&u=lb&p=2x45&t=102.06')).toEqual({
       set: 'training',
       barKg: lbToKg(45),
       collarKg: 0,
@@ -107,7 +112,7 @@ describe('parseLink: accepted links (ADR-0014)', () => {
       side: [lb('45'), lb('45')],
       targetKg: 102.06,
     });
-    expect(parseLink('v=1&s=comp&b=15kg&m=p&c=2.5&u=kg&p=20,5,2.5')).toEqual({
+    expect(parse('v=1&s=comp&b=15kg&m=p&c=2.5&u=kg&p=20,5,2.5')).toEqual({
       set: 'comp',
       barKg: 15,
       collarKg: 2.5,
@@ -115,7 +120,7 @@ describe('parseLink: accepted links (ADR-0014)', () => {
       mode: 'encode',
       side: [kg(20), kg(5), kg(2.5)],
     });
-    expect(parseLink('v=1&s=comp&b=20kg&m=p&c=0&u=kg&p=')).toEqual({
+    expect(parse('v=1&s=comp&b=20kg&m=p&c=0&u=kg&p=')).toEqual({
       set: 'comp',
       barKg: 20,
       collarKg: 0,
@@ -126,8 +131,8 @@ describe('parseLink: accepted links (ADR-0014)', () => {
   });
 
   it('reads `25` by the set: a red Eleiko 25 kg vs an iron 25 lb', () => {
-    const comp = parseLink('v=1&s=comp&b=20kg&m=p&p=25')!;
-    const iron = parseLink('v=1&s=training&b=45lb&m=p&p=25')!;
+    const comp = parse('v=1&s=comp&b=20kg&m=p&p=25')!;
+    const iron = parse('v=1&s=training&b=45lb&m=p&p=25')!;
     expect(comp.side).toEqual([kg(25)]);
     expect(comp.side[0]!.kg).toBe(25);
     expect(iron.side).toEqual([lb('25')]);
@@ -145,54 +150,65 @@ describe('parseLink: accepted links (ADR-0014)', () => {
         side: [],
         targetKg: lbToKg(lbTarget),
       };
-      const got = parseLink(serializeLink(sent))!;
+      const got = parse(serializeLink(sent)!)!;
       expect(got.unit).toBe('lb');
-      expect(shownIn(got.targetKg!, 'lb')).toBe(lbTarget);
+      expect(shownIn(targetOf(got)!, 'lb')).toBe(lbTarget);
     }
   });
 
   it('defaults a missing c to None, a missing p to the bare Bar, a missing u to the given default', () => {
     const s = parseLink('v=1&s=comp&b=20kg&m=p', 'lb')!;
     expect(s).toEqual({ set: 'comp', barKg: 20, collarKg: 0, unit: 'lb', mode: 'encode', side: [] });
-    expect(parseLink('v=1&s=comp&b=20kg&m=p')!.unit).toBe('kg');
+    expect(parse('v=1&s=comp&b=20kg&m=p')!.unit).toBe('kg');
   });
 
   it('a By Weight link may omit t', () => {
-    const s = parseLink('v=1&s=comp&b=20kg&m=w&p=25')!;
+    const s = parse('v=1&s=comp&b=20kg&m=w&p=25')!;
     expect(s.mode).toBe('decode');
-    expect(s.targetKg).toBeUndefined();
+    expect(targetOf(s)).toBeUndefined();
     expect('targetKg' in s).toBe(false);
   });
 
   it('re-sorts the plates heaviest-first and merges repeated faces', () => {
-    const s = parseLink('v=1&s=comp&b=20kg&m=p&p=2.5,25,10,25')!;
+    const s = parse('v=1&s=comp&b=20kg&m=p&p=2.5,25,10,25')!;
     expect(s.side).toEqual([kg(25), kg(25), kg(10), kg(2.5)]);
     expect(serializeLink(s)).toBe('v=1&s=comp&b=20kg&m=p&c=0&u=kg&p=2x25,10,2.5');
   });
 
   it('accepts an explicit 1x count and keys in any order', () => {
-    const s = parseLink('t=140&p=1x10,2x25&u=kg&c=0&m=w&b=20kg&s=comp&v=1')!;
+    const s = parse('t=140&p=1x10,2x25&u=kg&c=0&m=w&b=20kg&s=comp&v=1')!;
     expect(serializeLink(s)).toBe(BASE);
   });
 
   it('ignores unknown keys (an additive later v1 field) and empty segments', () => {
-    expect(serializeLink(parseLink(`${BASE}&zz=whatever&q`)!)).toBe(BASE);
-    expect(serializeLink(parseLink(`${BASE}&`)!)).toBe(BASE);
+    expect(serializeLink(parse(`${BASE}&zz=whatever&q`)!)).toBe(BASE);
+    expect(serializeLink(parse(`${BASE}&`)!)).toBe(BASE);
+  });
+
+  it('ignores unknown keys even when duplicated, valueless or badly escaped', () => {
+    expect(serializeLink(parse(`${BASE}&zz=1&zz=2&q&q&w=%E0%A4%A`)!)).toBe(BASE);
+  });
+
+  it('splits before decoding: an encoded & or = inside a value never becomes a key', () => {
+    // Decoding first would read `t=50` out of the unknown key's value.
+    const s = parse('v=1&s=comp&b=20kg&m=w&p=25&x=a%26t%3D50')!;
+    expect(targetOf(s)).toBeUndefined();
+    expect(parse('v=1&s=comp&b=20kg&m=w&%74=50')).toEqual(parse('v=1&s=comp&b=20kg&m=w'));
   });
 
   it('tolerates a leading # and percent-encoded separators', () => {
-    expect(serializeLink(parseLink(`#${BASE}`)!)).toBe(BASE);
-    expect(serializeLink(parseLink(BASE.replace(',', '%2C'))!)).toBe(BASE);
+    expect(serializeLink(parse(`#${BASE}`)!)).toBe(BASE);
+    expect(serializeLink(parse(BASE.replace(',', '%2C'))!)).toBe(BASE);
   });
 
   it('normalizes t to 2 dp', () => {
-    expect(parseLink('v=1&s=comp&b=20kg&m=w&t=100.004')!.targetKg).toBe(100);
-    expect(parseLink('v=1&s=comp&b=20kg&m=w&t=1000')!.targetKg).toBe(MAX_TARGET_KG);
+    expect(targetOf(parse('v=1&s=comp&b=20kg&m=w&t=100.004'))).toBe(100);
+    expect(targetOf(parse('v=1&s=comp&b=20kg&m=w&t=1000'))).toBe(MAX_TARGET_KG);
   });
 
   it('accepts a Side Load that exactly fills the Sleeve', () => {
     // 7 x 25 kg = 406 mm, + 0.5 kg (16 mm) would be 422 > 415; 7 x 58 + 1 kg (19) = 425.
-    expect(parseLink('v=1&s=comp&b=20kg&m=p&p=7x25')).not.toBeNull();
+    expect(parse('v=1&s=comp&b=20kg&m=p&p=7x25')).not.toBeNull();
   });
 });
 
@@ -204,7 +220,6 @@ describe('parseLink: every rejection is all-or-nothing null (ADR-0014)', () => {
     ['v not 1', BASE.replace('v=1', 'v=2')],
     ['v padded', BASE.replace('v=1', 'v=01')],
     ['duplicate key', `${BASE}&s=comp`],
-    ['duplicate unknown key', `${BASE}&zz=1&zz=2`],
     ['s missing', 'v=1&b=20kg&m=w'],
     ['s unoffered', BASE.replace('s=comp', 's=bumper')],
     ['b missing', 'v=1&s=comp&m=w'],
@@ -239,14 +254,15 @@ describe('parseLink: every rejection is all-or-nothing null (ADR-0014)', () => {
     ['t empty', BASE.replace('t=140', 't=')],
     ['t over the cap', BASE.replace('t=140', 't=1000.01')],
     ['known key without =', 'v=1&s=comp&b=20kg&m=w&p'],
-    ['malformed percent-encoding', `${BASE}&zz=%E0%A4%A`],
+    ['malformed percent-encoding in a known value', BASE.replace('p=2x25,10', 'p=2x25%2,10')],
+    ['an encoded & inside p stays part of the value', 'v=1&s=comp&b=20kg&m=w&p=25%26t%3D50'],
     ['prototype key as a set', BASE.replace('s=comp', 's=__proto__')],
     ['prototype key as a face', BASE.replace('p=2x25,10', 'p=constructor')],
   ];
 
   for (const [name, frag] of rejects) {
     it(`rejects: ${name}`, () => {
-      expect(parseLink(frag)).toBeNull();
+      expect(parse(frag)).toBeNull();
     });
   }
 
@@ -254,7 +270,43 @@ describe('parseLink: every rejection is all-or-nothing null (ADR-0014)', () => {
     const pad = MAX_LINK_LENGTH - BASE.length - '&x='.length;
     const frag = `${BASE}&x=${'a'.repeat(pad)}`;
     expect(frag.length).toBe(MAX_LINK_LENGTH);
-    expect(parseLink(frag)).not.toBeNull();
-    expect(parseLink(`${frag}a`)).toBeNull();
+    expect(parse(frag)).not.toBeNull();
+    expect(parse(`${frag}a`)).toBeNull();
   });
+});
+
+describe('serializeLink: refuses a load it cannot represent exactly (ADR-0014)', () => {
+  const ok: LinkState = {
+    set: 'training',
+    barKg: lbToKg(45),
+    collarKg: 0,
+    unit: 'lb',
+    mode: 'decode',
+    side: [lb('45')],
+    targetKg: 100,
+  };
+
+  it('serializes the valid baseline', () => {
+    expect(serializeLink(ok)).toBe('v=1&s=training&b=45lb&m=w&c=0&u=lb&p=45&t=100');
+  });
+
+  const refusals: ReadonlyArray<readonly [string, LinkState]> = [
+    // 20.4 kg would round to the 45 lb stamp and open as a different Bar.
+    ['an off-menu Bar that rounds onto a stamp', { ...ok, barKg: 20.4 }],
+    ['a Bar the set does not offer', { ...ok, barKg: 15 }],
+    // A red Eleiko 25 would travel as `25` and open as the iron 25 lb.
+    ['a Plate from the other set', { ...ok, side: [kg(25)] }],
+    ['a Side out of order', { ...ok, side: [lb('25'), lb('45')] }],
+    ['a Side past the Sleeve', { ...ok, side: Array<Plate>(9).fill(lb('45')) }],
+    ['an unoffered Collar', { ...ok, collarKg: 5 as unknown as 0 }],
+    ['a Target that rounds to 0', { ...ok, targetKg: 0.004 }],
+    ['a NaN Target', { ...ok, targetKg: NaN }],
+    ['a Target over the cap', { ...ok, targetKg: 1200 }],
+  ];
+  for (const [name, state] of refusals) {
+    it(`refuses: ${name}`, () => {
+      expect(serializeLink(state)).toBeNull();
+      expect(linkUrl(state)).toBeNull();
+    });
+  }
 });

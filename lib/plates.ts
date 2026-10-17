@@ -186,10 +186,10 @@ export const COLLAR_OPTIONS = [0, 2.5] as const;
 /** A Collar the lifter can actually pick: one of the offered Collars. */
 export type CollarKg = (typeof COLLAR_OPTIONS)[number];
 
-/** The default Collar: None. The bare Bar with no clamp weight. A bare literal (not
- * `CollarKg`-typed) so the shells' `collarKg` fields infer `number`, mirroring
- * DEFAULT_BAR_KG; the offered-set guard runs at each boundary instead. */
-export const DEFAULT_COLLAR_KG = 0;
+/** The default Collar: None. The bare Bar with no clamp weight. `satisfies` checks it
+ * is an offered Collar without annotating it `CollarKg`, so the shells' `collarKg`
+ * fields still infer `number` (mirroring DEFAULT_BAR_KG). */
+export const DEFAULT_COLLAR_KG = 0 satisfies CollarKg;
 
 /** True when `kg` is one of the offered Collars -- the guard every boundary shares. */
 export function isOfferedCollar(kg: number): kg is CollarKg {

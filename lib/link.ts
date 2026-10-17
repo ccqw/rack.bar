@@ -20,9 +20,12 @@
 // kg-canonical, as Recents are (ADR-0009). Every value is an allowlisted token or a
 // bounded decimal, so nothing needs percent-encoding.
 //
-// The parser is all-or-nothing: any rejected field nulls the whole link, so a mangled
-// link degrades to a normal boot, never a half-applied one. Unknown keys are ignored,
-// so a later additive v1 field does not break this client; a breaking change bumps `v`.
+// Both directions validate against the same rules. The parser is all-or-nothing: any
+// rejected field nulls the whole link, so a mangled link degrades to a normal boot,
+// never a half-applied one. The serializer refuses (null) a load it cannot represent
+// exactly, so a link that serializes always opens to that same load. Unknown keys are
+// ignored, so a later additive v1 field does not break this client; a breaking change
+// bumps `v`.
 import {
   DEFAULT_COLLAR_KG,
   isOfferedCollar,
@@ -38,24 +41,32 @@ import type { Unit } from './units.ts';
 /** The console's two modes: By Weight (decode) and By Plates (encode). */
 export type LinkMode = 'decode' | 'encode';
 
-/**
- * A load a share link carries (ADR-0014). The Side Load is the source of truth (the
- * sender's screen); a By Weight link also carries the Target so the recipient's entry
- * reads the same. Every Plate in `side` is the set's own Inventory object.
- */
-export interface LinkState {
+/** The rig and Side Load every link carries, whatever its mode. */
+interface LinkLoad {
   readonly set: PlateSetKey;
   /** The bare Bar, kg -- one of `PLATE_SETS[set].bars`. */
   readonly barKg: number;
   readonly collarKg: CollarKg;
   /** The display Unit the sender was reading in. */
   readonly unit: Unit;
-  readonly mode: LinkMode;
-  /** The Side Load, heaviest-first, within the Sleeve. */
+  /** The Side Load: the set's own Inventory objects, heaviest-first, within the Sleeve. */
   readonly side: readonly Plate[];
-  /** The Target, kg at 2 dp. Present only in decode mode, and optional there. */
-  readonly targetKg?: number;
 }
+
+/**
+ * A load a share link carries (ADR-0014). The Side Load is the source of truth (the
+ * sender's screen); a By Weight link may also carry the Target so the recipient's entry
+ * reads the same. Only decode mode has a Target, so the type is split on `mode`.
+ */
+// AI-REVIEW 2026-10-17 [claude/type-design] T1 (audit, PR #98): `targetKg?` sat on both
+// modes, so an encode load could carry a Target the serializer silently dropped.
+export type LinkState =
+  | (LinkLoad & {
+      readonly mode: 'decode';
+      /** The Target, kg (travels at 2 dp). Optional: a By Weight load may have none. */
+      readonly targetKg?: number;
+    })
+  | (LinkLoad & { readonly mode: 'encode' });
 
 /** The longest fragment the parser reads; longer is rejected before any splitting.
  * A Sleeve full of the narrowest Plates still serializes well under 150 chars. */
@@ -70,6 +81,9 @@ const VERSION = '1';
 
 // The wire tokens for each mode.
 const MODE_TOKEN: Record<LinkMode, string> = { decode: 'w', encode: 'p' };
+
+// The keys v1 reads. Any other key is ignored (forward-compatible additive fields).
+const KNOWN_KEYS: ReadonlySet<string> = new Set(['v', 's', 'b', 'm', 'c', 'u', 'p', 't']);
 
 // The most of one Plate a single `Nx` group may claim (1..99, no leading zero).
 const COUNT_RE = /^([1-9][0-9]?)x(.+)$/;
@@ -89,24 +103,55 @@ function plateFace(p: Plate): string {
   return p.label ?? String(p.kg);
 }
 
-/** The Target as it travels: kg at 2 dp, the precision Recents store (ADR-0009). */
-function toLinkKg(kg: number): number {
-  return Number(kg.toFixed(2));
+/** A Target as it travels -- kg at 2 dp, the precision Recents store (ADR-0009) -- or
+ * null when that is not finite, not > 0, or over MAX_TARGET_KG. One rule for both
+ * directions. */
+function linkTargetKg(kg: number): number | null {
+  const t = Number(kg.toFixed(2));
+  return Number.isFinite(t) && t > 0 && t <= MAX_TARGET_KG ? t : null;
+}
+
+/** True when `side` fits the Sleeve, walked in order through the one ADR-0012 fit
+ * comparison (plateFitsMm), so link validation agrees with the solver and the views. */
+function fitsSleeve(side: readonly Plate[]): boolean {
+  let usedMm = 0;
+  for (const p of side) {
+    if (!plateFitsMm(usedMm, p)) return false;
+    usedMm += p.widthMm;
+  }
+  return true;
+}
+
+/** True when `side` is drawn from `set`'s own Inventory, heaviest-first, and fits the
+ * Sleeve -- the Side Load invariant a link carries in both directions. */
+function isLinkableSide(side: readonly Plate[], set: PlateSet): boolean {
+  for (let i = 0; i < side.length; i++) {
+    if (!set.inventory.includes(side[i]!)) return false;
+    if (i > 0 && side[i - 1]!.kg < side[i]!.kg) return false;
+  }
+  return fitsSleeve(side);
 }
 
 /**
- * Serialize a load to its canonical v1 fragment (no leading `#`). Always writes
- * `c`, `u` and `p`; writes `t` only for a decode-mode state that has a Target. The
- * Bar is named by the set's stamp for `barKg`; a state that violates its own
- * invariants (an off-menu Bar) still serializes -- by the set's Unit -- and the
- * parser will reject it, so a bad state can never round-trip into a good-looking one.
+ * Serialize a load to its canonical v1 fragment (no leading `#`), or null when the
+ * load cannot be represented exactly: an unoffered set, a Bar or Collar the set does
+ * not offer, a Plate from another set, a Side Load out of order or past the Sleeve, or
+ * a Target that is not finite, rounds to <= 0 at 2 dp, or is over MAX_TARGET_KG.
+ * Refusing beats emitting a link that opens to a different load (a foreign `25` face
+ * would read as the other set's 25) or to nothing. Always writes `c`, `u` and `p`;
+ * writes `t` only when a decode-mode load has a Target. A non-null result always
+ * parses back to `state` (with the Target at 2 dp).
  */
-export function serializeLink(state: LinkState): string {
+// AI-REVIEW 2026-10-17 [claude/silent-failure] SF1-SF3 (audit, PR #98): an off-menu
+// Bar, a foreign Plate or a bad Target used to serialize into a link that opened to a
+// different load or to nothing; the serializer now refuses them.
+export function serializeLink(state: LinkState): string | null {
+  if (!isOfferedPlateSet(state.set)) return null;
   const set = PLATE_SETS[state.set];
-  const bar = set.bars.find((b) => b.kg === state.barKg) ?? {
-    kg: state.barKg,
-    unit: set.unit,
-  };
+  const bar = set.bars.find((b) => b.kg === state.barKg);
+  if (!bar || !isOfferedCollar(state.collarKg)) return null;
+  if (state.unit !== 'kg' && state.unit !== 'lb') return null;
+  if (!isLinkableSide(state.side, set)) return null;
   const plates = groupSide(state.side)
     .map((g) => (g.count > 1 ? `${g.count}x${g.face}` : g.face))
     .join(',');
@@ -120,40 +165,50 @@ export function serializeLink(state: LinkState): string {
     `p=${plates}`,
   ];
   if (state.mode === 'decode' && state.targetKg !== undefined) {
-    pairs.push(`t=${toLinkKg(state.targetKg)}`);
+    const t = linkTargetKg(state.targetKg);
+    if (t === null) return null;
+    pairs.push(`t=${t}`);
   }
   return pairs.join('&');
 }
 
-/** The full share URL for a load: the one site origin (SHARE_LINK) + `/#` + fragment. */
-export function linkUrl(state: LinkState): string {
-  return `${SHARE_LINK}/#${serializeLink(state)}`;
+/** The full share URL for a load -- the one site origin (SHARE_LINK) + `/#` +
+ * fragment -- or null when the load cannot be serialized (see serializeLink). */
+export function linkUrl(state: LinkState): string | null {
+  const fragment = serializeLink(state);
+  return fragment === null ? null : `${SHARE_LINK}/#${fragment}`;
 }
 
-// The keys v1 reads. Any other key is ignored (forward-compatible additive fields).
-const KNOWN_KEYS: ReadonlySet<string> = new Set(['v', 's', 'b', 'm', 'c', 'u', 'p', 't']);
-
-/** Split `k=v&k=v` into a map, or null on a duplicate key (known or not) or a known
- * key with no `=`. Empty segments (a trailing `&`) are skipped; a valueless unknown
- * segment is ignored like any unknown key. */
+/**
+ * Split the raw fragment on `&` and `=` FIRST, then percent-decode each known value
+ * (a messenger may send `,` as `%2C`). Splitting before decoding means an encoded
+ * `%26` / `%3D` can never become a separator, so no value can smuggle in another key.
+ * Null on a duplicate known key, a known key with no `=`, or a known value with
+ * malformed percent-encoding. Unknown keys -- duplicated, valueless or malformed -- are
+ * ignored, as are empty segments (a trailing `&`).
+ */
+// AI-REVIEW 2026-10-17 [claude/silent-failure] SF4 (audit, PR #98): decoding the whole
+// fragment first let `x=a%26t%3D50` set the Target; split first, then decode.
 function splitPairs(fragment: string): Map<string, string> | null {
   const pairs = new Map<string, string>();
-  const seen = new Set<string>();
   for (const seg of fragment.split('&')) {
-    if (seg === '') continue;
     const eq = seg.indexOf('=');
     const key = eq === -1 ? seg : seg.slice(0, eq);
-    if (seen.has(key)) return null;
-    seen.add(key);
     if (!KNOWN_KEYS.has(key)) continue;
-    if (eq === -1) return null;
-    pairs.set(key, seg.slice(eq + 1));
+    if (eq === -1 || pairs.has(key)) return null;
+    let value: string;
+    try {
+      value = decodeURIComponent(seg.slice(eq + 1));
+    } catch {
+      return null; // a malformed escape in a value we must read: the link is mangled
+    }
+    pairs.set(key, value);
   }
   return pairs;
 }
 
 /** Parse the `p` value against `set`'s Inventory into a heaviest-first Side Load that
- * fits the Sleeve, or null. */
+ * fits the Sleeve, or null. Repeated or unsorted faces are merged and re-sorted. */
 function parseSide(value: string, set: PlateSet): readonly Plate[] | null {
   if (value === '') return [];
   const counts = new Map<Plate, number>();
@@ -165,51 +220,33 @@ function parseSide(value: string, set: PlateSet): readonly Plate[] | null {
     if (!plate) return null;
     counts.set(plate, (counts.get(plate) ?? 0) + n);
   }
-  // Rebuild heaviest-first in Inventory order (each Inventory is heaviest-first), then
-  // walk it through the one ADR-0012 fit comparison; the first Plate that overflows
-  // rejects the link, so the walk is bounded by the Sleeve, not by the counts.
-  const side: Plate[] = [];
-  let usedMm = 0;
-  for (const plate of set.inventory) {
-    const n = counts.get(plate) ?? 0;
-    for (let i = 0; i < n; i++) {
-      if (!plateFitsMm(usedMm, plate)) return null;
-      usedMm += plate.widthMm;
-      side.push(plate);
-    }
-  }
-  return side;
+  // Rebuild heaviest-first in Inventory order (each Inventory is heaviest-first). The
+  // length cap bounds the pile (~256 tokens x 99), so expanding before the fit check
+  // is cheap.
+  const side = set.inventory.flatMap((p) => Array<Plate>(counts.get(p) ?? 0).fill(p));
+  return fitsSleeve(side) ? side : null;
 }
 
 /** Parse `t` to kg at 2 dp, or null when not a plain decimal or outside (0, cap]. */
 function parseTarget(value: string): number | null {
-  if (!DECIMAL_RE.test(value)) return null;
-  const kg = toLinkKg(Number(value));
-  return Number.isFinite(kg) && kg > 0 && kg <= MAX_TARGET_KG ? kg : null;
+  return DECIMAL_RE.test(value) ? linkTargetKg(Number(value)) : null;
 }
 
 /**
  * Parse a share-link fragment (with or without its leading `#`) to a load, or null.
- * All-or-nothing (ADR-0014): null on a fragment over MAX_LINK_LENGTH, malformed
- * percent-encoding, a missing or non-`1` `v`, any duplicate key, an unoffered set /
- * Bar stamp / Collar / Unit / mode / Plate face, a count outside 1..99, a Side Load
- * past the Sleeve, or a `t` that is present with `m=p`, not a plain decimal, <= 0 at
- * 2 dp, or over MAX_TARGET_KG. Unknown keys are ignored; Plates are re-sorted
- * heaviest-first. A missing `c` is None, a missing `p` the bare Bar, and a missing `u`
- * is `defaultUnit` -- the recipient's own Unit, which the shell passes in. Never throws.
+ * All-or-nothing (ADR-0014): null on a fragment over MAX_LINK_LENGTH, a missing or
+ * non-`1` `v`, a duplicate known key, a known key with no `=` or with malformed
+ * percent-encoding, an unoffered set / Bar stamp / Collar / Unit / mode / Plate face,
+ * a count outside 1..99, a Side Load past the Sleeve, or a `t` that is present with
+ * `m=p`, not a plain decimal, <= 0 at 2 dp, or over MAX_TARGET_KG. Unknown keys are
+ * ignored; Plates are re-sorted heaviest-first. A missing `c` is None, a missing `p`
+ * the bare Bar, and a missing `u` is `defaultUnit` -- the recipient's own Unit, which
+ * the shell must pass in. Never throws.
  */
-export function parseLink(fragment: string, defaultUnit: Unit = 'kg'): LinkState | null {
+export function parseLink(fragment: string, defaultUnit: Unit): LinkState | null {
   const raw = fragment.startsWith('#') ? fragment.slice(1) : fragment;
   if (raw.length > MAX_LINK_LENGTH) return null;
-  let text: string;
-  try {
-    // A messenger may percent-encode the separators (`,` -> `%2C`); every legitimate
-    // value is plain ASCII, so decoding once and then allowlisting is safe.
-    text = decodeURIComponent(raw);
-  } catch {
-    return null;
-  }
-  const pairs = splitPairs(text);
+  const pairs = splitPairs(raw);
   if (!pairs) return null;
 
   if (pairs.get('v') !== VERSION) return null;
@@ -221,11 +258,6 @@ export function parseLink(fragment: string, defaultUnit: Unit = 'kg'): LinkState
   const barToken = pairs.get('b');
   const bar = set.bars.find((b) => barStamp(b) === barToken);
   if (!bar) return null;
-
-  const modeToken = pairs.get('m');
-  const mode: LinkMode | null =
-    modeToken === MODE_TOKEN.decode ? 'decode' : modeToken === MODE_TOKEN.encode ? 'encode' : null;
-  if (!mode) return null;
 
   const collarToken = pairs.get('c');
   let collarKg: CollarKg = DEFAULT_COLLAR_KG;
@@ -246,12 +278,14 @@ export function parseLink(fragment: string, defaultUnit: Unit = 'kg'): LinkState
   const side = sideToken === undefined ? [] : parseSide(sideToken, set);
   if (!side) return null;
 
+  const load = { set: setKey, barKg: bar.kg, collarKg, unit, side };
+  const modeToken = pairs.get('m');
   const targetToken = pairs.get('t');
-  if (targetToken === undefined) {
-    return { set: setKey, barKg: bar.kg, collarKg, unit, mode, side };
+  if (modeToken === MODE_TOKEN.encode) {
+    return targetToken === undefined ? { ...load, mode: 'encode' } : null;
   }
-  if (mode !== 'decode') return null;
+  if (modeToken !== MODE_TOKEN.decode) return null;
+  if (targetToken === undefined) return { ...load, mode: 'decode' };
   const targetKg = parseTarget(targetToken);
-  if (targetKg === null) return null;
-  return { set: setKey, barKg: bar.kg, collarKg, unit, mode, side, targetKg };
+  return targetKg === null ? null : { ...load, mode: 'decode', targetKg };
 }

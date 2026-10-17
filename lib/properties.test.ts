@@ -601,12 +601,15 @@ describe('Share link properties (ADR-0014)', () => {
       expect(s.side[i - 1]!.kg).toBeGreaterThanOrEqual(s.side[i]!.kg);
     }
     expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
-    if (s.targetKg !== undefined) {
+    // Read the Target off the runtime object, not the narrowed type, so an encode load
+    // that somehow carried one would still be caught.
+    const t = (s as { readonly targetKg?: number }).targetKg;
+    if (t !== undefined) {
       expect(s.mode).toBe('decode');
-      expect(Number.isFinite(s.targetKg)).toBe(true);
-      expect(s.targetKg).toBeGreaterThan(0);
-      expect(s.targetKg).toBeLessThanOrEqual(MAX_TARGET_KG);
-      expect(Number(s.targetKg.toFixed(2))).toBe(s.targetKg);
+      expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeGreaterThan(0);
+      expect(t).toBeLessThanOrEqual(MAX_TARGET_KG);
+      expect(Number(t.toFixed(2))).toBe(t);
     }
   }
 
@@ -672,7 +675,7 @@ describe('Share link properties (ADR-0014)', () => {
   it('round-trips: parseLink(serializeLink(s)) is s for every showable load (ADR-0014)', () => {
     fc.assert(
       fc.property(linkStateArb, (s) => {
-        expect(parseLink(serializeLink(s))).toEqual(s);
+        expect(parseLink(serializeLink(s)!, 'kg')).toEqual(s);
       }),
       opts,
     );
@@ -681,8 +684,8 @@ describe('Share link properties (ADR-0014)', () => {
   it('canonical form is a fixed point: serializeLink(parseLink(x)) === x for every canonical x (ADR-0014)', () => {
     fc.assert(
       fc.property(linkStateArb, (s) => {
-        const x = serializeLink(s);
-        expect(serializeLink(parseLink(x)!)).toBe(x);
+        const x = serializeLink(s)!;
+        expect(serializeLink(parseLink(x, 'kg')!)).toBe(x);
       }),
       opts,
     );
@@ -704,7 +707,7 @@ describe('Share link properties (ADR-0014)', () => {
               .sort((a, b) => a.k - b.k)
               .map((e) => e.x);
           const faces = s.side.map((p) => p.label ?? String(p.kg));
-          const pairs = serializeLink(s)
+          const pairs = serializeLink(s)!
             .split('&')
             .filter((kv) => !kv.startsWith('p='))
             .filter((kv) => !(dropDefaults && (kv === 'c=0' || kv === `u=${s.unit}`)));
@@ -714,7 +717,7 @@ describe('Share link properties (ADR-0014)', () => {
           expect(parsed).toEqual(s);
           const canon = serializeLink(parsed!);
           expect(canon).toBe(serializeLink(s));
-          expect(serializeLink(parseLink(canon)!)).toBe(canon);
+          expect(serializeLink(parseLink(canon!, 'kg')!)).toBe(canon);
         },
       ),
       opts,
@@ -728,10 +731,10 @@ describe('Share link properties (ADR-0014)', () => {
           fc.string(),
           fc.string({ unit: 'binary' }),
           grammarArb,
-          linkStateArb.map((s) => serializeLink(s).slice(0, -1)),
+          linkStateArb.map((s) => serializeLink(s)!.slice(0, -1)),
         ),
         (x) => {
-          const s = parseLink(x);
+          const s = parseLink(x, 'kg');
           if (s !== null) expectValid(s);
         },
       ),
@@ -743,7 +746,7 @@ describe('Share link properties (ADR-0014)', () => {
     let accepted = 0;
     fc.assert(
       fc.property(grammarArb, (x) => {
-        const s = parseLink(x);
+        const s = parseLink(x, 'kg');
         if (s === null) return;
         accepted++;
         expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
@@ -768,9 +771,60 @@ describe('Share link properties (ADR-0014)', () => {
           side: [],
           targetKg: lbToKg(n),
         };
-        expect(shownIn(parseLink(serializeLink(s))!.targetKg!, 'lb')).toBe(n);
+        const got = parseLink(serializeLink(s)!, 'kg');
+        expect(got?.mode === 'decode' && shownIn(got.targetKg!, 'lb')).toBe(n);
       }),
       opts,
+    );
+  });
+
+  it('the serializer refuses exactly the loads it cannot represent, and everything it writes opens to the same load (ADR-0014)', () => {
+    // Loosely built loads: any Bar weight either set offers (plus an off-menu one), any
+    // Collar-ish weight, Plates drawn from BOTH sets in any order and any number, any
+    // Target double -- so foreign Plates, unsorted or over-Sleeve Sides, off-menu Bars
+    // and unrepresentable Targets are all hit.
+    const anyPlates = [...PLATE_SETS.comp.inventory, ...PLATE_SETS.training.inventory];
+    const allBarKgs = [...PLATE_SETS.comp.bars, ...PLATE_SETS.training.bars].map((b) => b.kg);
+    const looseArb = fc
+      .record({
+        key: fc.constantFrom(...PLATE_SET_KEYS),
+        barKg: fc.constantFrom(...allBarKgs, 20.4),
+        collarKg: fc.constantFrom(0, 2.5, 5),
+        unit: unitArb,
+        mode: modeArb,
+        picks: fc.array(fc.nat(), { maxLength: 12 }),
+        own: fc.boolean(),
+        sorted: fc.boolean(),
+        targetKg: fc.option(
+          fc.oneof(fc.double({ min: -10, max: 1100 }), fc.constantFrom(0.004, 0.005, 1000, 1000.004, 1000.006)),
+          { nil: undefined },
+        ),
+      })
+      .map(({ key, barKg, collarKg, unit, mode, picks, own, sorted, targetKg }) => {
+        const pool = own ? PLATE_SETS[key].inventory : anyPlates;
+        const drawn = picks.map((i) => pool[i % pool.length]!);
+        const side = sorted ? [...drawn].sort((a, b) => b.kg - a.kg) : drawn;
+        return { set: key, barKg, collarKg, unit, mode, side, targetKg } as unknown as LinkState;
+      });
+    fc.assert(
+      fc.property(looseArb, (s) => {
+        const set = PLATE_SETS[s.set];
+        const raw = s as unknown as { readonly targetKg?: number; readonly collarKg: number };
+        const t = s.mode === 'decode' && raw.targetKg !== undefined ? Number(raw.targetKg.toFixed(2)) : undefined;
+        const representable =
+          set.bars.some((b) => b.kg === s.barKg) &&
+          isOfferedCollar(raw.collarKg) &&
+          s.side.every((p) => set.inventory.includes(p)) &&
+          s.side.every((p, i) => i === 0 || s.side[i - 1]!.kg >= p.kg) &&
+          sideWidthMm(s.side) <= SLEEVE_MM + EPS &&
+          (t === undefined || (Number.isFinite(t) && t > 0 && t <= MAX_TARGET_KG));
+        const x = serializeLink(s);
+        expect(x !== null).toBe(representable);
+        if (x === null) return;
+        const { targetKg: _dropped, ...rest } = s as LinkState & { targetKg?: number };
+        expect(parseLink(x, 'kg')).toEqual(t === undefined ? rest : { ...rest, targetKg: t });
+      }),
+      { ...opts, numRuns: 1000 },
     );
   });
 });
