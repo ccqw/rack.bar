@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <title>rack.bar favicon, jumbo (dark)</title>
+  <!-- Edges on a 12.5-unit grid (1px at 16px); keep them there when editing. -->
+  <rect width="200" height="200" fill="#000"/>
+  <rect x="0" y="87.5" width="25" height="25" rx="5" fill="#fff"/>
+  <rect x="12.5" y="75" width="25" height="50" rx="5" fill="#fff"/>
+  <rect x="37.5" y="12.5" width="50" height="175" rx="5" fill="#EB1D25"/>
+  <rect x="100" y="12.5" width="37.5" height="175" rx="5" fill="#FAB206"/>
+  <rect x="150" y="50" width="25" height="100" rx="5" fill="#1455A9"/>
+  <rect x="175" y="87.5" width="25" height="25" rx="1" fill="#fff"/>
+</svg>

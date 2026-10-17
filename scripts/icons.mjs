@@ -4,28 +4,34 @@
 //
 // Sources (the only files to redraw):
 //   assets/icons/rack-bar-icon-dark.svg  -- the Home Screen art ("A"), 200x200, opaque
-//   assets/icons/rack-bar-favicon.svg    -- the small-size cut ("C"), 16x16, switches
-//                                           light/dark with prefers-color-scheme
+//   assets/icons/rack-bar-favicon-jumbo-dark.svg  -- the tiny-size cut, 200x200, black
+//   assets/icons/rack-bar-favicon-jumbo-light.svg -- the same cut on white
+//     (Caitlin's simplified "jumbo" drawing: fewer, fatter shapes that survive 16px).
+//     Edges on a 12.5-unit grid (1px at 16px) -- keep them there when editing.
 // Outputs (committed, so the build never depends on running this):
 //   public/apple-touch-icon.png       180  iOS Home Screen icon
 //   public/icons/icon-192.png         192  manifest, purpose "any"
 //   public/icons/icon-512.png         512  manifest, purpose "any"
 //   public/icons/icon-maskable-512.png 512 manifest, purpose "maskable"
-//   public/favicon.svg                     verbatim copy of the favicon source
-//   public/favicon.ico                16+32 the dark cut, for browsers without SVG favicons
+//   public/favicon.svg                     both jumbo cuts in one file: dark by default,
+//                                          light under prefers-color-scheme: light
+//                                          (built by scripts/favicon-svg.mjs)
+//   public/favicon.ico          16+32+48   the dark jumbo, for browsers without SVG favicons
 //
 // The rasteriser is @resvg/resvg-js: prebuilt binaries per platform, no native build
 // step, no browser. Vite copies public/ verbatim into dist/.
 import { Resvg } from '@resvg/resvg-js';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { faviconSvg } from './favicon-svg.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const src = (p) => resolve(root, 'assets/icons', p);
 const out = (p) => resolve(root, 'public', p);
 
 const APP_MASTER = src('rack-bar-icon-dark.svg');
-const FAVICON = src('rack-bar-favicon.svg');
+const FAV_DARK = src('rack-bar-favicon-jumbo-dark.svg');
+const FAV_LIGHT = src('rack-bar-favicon-jumbo-light.svg');
 
 // The maskable safe zone is a centred circle of radius 40% of the icon (W3C manifest,
 // "icon masks"). The art is drawn edge to edge in its 200 frame, so it is scaled into
@@ -71,14 +77,6 @@ function maskable(svg) {
   );
 }
 
-/** The favicon with its dark media query applied unconditionally (later rules win). */
-function darkCut(svg) {
-  const media = /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}/;
-  const m = svg.match(media);
-  if (!m) throw new Error('icons: favicon has no @media (prefers-color-scheme: dark) block');
-  return svg.replace(media, m[1]);
-}
-
 /** An ICO container holding PNG-encoded images (supported by every current browser). */
 function ico(pngs) {
   const header = Buffer.alloc(6);
@@ -105,8 +103,10 @@ write(out('icons/icon-192.png'), render(app, 192).asPng());
 write(out('icons/icon-512.png'), render(app, 512).asPng());
 write(out('icons/icon-maskable-512.png'), render(maskable(app), 512).asPng());
 
-const fav = readFileSync(FAVICON, 'utf8');
-copyFileSync(FAVICON, out('favicon.svg'));
-console.log('wrote public/favicon.svg (copy)');
-const dark = darkCut(fav);
-write(out('favicon.ico'), ico([16, 32].map((size) => ({ size, png: render(dark, size).asPng() }))));
+const favDark = readFileSync(FAV_DARK, 'utf8');
+const favLight = readFileSync(FAV_LIGHT, 'utf8');
+write(out('favicon.svg'), Buffer.from(faviconSvg(favDark, favLight)));
+write(
+  out('favicon.ico'),
+  ico([16, 32, 48].map((size) => ({ size, png: render(favDark, size).asPng() }))),
+);
