@@ -117,9 +117,15 @@ class RackEntry extends HTMLElement {
   // path: the variant only changes the labels and lays the row out compactly.
   // With the `headless` attribute (RBAR-58, By Weight's Target) the field row and its
   // caption are not drawn at all: the console's hero Total is the visible editor -- its
-  // steppers call step(), a tap calls toggle() -- and this element contributes the draft,
+  // steppers call step(), a tap calls open() -- and this element contributes the draft,
   // the keypad sheet and the keyboard path.
   private noun = 'Target';
+
+  /** Controls OUTSIDE this element that edit its value -- the console's hero steppers,
+   * hero and "You asked" chip (RBAR-58). The keyboard path treats them as its own, so
+   * Enter on one of them while the pad is open is Done, exactly as on the field's own
+   * steppers (RBAR-49), never a repeat of the last tap. */
+  controls: readonly Element[] = [];
   private liveEl!: HTMLElement;
   private liveUEl!: HTMLElement;
   private liveSecEl!: HTMLElement;
@@ -573,8 +579,9 @@ class RackEntry extends HTMLElement {
   // Space activation and enters exactly once. This holds for EVERY control inside the
   // entry (keys, value, steppers, Clear): a mouse tap leaves focus on it in Chrome, so
   // Enter must mean Done there too, not a repeat of the last tap; a keyboard user still
-  // activates a focused control with Space. Enter on a focused control OUTSIDE this
-  // element is left to that control.
+  // activates a focused control with Space. The same holds for the `controls` handed in
+  // from outside (the By Weight hero, its steppers and its chip, RBAR-58). Enter on any
+  // other focused control OUTSIDE this element is left to that control.
   private onKeydown = (e: KeyboardEvent): void => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
     // The console hides the whole entry in By Plates (Encode) without closing the sheet,
@@ -588,7 +595,10 @@ class RackEntry extends HTMLElement {
     const k = e.key;
     if (k === 'Enter' || k === 'Escape') {
       const foreign =
-        origin instanceof Element && !this.root.contains(origin) && origin.matches(ACTIVATABLE);
+        origin instanceof Element &&
+        !this.root.contains(origin) &&
+        !this.controls.includes(origin) &&
+        origin.matches(ACTIVATABLE);
       if (k === 'Enter' && foreign) return;
       e.preventDefault();
       this.closeKeypad();
@@ -611,18 +621,10 @@ class RackEntry extends HTMLElement {
   };
 
   /** Open the keypad sheet if closed: an edit entry point (RBAR-57), not a toggle, so an
-   * already-open sheet stays open. The By Weight "You asked" chip uses it (RBAR-58). */
+   * already-open sheet stays open. The By Weight hero and "You asked" chip use it
+   * (RBAR-58); Done, Enter or Escape close it. */
   open(): void {
     if (this.sheet && this.sheet.hidden) this.openKeypad();
-  }
-
-  /** Open the sheet if closed, close (and commit) it if open -- exactly a tap on the
-   * field's own value. A headless entry's visible value is the console's hero Total
-   * (RBAR-58), so its tap toggles like the value it stands in for. */
-  toggle(): void {
-    if (!this.sheet) return;
-    if (this.sheet.hidden) this.openKeypad();
-    else this.closeKeypad();
   }
 
   // Show the keypad sheet. Reflect the open state on the value button so assistive tech

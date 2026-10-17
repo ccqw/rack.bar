@@ -99,6 +99,11 @@ export const heroTap = (el: HTMLElement) => q<HTMLButtonElement>(sr(el), '[data-
 // The keypad's Done (the commit, keypadclose).
 export const done = (el: HTMLElement) => q<HTMLButtonElement>(entryRoot(el), '[data-done]').click();
 export const sheetOpen = (el: HTMLElement) => !q(entryRoot(el), '[data-sheet]').hidden;
+// The number the keypad sheet shows (its live readout; the Bar anchor when empty).
+export const sheetNumber = (el: HTMLElement) => q(entryRoot(el), '[data-live]').textContent ?? '';
+// A hero stepper button itself (to focus / key at), not a click.
+export const stepBtn = (el: HTMLElement, dir: 'inc' | 'dec') =>
+  q<HTMLButtonElement>(sr(el), `[data-hero-step="${dir}"]`);
 export function type(el: HTMLElement, value: string): void {
   press(el, 'clear');
   for (const ch of value) press(el, ch);

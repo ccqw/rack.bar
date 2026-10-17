@@ -14,7 +14,7 @@ import { RIGS } from '../lib/properties.oracle.ts';
 import {
   SEED, on, step, type, press, roundUp, totalText, statusKind, statusLabel, entryDraft,
   drawnTotalKg, shownTarget, askedText, askedBtn, secondaryShown, heroTap, done,
-  sheetOpen, recentFaces, rigDraftCaseArb, offGridCaseArb, expectedFor, rigArb, unitArb,
+  sheetOpen, sheetNumber, stepBtn, recentFaces, rigDraftCaseArb, offGridCaseArb, expectedFor, rigArb, unitArb,
   draftArb,
 } from './properties.drivers.ts';
 
@@ -89,25 +89,58 @@ describe('<rack-console> By Weight readout properties (RBAR-58)', () => {
     );
   });
 
-  it('the keypad opens on the Target, not the Total, from the hero and from the "You asked" chip; a hero re-tap closes it (RBAR-58)', () => {
+  it('the keypad opens on the Target, not the Total: from the hero and the "You asked" chip the open sheet shows the Target as typed, which differs from the hero whenever they split; a hero re-tap keeps it open (RBAR-58, RBAR-57, ADR-0010)', () => {
     fc.assert(
       fc.property(rigDraftCaseArb, ([rig, u, draft]) => {
         const el = on(rig, u);
         type(el, draft);
-        const reading = entryDraft(el);
-        heroTap(el).click();
-        expect(sheetOpen(el)).toBe(true);
-        expect(entryDraft(el)).toBe(reading); // the typed Target, e.g. 142.3 -- never 142
-        heroTap(el).click(); // the hero toggles, like the Target's own value did
-        expect(sheetOpen(el)).toBe(false);
-        if (askedText(el) !== null) {
-          askedBtn(el).click();
+        const typed = String(Number(draft)); // the reading the lifter typed
+        const hero = String(shownIn(drawnTotalKg(el, rig), u)); // the number on the bar
+        const split = askedText(el) !== null;
+        for (const open of split ? [heroTap, askedBtn] : [heroTap]) {
+          open(el).click();
           expect(sheetOpen(el)).toBe(true);
-          expect(entryDraft(el)).toBe(reading);
+          // What the OPEN sheet shows is the Target -- never the hero's Total when the
+          // two differ (142.3 on Competition: the sheet reads 142.3, the hero 142).
+          expect(sheetNumber(el)).toBe(typed);
+          if (split) expect(sheetNumber(el)).not.toBe(hero);
+          heroTap(el).click(); // open-only (RBAR-57): a re-tap keeps editing
+          expect(sheetOpen(el)).toBe(true);
           done(el);
           expect(sheetOpen(el)).toBe(false);
         }
       }),
+      { seed: SEED, numRuns: 30, examples: [[[RIGS[0], 'kg', '142.3']]] },
+    );
+  });
+
+  it('Enter on any Target editor control while the keypad is open is Done -- never a repeat of the last tap (RBAR-49, RBAR-58)', () => {
+    fc.assert(
+      fc.property(
+        rigDraftCaseArb,
+        fc.constantFrom<'dec' | 'inc' | 'hero' | 'asked'>('dec', 'inc', 'hero', 'asked'),
+        ([rig, u, draft], which) => {
+          const el = on(rig, u);
+          type(el, draft);
+          if (which === 'asked' && askedText(el) === null) return; // no chip to focus
+          heroTap(el).click();
+          const before = entryDraft(el);
+          const ctl =
+            which === 'hero' ? heroTap(el) : which === 'asked' ? askedBtn(el) : stepBtn(el, which);
+          const enter = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+            composed: true,
+            cancelable: true,
+          });
+          ctl.dispatchEvent(enter);
+          // Claimed (so the browser's native Enter activation of the focused control is
+          // cancelled), the pad closed, and the Target untouched.
+          expect(enter.defaultPrevented).toBe(true);
+          expect(sheetOpen(el)).toBe(false);
+          expect(entryDraft(el)).toBe(before);
+        },
+      ),
       { seed: SEED, numRuns: 30 },
     );
   });

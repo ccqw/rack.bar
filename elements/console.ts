@@ -69,8 +69,8 @@ type Entry = HTMLElement & {
   readonly reading: string;
   retarget(kg: number): void;
   open(): void;
-  toggle(): void;
   step(dir: 1 | -1): void;
+  controls: readonly Element[];
   barKg: number;
   unit: Unit;
   loadLine: string | null;
@@ -967,11 +967,13 @@ class RackConsole extends HTMLElement {
       this.render();
     });
     // The hero Total is By Weight's editor (RBAR-58, after RBAR-57): a tap opens the
-    // keypad on the Target -- the draft, so 142.3 when 142 is loaded -- and a re-tap
-    // closes it, as the Target's own value did. The steppers nudge the Target's draft
-    // (+ from "142, asked 142.3" goes to 143), never the Total. The "You asked" chip
-    // opens the same keypad (open-only: it is an edit entry point).
-    this.totalTap.addEventListener('click', () => this.entry.toggle());
+    // keypad on the Target -- the draft, so 142.3 when 142 is loaded. Open-only, as
+    // RBAR-57 settled: a re-tap keeps editing; Done, Enter or Escape close. The steppers
+    // nudge the Target's draft (+ from "142, asked 142.3" goes to 143), never the Total.
+    // The "You asked" chip opens the same keypad. All four are the entry's controls, so
+    // Enter on any of them while the pad is open is Done (RBAR-49).
+    this.entry.controls = [...this.heroSteps, this.totalTap, this.asked];
+    this.totalTap.addEventListener('click', () => this.entry.open());
     this.heroSteps.forEach((b) =>
       b.addEventListener('click', () => this.entry.step(b.dataset.heroStep === 'inc' ? 1 : -1)),
     );
@@ -1739,11 +1741,13 @@ class RackConsole extends HTMLElement {
     this.renderHeroEditing();
   }
 
-  // The hero's open-keypad state: the accent underline and aria-expanded, off the
-  // entry's keypadopen/keypadclose edges (keypadOwner).
+  // The hero's open-keypad state: the accent underline, and aria-expanded on both
+  // controls that open the pad (the hero and the chip), off the entry's
+  // keypadopen/keypadclose edges (keypadOwner).
   private renderHeroEditing(): void {
     const editing = this.keypadOwner === 'decode' && this.mode === 'decode';
     this.totalTap.classList.toggle('editing', editing);
+    this.asked.setAttribute('aria-expanded', String(editing));
     if (this.mode === 'decode') this.totalTap.setAttribute('aria-expanded', String(editing));
     else this.totalTap.removeAttribute('aria-expanded');
   }

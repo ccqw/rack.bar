@@ -39,9 +39,12 @@ function paste(fragment: string): void {
   history.replaceState(null, '', `/${fragment}`);
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
-// The hero Total: By Weight's Target editor since RBAR-58 (a tap toggles the keypad).
+// The hero Total: By Weight's Target editor since RBAR-58 (a tap opens the keypad).
 const valueBtn = (app: HTMLElement) =>
   q<HTMLButtonElement>(appConsole(app).shadowRoot!, '[data-total-tap]');
+// The keypad's Done (the hero is open-only, RBAR-57).
+const doneBtn = (app: HTMLElement) =>
+  q<HTMLButtonElement>(appConsole(app).shadowRoot!.querySelector('rack-entry')!.shadowRoot!, '[data-done]');
 
 describe('opening a share link (RBAR-50, ADR-0014)', () => {
   beforeEach(() => {
@@ -312,7 +315,7 @@ describe('opening a share link (RBAR-50, ADR-0014)', () => {
     const c = appConsole(app);
     valueBtn(app).click(); // open the keypad
     type(c, '100');
-    valueBtn(app).click(); // commit 100
+    doneBtn(app).click(); // commit 100
     paste('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
     expect(sideKg(app)).toEqual([25, 25, 10]);
     expect(entryDraft(c)).toBe('140');
@@ -326,7 +329,7 @@ describe('opening a share link (RBAR-50, ADR-0014)', () => {
     valueBtn(app).click(); // open
     type(c, '9');
     paste('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
-    valueBtn(app).click(); // close: the link's Target is a seed, not a new commit
+    doneBtn(app).click(); // close: the link's Target is a seed, not a new commit
     expect(JSON.parse(recents()!)).toEqual([140]);
     expect(sideKg(app)).toEqual([25, 25, 10]);
   });

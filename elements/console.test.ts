@@ -844,17 +844,21 @@ function recentChips(el: HTMLElement): HTMLButtonElement[] {
 function recentLabels(el: HTMLElement): number[] {
   return recentChips(el).map((c) => Number(c.dataset.target));
 }
-// The hero Total -- By Weight's Target editor since RBAR-58: tapping it opens then
-// closes the keypad, as the Target field's own value did.
+// The hero Total -- By Weight's Target editor since RBAR-58: tapping it opens the keypad
+// (open-only, RBAR-57).
 function valueBtn(el: HTMLElement): HTMLButtonElement {
   return el.shadowRoot!.querySelector<HTMLButtonElement>('[data-total-tap]')!;
+}
+// The keypad's Done: the hero opens only (RBAR-57), so Done is the tap that closes.
+function doneBtn(el: HTMLElement): HTMLButtonElement {
+  return entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-done]')!;
 }
 // Commit a typed Target the way a lifter does: type it, then open and close the keypad
 // (the close is the commit that feeds Recents).
 function commit(el: HTMLElement, value: string): void {
   type(el, value);
   valueBtn(el).click(); // open
-  valueBtn(el).click(); // close -> keypadclose
+  doneBtn(el).click(); // Done -> keypadclose
 }
 
 describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
@@ -873,7 +877,7 @@ describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
   it('does not remember the default on an idle keypad peek (open then close, no typing)', () => {
     const el = mountConsole();
     valueBtn(el).click(); // open on the pristine 20 kg default
-    valueBtn(el).click(); // close without typing
+    doneBtn(el).click(); // Done without typing
     expect(recentsEl(el).hidden).toBe(true);
     expect(recentLabels(el)).toEqual([]);
   });
@@ -884,7 +888,7 @@ describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
     entry(el)
       .shadowRoot!.querySelector<HTMLButtonElement>('[data-key="clear"]')!
       .click(); // empty the field
-    valueBtn(el).click(); // close on null
+    doneBtn(el).click(); // Done on null
     expect(recentsEl(el).hidden).toBe(true);
     expect(recentLabels(el)).toEqual([]);
   });
@@ -920,7 +924,7 @@ describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
     entry(el)
       .shadowRoot!.querySelector<HTMLButtonElement>('[data-key="clear"]')!
       .click(); // empty the field -> nothing decoded
-    valueBtn(el).click(); // close
+    doneBtn(el).click(); // Done
     expect(currentChips(el)).toEqual([]);
   });
 
@@ -1466,7 +1470,7 @@ describe('<rack-console> (Share card)', () => {
     type(el, '100');
     el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
     valueBtn(el).click(); // open
-    valueBtn(el).click(); // close -> commit
+    doneBtn(el).click(); // Done -> commit
     expect(recentLabels(el)).toEqual([100]);
   });
 
@@ -2240,7 +2244,7 @@ describe('announceLine', () => {
 });
 
 // The Total is the page's biggest number and reads as tappable -- so it is (RBAR-57).
-// Since RBAR-58 it is By Weight's only Target editor, so it toggles like the old value.
+// Since RBAR-58 it is By Weight's Target editor; still open-only (Done closes).
 describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
   const sheet = (el: HTMLElement) =>
     entry(el).shadowRoot!.querySelector<HTMLElement>('.sheet')!;
@@ -2254,13 +2258,12 @@ describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
     expect(sheet(el).hidden).toBe(false);
   });
 
-  it('a second tap while open closes the sheet -- the hero is the Target\'s value now (RBAR-58)', () => {
+  it('a second tap while open leaves the sheet open -- an edit affordance, not a toggle', () => {
     const el = mountConsole();
     totalTap(el).click();
-    expect(totalTap(el).getAttribute('aria-expanded')).toBe('true');
     totalTap(el).click();
-    expect(sheet(el).hidden).toBe(true);
-    expect(totalTap(el).getAttribute('aria-expanded')).toBe('false');
+    expect(sheet(el).hidden).toBe(false);
+    expect(totalTap(el).getAttribute('aria-expanded')).toBe('true');
   });
 
   it('is inert in By Plates: disabled, keypad stays closed', () => {
@@ -2467,7 +2470,7 @@ describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
     type(el, '55');
     unitBtn(el, 'kg').click(); // the Target becomes the 25 kg load
     valueBtn(el).click(); // open
-    valueBtn(el).click(); // close -> commit
+    doneBtn(el).click(); // Done -> commit
     expect(recentLabels(el)).toEqual([25]);
   });
 
@@ -2724,14 +2727,20 @@ describe('<rack-console> split-when-different readout (RBAR-58)', () => {
     expect(body).not.toMatch(/#[0-9a-f]{3,6}/i);
   });
 
-  it('gives the hero an accessible name and reflects the open keypad on it', () => {
+  it('gives the hero an accessible name and reflects the open keypad on it and the chip', () => {
     const el = mountConsole();
-    type(el, '100');
+    type(el, '142.3');
     const hero = q<HTMLButtonElement>(el, '[data-total-tap]');
-    expect(hero.getAttribute('aria-label')).toBe('100 kg on the bar. Edit Target');
+    expect(hero.getAttribute('aria-label')).toBe('142 kg on the bar. Edit Target');
     expect(hero.getAttribute('aria-haspopup')).toBe('true');
+    expect(asked(el).getAttribute('aria-haspopup')).toBe('true');
+    expect(asked(el).getAttribute('aria-expanded')).toBe('false');
     hero.click();
     expect(hero.classList.contains('editing')).toBe(true);
     expect(hero.getAttribute('aria-expanded')).toBe('true');
+    expect(asked(el).getAttribute('aria-expanded')).toBe('true');
+    doneBtn(el).click();
+    expect(hero.getAttribute('aria-expanded')).toBe('false');
+    expect(asked(el).getAttribute('aria-expanded')).toBe('false');
   });
 });
