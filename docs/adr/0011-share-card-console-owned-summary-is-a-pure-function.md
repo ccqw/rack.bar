@@ -107,3 +107,56 @@ share shows no confirmation (the sheet is its own feedback). Both APIs need a se
 context (https or localhost).
 A tap while a sheet is still open is ignored, and a share failure that lands after
 the card closed writes nothing to the clipboard.
+
+## Amended 2026-10-16 (RBAR-70): Share attaches a picture of the loadout
+
+Link previews can't show a loadout (GitHub Pages serves one static `og:image` for
+every URL, and a per-loadout preview would need a backend, against ADR-0001), so the
+Share button attaches the picture itself.
+
+- **The picture is the fullscreen card.** It is what the lifter sees in big mode
+  (`<rack-fullscreen>`, RBAR-18) on a phone: the dark radial wash, the `rack.bar`
+  wordmark, the huge Total with its unit suffix, the other Unit, the uppercase config
+  caption (`configText` + "per side", wrapped as the card wraps it), and one Side of
+  the Bar turned 90 degrees and blown up 1.5x, shaft at the top. A bare Bar shows the
+  sleeve's dashed empty box; Collars are on the caption, as on the card. The frame is
+  the card at ADR-0013's 393 x 659 phone viewport, drawn at an iPhone's 3x: a
+  **1179 x 1977** portrait PNG. Portrait because the card is portrait on a phone (the
+  Bar runs along the screen's long axis); a landscape frame would show a layout the
+  lifter never sees.
+- **Dark, like the card.** The wash is two new tokens, `--rack-fullscreen-glow` and
+  `--rack-fullscreen-deep` (the card read them inline before), and the text, plate,
+  chrome and disc-shadow colours are the card's own `--rack-*` tokens, read live.
+- **One source for card and picture.** The card's frame numbers (padding, type sizes,
+  margins, tracking, the rot width and the 1.5x blow-up) moved to
+  `lib/fullscreenframe.ts`, which the card's CSS now interpolates. The sleeve's sizing
+  (ADR-0004: one px-per-mm scale, diameter to height, thickness to width, the disc
+  floor, the overflow guard, the chrome, the numeral buckets and ink, and the
+  height-bounded fit of ADR-0013) moved to `lib/sleevefit.ts`; `<rack-sleeve>` fits
+  through its `sleeveFit`, and the picture draws its `sleeveLayout`. The head stack
+  and caption wrap are pure (`lib/shareimage.ts`); `elements/shareimage.ts` only
+  paints, after `document.fonts.ready`.
+- **Revised 2026-10-17 (Caitlin's phone test).** The first cut was a light 1080 x 1080
+  square showing both Sides and the format-D Plate lines, so it would read the same in
+  light and dark chats. Caitlin wanted the picture to look like big mode instead, so
+  the light theme is reversed and the Plate lines left the picture (the shared text
+  still carries them).
+- **Always attached, one button.** The picture and the format-D text go in one share
+  (`navigator.share({ files, text })`), guarded by `navigator.canShare`. Considered:
+  separate "Share text" / "Share image" actions (a second button would cost the
+  RBAR-67 one-screen budget and a choice the lifter doesn't need to make).
+- **Drawn on open, shared on tap.** The card draws the picture when it opens (and
+  again if the load or plate set changes while open), so the tap calls `share()`
+  synchronously, inside its user activation; Safari rejects a `share()` that waited on
+  a canvas encode. A tap before the picture is ready shares the text alone rather than
+  waiting.
+- **Fallback chain.** Picture + text, then text alone, then the clipboard (the
+  RBAR-64 behaviour). Text alone is used directly when there is no picture yet, no
+  `canShare`, or `canShare` refuses the file. A cancelled sheet (`AbortError`) stops
+  the chain silently at every step; a failure after the card closed goes no further.
+  Because the first `share()` spends the tap's user activation, the in-tap text retry
+  (and the clipboard after it) is often refused on iOS; so a failed picture share
+  also drops the picture for that load, and the next tap shares the text alone with
+  a fresh activation.
+  Without Web Share at all the button still reads "Copy summary" and no picture is
+  drawn.

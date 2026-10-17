@@ -306,3 +306,55 @@ describe('<rack-setup> (Bar-tile typography, RBAR-39)', () => {
     expect(root.querySelector('[data-bar="20"] .kg')).toBeNull(); // the old 20px mono span
   });
 });
+
+// RBAR-74 (the RBAR-48a metrics sweep): the Setup sheet's metrics, shadow and entrance,
+// matched to the handoff prototype (L252-L269). Text locks on the rule bodies.
+describe('<rack-setup> metrics sweep (RBAR-74)', () => {
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('pads the panel 18px 20px 26px and lifts it with the Setup shadow (prototype L252)', () => {
+    const { root } = mountSetup();
+    const panel = rule(root, '.panel {');
+    expect(panel).toContain('padding: 18px 20px calc(26px + env(safe-area-inset-bottom))');
+    expect(panel).toContain('box-shadow: var(--rack-shadow-setup)');
+  });
+
+  it('rises with sheetIn .26s on the spring curve, fading in (prototype L21/L252)', () => {
+    const { root } = mountSetup();
+    const css = root.querySelector('style')!.textContent!;
+    // Everyone gets the fade; only a no-preference lifter gets the rise, fade included.
+    expect(rule(root, '.panel {')).toContain('animation: rack-fade .26s cubic-bezier(.2, .85, .25, 1)');
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.panel \{ animation: rack-rise \.26s cubic-bezier\(\.2, \.85, \.25, 1\); \}/,
+    );
+    expect(css).toMatch(/rack-rise \{\s*from \{ transform: translateY\(100%\); opacity: 0; \}/);
+  });
+
+  it('sets the head 18px above the first section; title 800 17px -.01em (prototype L253-L254)', () => {
+    const { root } = mountSetup();
+    expect(rule(root, '.head {')).toContain('margin-bottom: 18px');
+    const title = rule(root, '.head .title {');
+    expect(title).toContain('font-weight: 800');
+    expect(title).toContain('font-size: 17px');
+    expect(title).toContain('letter-spacing: -.01em');
+  });
+
+  it('sets Done at Hanken 700 12px on a 7px 17px pad (prototype L255)', () => {
+    const { root } = mountSetup();
+    const done = rule(root, '.done {');
+    expect(done).toContain('font-size: 12px');
+    expect(done).toContain('font-weight: 700');
+    expect(done).toContain('padding: 7px 17px');
+  });
+
+  it('spaces the sections: label 9px, section 20px (prototype L257-L264)', () => {
+    const { root } = mountSetup();
+    expect(rule(root, '.section-label {')).toContain('margin: 0 0 9px');
+    expect(rule(root, '.tiles {')).toContain('margin-bottom: 20px');
+  });
+});

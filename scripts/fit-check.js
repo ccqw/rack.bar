@@ -5,11 +5,12 @@
 // live dev server -- e.g. through the Playwright MCP's run-code tool with this file as
 // its `filename`, after `npm run dev -- --port 5198` (ORIGIN below). It opens its own
 // tab, so nothing else driving the shared browser can navigate it mid-run.
-// It walks every Must state from the ticket at each VISIBLE Safari viewport (toolbars
-// showing -- never the full screen height, which hides the overflow) and returns one
-// line per viewport + state (the worst across both plate sets and both units): the
-// document's scrollHeight against the viewport's innerHeight, `over` = how far the page
-// would scroll (0 = it fits), and the sleeve's flexed height.
+// It walks every Must state from the ticket (and, since RBAR-65, the Warm up states) at
+// each VISIBLE Safari viewport (toolbars showing -- never the full screen height, which
+// hides the overflow) and returns one line per viewport + state (the worst across both
+// plate sets and both units): the document's scrollHeight against the viewport's
+// innerHeight, `over` = how far the page would scroll (0 = it fits), and the sleeve's
+// flexed height.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -98,6 +99,26 @@ async (shared) => {
             `for (const i of [0,0,1,2,3,4,k.length-1]) k[Math.min(i,k.length-1)].click()`,
         );
         await record('plates: loaded');
+        // Warm up (RBAR-65 slice 2): the working-weight row + stairs + Next, keypad
+        // closed. With no Working set yet (the prompt), then a saved one (rackbar.working,
+        // 140 kg -- 309 lb) on the bare-Bar row, the 90% row (a swap on Comp kg) and the Working set.
+        await reset(null);
+        await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
+        await record('warmup: no working weight');
+        await page.evaluate(() => localStorage.setItem('rackbar.working', '140'));
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
+        const stair = (i) =>
+          inConsole(
+            `con.querySelector('rack-warmup').shadowRoot.querySelectorAll('.st')[a].click()`,
+            i,
+          );
+        await record('warmup: Bar row');
+        await stair(3);
+        await record('warmup: 90% row');
+        await stair(4);
+        await record('warmup: Working set');
       }
     }
   }

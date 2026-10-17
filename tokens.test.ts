@@ -133,6 +133,23 @@ describe('RBAR-34: prototype-inline hexes are captured as tokens', () => {
   }
 });
 
+describe('RBAR-74: the metrics sweep captures its prototype-inline values as tokens', () => {
+  const captured: Record<string, string> = {
+    '--rack-text-target': '#cfd3d8',       // prototype L150 (the Target value ink)
+    '--rack-border-hover': '#2b3036',      // prototype L98 / L315 (icon button hover ring)
+    '--rack-danger-border': '#3a2326',     // prototype L184 (the Clear pill hover ring)
+    '--rack-fullscreen-caption': '#7e858d', // prototype L323 (the fullscreen config line)
+  };
+  for (const [name, want] of Object.entries(captured)) {
+    it(`${name} === ${want}`, () => {
+      expect(val(name).toLowerCase()).toBe(want.toLowerCase());
+    });
+  }
+  it('--rack-shadow-setup is the Setup sheet lift (prototype L252)', () => {
+    expect(squash(val('--rack-shadow-setup'))).toBe(squash('0 -20px 50px -20px rgba(0,0,0,.7)'));
+  });
+});
+
 describe('scrims and shadows are tokenised at the handoff values', () => {
   it('setup scrim is the .55 dim, share modal scrim the .72', () => {
     expect(squash(val('--rack-scrim'))).toBe(squash('rgba(5, 6, 7, 0.55)'));

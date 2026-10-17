@@ -366,6 +366,17 @@ describe('<rack-share>', () => {
   });
 });
 
+describe('<rack-share> (entry animation, handoff cardIn)', () => {
+  it('rises 14px and grows from .97 as it fades in (prototype L19)', () => {
+    const { root } = mount();
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toContain(
+      '@keyframes rack-card { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }',
+    );
+    expect(css).toContain('animation: rack-card .24s cubic-bezier(.2, .85, .25, 1)');
+  });
+});
+
 describe('<rack-share> (card fidelity, RBAR-44)', () => {
   // Prototype L286-308. happy-dom computes no layout, so text-lock the rule bodies
   // (the RBAR-39/RBAR-42 idiom); the rendered check is the browser pass.

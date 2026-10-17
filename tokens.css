@@ -115,12 +115,28 @@
   --rack-sleeve-empty-glyph: #3f454c; /* the + glyph inside it (prototype L106; RBAR-34 --
                                          between text-disabled 41464c and sleeve-empty) */
 
+  /* Fullscreen rack card backdrop (RBAR-18, handoff section 8): the radial wash's
+     lit centre and its deep edge. Inlined in the prototype; captured here so the card
+     and the share picture that reproduces it (RBAR-70) read one source. */
+  --rack-fullscreen-glow: #16181c;
+  --rack-fullscreen-deep: #0a0b0d;
+
   /* Help popover (RBAR-34, prototype L84-L87). Its border and body ink sit between
      the named border/text tiers, inlined in the prototype only -- captured here per
      ADR-0001. Body text is two-tier: --rack-popover-ink for the running copy, plain
      --rack-text (#f4f4f5) for the <strong> lead-ins. */
   --rack-popover-border: #262b31;
   --rack-popover-ink: #c2c7cd;
+
+  /* The metrics sweep (RBAR-74): more values the prototype inlines, captured per
+     ADR-0001. target = the Target value's ink, a step below --rack-text (L150);
+     border-hover = the icon buttons' hover ring (L98, L315); danger-border = the
+     Clear pill's dark-red hover ring (L184); fullscreen-caption = the fullscreen
+     config line's ink (L323). */
+  --rack-text-target: #cfd3d8;
+  --rack-border-hover: #2b3036;
+  --rack-danger-border: #3a2326;
+  --rack-fullscreen-caption: #7e858d;
 
   /* Disc-fill convention (handoff "Plate palette"): a plate-colored surface is not a
      flat fill but a soft top-lit gradient over its plate hex, with --disc set to the
@@ -150,6 +166,8 @@
   --rack-shadow-disc: inset 0 0 0 1px rgba(255,255,255,.1), 0 2px 6px rgba(0,0,0,.25);
   --rack-shadow-sheet: 0 -18px 44px -18px rgba(0,0,0,.7);
   --rack-shadow-modal: 0 30px 60px -20px rgba(0,0,0,.7);
+  /* The Setup sheet casts a deeper lift than the keypad (prototype L252; RBAR-74). */
+  --rack-shadow-setup: 0 -20px 50px -20px rgba(0,0,0,.7);
 
   /* ----------------------------------------------------------------------------
      Legacy collapsed names. These predate the handoff scale and were each doing the

@@ -85,17 +85,17 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
           expect(statusLabel(el)).toBe(`${mag} ${u} short`);
           expect(offered).toBe(true);
           expect(atcapShown(el)).toBe(false);
-          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} (${mag} under)`);
+          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} under`);
         } else if (kind === 'capacity') {
           expect(statusLabel(el)).toBe(`${mag} ${u} short`);
           expect(offered).toBe(false);
           expect(atcapShown(el)).toBe(true);
-          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} (${mag} under, at capacity)`);
+          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} under, at capacity`);
         } else {
           expect(kind).toBe('over'); // only the bare-rig floor (previous property)
           expect(statusLabel(el)).toBe(`${mag} ${u} over`);
           expect(offered).toBe(false);
-          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} (${mag} over)`);
+          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} over`);
         }
       }),
       { seed: SEED, numRuns: 40 },

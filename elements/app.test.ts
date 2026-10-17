@@ -480,7 +480,13 @@ describe('rack-app phone fit (RBAR-67)', () => {
     const { root } = mountApp();
     const main = body(css(root), 'main');
     expect(main).not.toContain('6vh');
-    expect(main).toMatch(/padding:\s*2vh 5vw 0;/);
+    expect(main).toMatch(/padding:\s*2vh 22px 0;/);
+  });
+
+  it('insets the header and the column alike, at the handoff\'s 22px (prototype L75, RBAR-74)', () => {
+    const { root } = mountApp();
+    expect(body(css(root), 'header')).toMatch(/padding:\s*14px 22px;/);
+    expect(body(css(root), 'main')).toMatch(/padding:\s*2vh 22px 0;/);
   });
 
   it('pins body to the small viewport height (index.html), not a min-height', () => {

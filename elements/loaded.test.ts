@@ -204,3 +204,26 @@ describe('<rack-loaded> (stable-geometry slot, RBAR-52)', () => {
     expect(empty.hidden).toBe(false);
   });
 });
+
+// RBAR-74 (the RBAR-48a metrics sweep): the Clear pill's hover ring and the nudge
+// arrow ink (the shared NUDGE_STYLE), matched to the handoff prototype.
+describe('<rack-loaded> metrics sweep (RBAR-74)', () => {
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('rings a hovered Clear in the dark red, its ink in danger (prototype L184)', () => {
+    const { root } = mountLoaded();
+    const hover = rule(root, '.clear:hover');
+    expect(hover).toContain('color: var(--rack-danger)');
+    expect(hover).toContain('border-color: var(--rack-danger-border)');
+  });
+
+  it('inks the nudge arrows in the secondary grey (prototype L164/L194)', () => {
+    const { root } = mountLoaded();
+    expect(rule(root, '.nudge {')).toContain('color: var(--rack-text-secondary)');
+  });
+});

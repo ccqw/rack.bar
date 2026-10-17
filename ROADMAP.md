@@ -42,12 +42,21 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 - **Recent targets** -- recent Targets persisted (deduped, most-recent-first, max 6)
   and re-applied from chips (RBAR-20).
 - **Help** -- a how-it-works popover explaining the two modes (RBAR-21).
+- **Warm up** -- enter the Working set's Target and get a Ramp of percentage-based
+  Warm-up sets building to it, each rounded to the nearest loadable Total and
+  re-picked for the fewest Plate moves across the Ramp, tappable to load (RBAR-65,
+  ADR-0015). Promoted from Later ("Math on entry") on 2026-10-16. The core
+  (`lib/plan.ts`, `lib/moves.ts` for fewest Plate moves) lands before the
+  default-Ramp UI; template editing and persistence follow real use.
 
 ## Later (parked, in rough priority order)
 
 - **Game / quiz mode** -- the original second half: progressively harder drills on
   the Decode/Encode skill, built on the calculator's components.
 - **Finite Inventory** -- enter how many pairs of each plate you own (home gym);
-  the solver already takes Inventory as input.
-- **Math on entry** -- percentage-of-working-weight for warm-up ramps
-  ("what's 70% of 140?"), and possibly arithmetic in the entry field.
+  the solver already takes Inventory as input, and since RBAR-72 slice 1 it honours
+  per-size Plate limits (ADR-0016). The limits UI, its scopes and persistence are
+  pending Caitlin's design answers.
+- **Arithmetic on entry** -- typing an expression in the entry field. (Its other
+  half, percentage-of-working-weight warm-up ramps, moved into v1 as Warm up,
+  RBAR-65.)

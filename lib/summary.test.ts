@@ -8,6 +8,7 @@ import {
   loadingSummary,
   loadTotalKg,
   plateEmoji,
+  plateLines,
   SHARE_LINK,
 } from './summary.ts';
 import { ELEIKO_KG, IRON_LB, SLEEVE_MM } from './plates.ts';
@@ -53,6 +54,11 @@ describe('groupSide', () => {
       { face: '15', color: 'yellow', emoji: YELLOW_SQ, count: 1 },
       { face: '2.5', color: 'red', emoji: RED_DOT, count: 1 },
     ]);
+  });
+
+  it('keeps a warm-up stack in the order given, never re-sorted (ADR-0015 station rule)', () => {
+    const side = [eleiko(10), eleiko(15), eleiko(1)];
+    expect(groupSide(side).map((g) => g.face)).toEqual(['10', '15', '1']);
   });
 
   it('uses the Plate stamp (label) for iron, its kg for Eleiko', () => {
@@ -311,5 +317,25 @@ describe('loadTotalKg', () => {
 
   it('a bare Bar Totals to the Bar', () => {
     expect(loadTotalKg({ side: [], barKg: 20, collarKg: 0, unit: 'kg' })).toBe(20);
+  });
+});
+
+describe('plateLines (RBAR-70: shared by the text and the picture)', () => {
+  it('is one emoji face x count line per group, heaviest first', () => {
+    expect(plateLines([eleiko(25), eleiko(25), eleiko(10), eleiko(1)])).toEqual([
+      `${RED_SQ} 25 ${TIMES} 2`,
+      `${GREEN_SQ} 10 ${TIMES} 1`,
+      `${GREEN_DOT} 1 ${TIMES} 1`,
+    ]);
+  });
+
+  it('is a single Bare bar line when nothing is loaded', () => {
+    expect(plateLines([])).toEqual(['Bare bar']);
+  });
+
+  it('is exactly the Plate lines loadingSummary sends (no drift)', () => {
+    const side = [iron('45'), iron('10'), iron('2.5')];
+    const text = loadingSummary({ side, barKg: 20, collarKg: 2.5, unit: 'lb' }).split('\n');
+    expect(text.slice(1, 1 + plateLines(side).length)).toEqual([...plateLines(side)]);
   });
 });

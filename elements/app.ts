@@ -84,9 +84,12 @@ class RackApp extends HTMLElement {
         :host {
           display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0;
         }
+        /* The header and the console column share one 22px side inset, the
+           prototype's column padding (L75; RBAR-74), so the wordmark and the Setup
+           pill line up with the mode toggle's edges. */
         header {
           display: flex; align-items: center; justify-content: space-between;
-          gap: 12px; padding: 14px 18px;
+          gap: 12px; padding: 14px 22px;
         }
         /* Left cluster: the wordmark next to the how-it-works help icon. */
         .brand { display: inline-flex; align-items: center; gap: 9px; }
@@ -126,7 +129,7 @@ class RackApp extends HTMLElement {
            nothing on a phone) is gone -- body keeps the safe-area inset below. */
         main {
           flex: 1; display: flex; align-items: stretch; justify-content: center;
-          min-height: 0; padding: 2vh 5vw 0;
+          min-height: 0; padding: 2vh 22px 0;
         }
         /* The short-screen tier (RBAR-67, fit.ts): less air above and below the header
            row and above the console; the pill keeps its 36px height. */
