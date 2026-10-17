@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200px" height="200px" viewBox="0 0 200 200" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>rack.bar icon (light)</title>
+    <defs>
+        <path d="M0,0 L200,0 L200,200 L0,200 Z" id="path-1"></path>
+    </defs>
+    <g id="Frame" stroke="none" fill="none" xlink:href="#path-1" fill-rule="evenodd">
+        <use fill="#FFFFFF" xlink:href="#path-1"></use>
+        <g id="Group" stroke-width="1" transform="translate(32, 75)" fill="#000000">
+            <rect id="Rectangle-2" x="21.5" y="0" width="13" height="50" rx="5"></rect>
+            <path d="M11,12.5 L14,12.5 C16.7614237,12.5 19,14.7385763 19,17.5 L19,32.5 C19,35.2614237 16.7614237,37.5 14,37.5 L11,37.5 C8.23857625,37.5 6,35.2614237 6,32.5 L6,17.5 C6,14.7385763 8.23857625,12.5 11,12.5 Z" id="Rectangle-2" transform="translate(12.5, 25) rotate(90) translate(-12.5, -25)"></path>
+        </g>
+        <path d="M140,85 L159,85 C159.552285,85 160,85.4477153 160,86 L160,115 C160,115.552285 159.552285,116 159,116 L140,116 C139.447715,116 139,115.552285 139,115 L139,86 C139,85.4477153 139.447715,85 140,85 Z" id="Rectangle-2" fill="#000000" transform="translate(149.5, 100.5) rotate(90) translate(-149.5, -100.5)"></path>
+        <rect id="Rectangle" fill="#EB1D25" x="68" y="24" width="25" height="152" rx="5"></rect>
+        <rect id="Rectangle" fill="#FAB206" x="95" y="24" width="20" height="152" rx="5"></rect>
+        <rect id="Rectangle" fill="#1455A9" x="117" y="56" width="15" height="88" rx="5"></rect>
+    </g>
+</svg>
