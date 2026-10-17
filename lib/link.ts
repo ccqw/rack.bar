@@ -13,6 +13,9 @@
 //   u  sender's Primary unit     `kg` | `lb`                          default: the recipient's
 //   p  Side Load, heaviest first `2x25,10,2.5` (`Nx` when N > 1)      default: bare Bar
 //   t  Target, kg, 2 dp          finite, > 0, <= MAX_TARGET_KG        only with m=w
+//   d  the Target field's text   decimal, <= 2 dp, in `u`, fits `t`   only with t
+//      (additive, slice 3): what the sender's entry shows, so the recipient shows the
+//      same reading and re-solves the same display window (see readingFits)
 //
 // Bars and Plates travel by their STAMP, not their kg: the iron masses are irrational
 // in kg (45 lb = 20.41165665 kg), the stamp is exact and readable, and the Plate set
@@ -35,7 +38,7 @@ import type { CollarKg, Plate } from './plates.ts';
 import { PLATE_SETS, isOfferedPlateSet } from './platesets.ts';
 import type { Bar, PlateSet, PlateSetKey } from './platesets.ts';
 import { groupSide, plateFace, SHARE_LINK } from './summary.ts';
-import { isUnit, toLbWhole } from './units.ts';
+import { isUnit, kgToLb, toLbWhole } from './units.ts';
 import type { Unit } from './units.ts';
 
 /** The console's two modes: By Weight (decode) and By Plates (encode). */
@@ -65,6 +68,9 @@ export type LinkState =
       readonly mode: 'decode';
       /** The Target, kg (travels at 2 dp). Optional: a By Weight load may have none. */
       readonly targetKg?: number;
+      /** The sender's Target field text in `unit` (`d`, RBAR-50 slice 3), e.g. `52.5`
+       * (lb) or `100` (kg). Optional, and only with `targetKg`, which it must fit. */
+      readonly reading?: string;
     })
   | (LinkLoad & { readonly mode: 'encode' });
 
@@ -85,7 +91,7 @@ const VERSION = '1';
 const MODE_TOKEN: Record<LinkMode, string> = { decode: 'w', encode: 'p' };
 
 // The keys v1 reads. Any other key is ignored (forward-compatible additive fields).
-const KNOWN_KEYS: ReadonlySet<string> = new Set(['v', 's', 'b', 'm', 'c', 'u', 'p', 't']);
+const KNOWN_KEYS: ReadonlySet<string> = new Set(['v', 's', 'b', 'm', 'c', 'u', 'p', 't', 'd']);
 
 // The most of one Plate a single `Nx` group may claim (1..99, no leading zero).
 const COUNT_RE = /^([1-9][0-9]?)x(.+)$/;
@@ -93,6 +99,34 @@ const COUNT_RE = /^([1-9][0-9]?)x(.+)$/;
 // A plain non-negative decimal: no sign, no exponent, no hex, no blank (Number('')
 // is 0, Number('0x10') is 16 -- neither may sneak past as a weight).
 const DECIMAL_RE = /^[0-9]+(\.[0-9]+)?$/;
+
+// A Target field reading: a plain decimal of at most 4 + 2 digits (the keypad's own
+// shape; anything longer is over MAX_TARGET_KG in either unit anyway).
+const READING_RE = /^[0-9]{1,4}(\.[0-9]{1,2})?$/;
+
+// How far an lb reading may sit from its 2 dp kg Target, lb: half a whole-lb readout (a
+// kg Target shown in lb reads whole, ADR-0010) plus the 2 dp kg rounding (0.005 kg =
+// 0.011 lb). A typed lb reading sits within the rounding alone.
+const LB_READING_SLACK = 0.5 + 0.0111;
+
+/**
+ * True when `reading` -- a Target field's text in `unit` -- is a plain decimal that fits
+ * the link's 2 dp kg Target `targetKg` (RBAR-50 slice 3): in kg it rounds to that Target
+ * at 2 dp; in lb it is within LB_READING_SLACK of it. One rule for both directions.
+ *
+ * Why it travels: the console solves the window of the DISPLAYED Target, which in lb
+ * is the whole-lb reading of the typed weight (`displayCeilingKg`). A typed 52.5 lb is
+ * 23.8136 kg and reads 53, but its 2 dp kg (23.81) reads 52 -- so `t` alone re-solves a
+ * different window. The reading the sender's entry shows recovers both the text and the
+ * window: the recipient solves `draftToKg(reading, unit)`.
+ */
+export function readingFits(reading: string, targetKg: number, unit: Unit): boolean {
+  if (!READING_RE.test(reading)) return false;
+  const r = Number(reading);
+  return unit === 'lb'
+    ? Math.abs(r - kgToLb(targetKg)) <= LB_READING_SLACK
+    : Number(r.toFixed(2)) === targetKg;
+}
 
 /** A Bar's stamp: its whole-lb reading for an lb-stamped Bar, else its kg. */
 function barStamp(bar: Bar): string {
@@ -166,6 +200,12 @@ export function serializeLink(state: LinkState): string | null {
     const t = linkTargetKg(state.targetKg);
     if (t === null) return null;
     pairs.push(`t=${t}`);
+    if (state.reading !== undefined) {
+      if (!readingFits(state.reading, t, state.unit)) return null;
+      pairs.push(`d=${state.reading}`);
+    }
+  } else if (state.mode === 'decode' && state.reading !== undefined) {
+    return null; // a reading without a Target has nothing to fit
   }
   return pairs.join('&');
 }
@@ -238,7 +278,8 @@ function parseTarget(value: string): number | null {
  * non-`1` `v`, a duplicate known key, a known key with no `=` or with malformed
  * percent-encoding, an unoffered set / Bar stamp / Collar / Unit / mode / Plate face,
  * a count outside 1..99, a Side Load past the Sleeve, or a `t` that is present with
- * `m=p`, not a plain decimal, <= 0 at 2 dp, or over MAX_TARGET_KG. Unknown keys are
+ * `m=p`, not a plain decimal, <= 0 at 2 dp, or over MAX_TARGET_KG, or a `d` without
+ * `t` or that does not fit `t` in the load's unit (readingFits). Unknown keys are
  * ignored; Plates are re-sorted heaviest-first. A missing `c` is None, a missing `p`
  * the bare Bar, and a missing `u` is `primaryUnit` -- the recipient's own Primary unit, which
  * the shell must pass in (an invalid one reads as kg). Never throws.
@@ -282,11 +323,14 @@ export function parseLink(fragment: string, primaryUnit: Unit): LinkState | null
   const load = { set: setKey, barKg: bar.kg, collarKg, unit, side };
   const modeToken = pairs.get('m');
   const targetToken = pairs.get('t');
+  const reading = pairs.get('d');
   if (modeToken === MODE_TOKEN.encode) {
-    return targetToken === undefined ? { ...load, mode: 'encode' } : null;
+    return targetToken === undefined && reading === undefined ? { ...load, mode: 'encode' } : null;
   }
   if (modeToken !== MODE_TOKEN.decode) return null;
-  if (targetToken === undefined) return { ...load, mode: 'decode' };
+  if (targetToken === undefined) return reading === undefined ? { ...load, mode: 'decode' } : null;
   const targetKg = parseTarget(targetToken);
-  return targetKg === null ? null : { ...load, mode: 'decode', targetKg };
+  if (targetKg === null) return null;
+  if (reading === undefined) return { ...load, mode: 'decode', targetKg };
+  return readingFits(reading, targetKg, unit) ? { ...load, mode: 'decode', targetKg, reading } : null;
 }

@@ -233,10 +233,18 @@ class RackEntry extends HTMLElement {
    * ADR-0005): it seeds the box with the carried Side Load's Total so the +/- steppers
    * move from the real current weight, not from zero -- and stays silent, so the
    * hand-built loadout is not re-decoded until the lifter acts. The seeded value is
-   * `pristine`, so the next typed digit replaces it. Shown in the display Unit.
+   * `pristine`, so the next typed digit replaces it. Shown in the display Unit, or as
+   * `reading` when given: an opened share link's Target as its sender typed it (an lb
+   * Target typed to 1 dp, finer than the whole-lb readout; RBAR-50, ADR-0014 `d`).
    */
-  display(value: number | null): void {
-    this.draft = value === null ? '' : String(shownIn(value, this._unit));
+  /** The field's text as the lifter sees it ('' when empty): the Target reading a share
+   * link carries (RBAR-50 slice 3, ADR-0014 `d`). */
+  get reading(): string {
+    return this.draft;
+  }
+
+  display(value: number | null, reading?: string): void {
+    this.draft = value === null ? '' : (reading ?? String(shownIn(value, this._unit)));
     this.shownKg = value;
     this.markPristine(false); // a genuine seed: an idle peek-and-close commits null
     this.renderValue();

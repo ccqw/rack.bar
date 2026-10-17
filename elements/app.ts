@@ -286,7 +286,13 @@ class RackApp extends HTMLElement {
     this.relabel();
     this.console.applyLink(
       link.mode === 'decode'
-        ? { mode: 'decode', side: link.side, targetKg: link.targetKg, unit: link.unit }
+        ? {
+            mode: 'decode',
+            side: link.side,
+            targetKg: link.targetKg,
+            reading: link.reading,
+            unit: link.unit,
+          }
         : { mode: 'encode', side: link.side, unit: link.unit },
     );
   }

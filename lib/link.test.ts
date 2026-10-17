@@ -2,7 +2,9 @@
 // canonical form, and every rejection the parser owes. The round-trip and fuzz
 // invariants live in lib/properties.test.ts; these pin the concrete examples.
 import { describe, it, expect } from 'vitest';
-import { serializeLink, parseLink, linkUrl, MAX_LINK_LENGTH, MAX_TARGET_KG } from './link.ts';
+import {
+  serializeLink, parseLink, linkUrl, readingFits, MAX_LINK_LENGTH, MAX_TARGET_KG,
+} from './link.ts';
 import type { LinkState } from './link.ts';
 import { ELEIKO_KG, IRON_LB } from './plates.ts';
 import type { Plate } from './plates.ts';
@@ -337,4 +339,60 @@ describe('serializeLink: refuses a load it cannot represent exactly (ADR-0014)',
       expect(linkUrl(state)).toBeNull();
     });
   }
+});
+
+describe('the Target reading `d` (RBAR-50 slice 3, ADR-0014 additive key)', () => {
+  const W = 'v=1&s=comp&b=20kg&m=w&c=0';
+  it('travels after `t` and parses back as the same text', () => {
+    const s: LinkState = {
+      set: 'comp', barKg: 20, collarKg: 0, unit: 'lb', mode: 'decode',
+      side: [kg(25)], targetKg: 23.81, reading: '52.5',
+    };
+    const x = serializeLink(s)!;
+    expect(x).toBe(`${W}&u=lb&p=25&t=23.81&d=52.5`);
+    expect(parse(x)).toEqual(s);
+  });
+
+  it('a typed lb reading fits its 2 dp kg Target (52.5 lb is 23.81 kg)', () => {
+    expect(readingFits('52.5', 23.81, 'lb')).toBe(true);
+    expect(readingFits('677.51', Number(lbToKg(677.51).toFixed(2)), 'lb')).toBe(true);
+  });
+
+  it('a kg Target shown in lb reads whole, and that fits too (100 kg reads 220)', () => {
+    expect(readingFits('220', 100, 'lb')).toBe(true);
+    expect(readingFits(String(shownIn(100, 'lb')), 100, 'lb')).toBe(true);
+  });
+
+  it('a kg reading must round to the Target exactly', () => {
+    expect(readingFits('100', 100, 'kg')).toBe(true);
+    expect(readingFits('100.5', 100.5, 'kg')).toBe(true);
+    expect(readingFits('100.01', 100, 'kg')).toBe(false);
+  });
+
+  it('rejects a reading that is far off, malformed, or longer than the keypad writes', () => {
+    expect(readingFits('230', 100, 'lb')).toBe(false);
+    expect(readingFits('221', 100, 'lb')).toBe(false); // 220.46 lb: 221 is past half a readout
+    for (const bad of ['', '1e2', '-5', '0x10', '52.', '.5', '52.555', '12345', ' 52']) {
+      expect(readingFits(bad, 23.81, 'lb'), bad).toBe(false);
+    }
+  });
+
+  it('a link with a misfit or orphan `d` is null as a whole (all-or-nothing)', () => {
+    expect(parse(`${W}&u=lb&p=25&t=23.81&d=60`)).toBeNull(); // does not fit t
+    expect(parse(`${W}&u=lb&p=25&d=52.5`)).toBeNull(); // no t
+    expect(parse('v=1&s=comp&b=20kg&m=p&c=0&u=lb&p=25&d=52.5')).toBeNull(); // By Plates
+    expect(parse(`${W}&p=25&t=23.81&d=52.5`)).toBeNull(); // no u: read in kg, misfits
+    expect(parseLink(`${W}&p=25&t=23.81&d=52.5`, 'lb')).not.toBeNull(); // an lb recipient
+    expect(parse(`${W}&u=lb&p=25&t=23.81&d=52.5&d=52.5`)).toBeNull(); // duplicate
+  });
+
+  it('the serializer refuses a reading that does not fit, or one with no Target', () => {
+    const base = { set: 'comp', barKg: 20, collarKg: 0, unit: 'lb', mode: 'decode', side: [] } as const;
+    expect(serializeLink({ ...base, targetKg: 100, reading: '230' })).toBeNull();
+    expect(serializeLink({ ...base, reading: '220' })).toBeNull();
+  });
+
+  it('a link without `d` still opens (older or hand-written links)', () => {
+    expect(targetOf(parse(`${W}&u=lb&p=25&t=23.81`))).toBe(23.81);
+  });
 });

@@ -41,10 +41,11 @@ import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import type { LoadSummary } from '../lib/summary.ts';
-import { format, shownIn, displayCeilingKg } from '../lib/units.ts';
+import { format, shownIn, displayCeilingKg, draftToKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
+import { linkUrl } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import { planEasyRamp } from '../lib/moves.ts';
@@ -57,7 +58,8 @@ type Sleeve = HTMLElement & {
   interactive: boolean;
 };
 type Entry = HTMLElement & {
-  display(value: number | null): void;
+  display(value: number | null, reading?: string): void;
+  readonly reading: string;
   retarget(kg: number): void;
   open(): void;
   barKg: number;
@@ -72,7 +74,12 @@ type Recents = HTMLElement & {
 };
 type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
-type Share = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
+type Share = HTMLElement & {
+  load: LoadSummary;
+  plateSet: string;
+  link: string | null;
+  open(): void;
+};
 type Fullscreen = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
 type Warmup = HTMLElement & { view: WarmupView | null };
 // 'warmup' is the Warm up mode (RBAR-65 slice 2): the Ramp's stairs drive the Side.
@@ -83,7 +90,7 @@ const isMode = (m: string | undefined): m is Mode =>
 // half (set, Bar, Collar) first, then hands this to applyLink. Split on mode like
 // LinkState, so only By Weight carries a Target.
 export type LinkLoad =
-  | Pick<Extract<LinkState, { mode: 'decode' }>, 'mode' | 'side' | 'targetKg' | 'unit'>
+  | Pick<Extract<LinkState, { mode: 'decode' }>, 'mode' | 'side' | 'targetKg' | 'reading' | 'unit'>
   | Pick<Extract<LinkState, { mode: 'encode' }>, 'mode' | 'side' | 'unit'>;
 
 // The Recent Targets history persists shell-side under its own key (ADR-0007/0009),
@@ -940,8 +947,13 @@ class RackConsole extends HTMLElement {
       this.render();
       return;
     }
-    this.entry.display(target);
-    this.decodeTo(target);
+    // The sender's own Target reading (`d`, RBAR-50 slice 3) is shown as is and solved
+    // from, so the display window -- and so the Plates and status -- match the sender's
+    // (a typed 52.5 lb reads 53; its 2 dp kg alone reads 52). Without one, the Target
+    // shows as its readout and solves from the kg.
+    const reading = link.reading;
+    this.entry.display(target, reading);
+    this.decodeTo(reading === undefined ? target : (draftToKg(reading, link.unit) ?? target));
     const { primary, over } = this.decoded!;
     if (!sameSide(link.side, primary.side)) {
       if (over && sameSide(link.side, over.side)) {
@@ -1011,7 +1023,38 @@ class RackConsole extends HTMLElement {
     // The set names the card caption (RBAR-44); the load snapshot stays
     // set-agnostic, the same split the fullscreen card uses.
     this.share.plateSet = this._plateSetKey;
+    this.share.link = this.shareLink();
     this.share.open();
+  }
+
+  // The share link for what is on screen (RBAR-50, ADR-0014): mode, Side Load, rig and
+  // display Unit, plus the Target in By Weight with a live decode (`target = total -
+  // delta`, as reconfigure reads it). A carry has no live decode, so it sends no Target.
+  // With the Target goes the entry's own reading (`d`), so the recipient shows that text
+  // and solves the same display window. Null when the load has no exact link (e.g. an
+  // off-menu Bar, a Target over MAX_TARGET_KG): the card then shows a disabled "No
+  // link" with its reason under the row, never a link that opens to a different load.
+  private shareLink(): string | null {
+    const load = {
+      set: this._plateSetKey,
+      barKg: this._barKg,
+      // serializeLink validates the Collar against the offered options.
+      collarKg: this._collarKg as LinkState['collarKg'],
+      unit: this.activeUnit(),
+      side: this.side,
+    };
+    if (this.mode === 'encode') return linkUrl({ ...load, mode: 'encode' });
+    const d = this.decoded;
+    if (!d) return linkUrl({ ...load, mode: 'decode' });
+    const targetKg = d.primary.total - d.primary.delta;
+    // A mid-entry draft ("142.") normalises to its number; a reading that still does not
+    // fit (not expected) falls back to the Target alone, which opens to its readout.
+    const n = Number(this.entry.reading);
+    const reading = Number.isFinite(n) ? String(n) : undefined;
+    return (
+      linkUrl({ ...load, mode: 'decode', targetKg, reading }) ??
+      linkUrl({ ...load, mode: 'decode', targetKg })
+    );
   }
 
   // Open the fullscreen rack card (RBAR-18): snapshot the same load the share card takes
