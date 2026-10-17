@@ -21,8 +21,10 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `scripts/fit-check.js` -- the phone-fit layout check (ADR-0013): a Playwright snippet
   run against the dev server that asserts no vertical scroll at the visible Safari viewports
 - `assets/icons/` -- the icon masters (RBAR-71): `rack-bar-icon-dark.svg` feeds the
-  Home Screen / manifest PNGs, `rack-bar-favicon.svg` is the favicon (one file, switches
-  light/dark). `scripts/icons.mjs` renders them into `public/`; the PNGs are committed
+  Home Screen / manifest PNGs; `rack-bar-favicon-jumbo-{dark,light}.svg` (Caitlin's
+  simplified tiny-size cut) feed `favicon.svg` (dark, light under the media query) and
+  the 16/32/48 `favicon.ico`. `scripts/icons.mjs` renders them into `public/`; the
+  outputs are committed
 - `scripts/sw.js` + `scripts/offline.ts` + `scripts/precache.ts` -- the offline service
   worker (ADR-0018): a Vite build plugin fills the hand-written worker with the build's
   precache list; `elements/update.ts` registers it (production only) and offers Update

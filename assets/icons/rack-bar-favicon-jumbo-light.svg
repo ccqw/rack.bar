@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200px" height="200px" viewBox="0 0 200 200" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>rack.bar favicon, jumbo (light)</title>
+    <defs>
+        <path d="M0,0 L200,0 L200,200 L0,200 Z" id="path-1"></path>
+    </defs>
+    <g id="Frame" stroke="none" fill="none" xlink:href="#path-1" fill-rule="evenodd">
+        <use fill="#FFFFFF" xlink:href="#path-1"></use>
+        <path d="M162,84 L194,84 C194.552285,84 195,84.4477153 195,85 L195,114 C195,114.552285 194.552285,115 194,115 L162,115 C161.447715,115 161,114.552285 161,114 L161,85 C161,84.4477153 161.447715,84 162,84 Z" id="Rectangle-2" fill="#000000" transform="translate(178, 99.5) rotate(90) translate(-178, -99.5)"></path>
+        <rect id="Rectangle" fill="#EB1D25" x="44" y="7" width="43.6662797" height="186" rx="5"></rect>
+        <rect id="Rectangle" fill="#FAB206" x="93" y="7" width="34.9330237" height="186" rx="5"></rect>
+        <rect id="Rectangle" fill="#1455A9" x="132" y="46" width="26.1997678" height="107.684211" rx="5"></rect>
+        <g id="Group" stroke-width="1" transform="translate(7, 75)" fill="#000000">
+            <rect id="Rectangle-2" x="14.5" y="0" width="20" height="50" rx="5"></rect>
+            <path d="M2.25,12.25 L24.25,12.25 C27.0114237,12.25 29.25,14.4885763 29.25,17.25 L29.25,33.75 C29.25,36.5114237 27.0114237,38.75 24.25,38.75 L2.25,38.75 C-0.511423749,38.75 -2.75,36.5114237 -2.75,33.75 L-2.75,17.25 C-2.75,14.4885763 -0.511423749,12.25 2.25,12.25 Z" id="Rectangle-2" transform="translate(13.25, 25.5) rotate(90) translate(-13.25, -25.5)"></path>
+        </g>
+    </g>
+</svg>

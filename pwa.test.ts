@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { faviconSvg } from './scripts/favicon-svg.mjs';
 
 // RBAR-71: rack.bar installs to the Home Screen. These lock the install wiring that
 // happy-dom never exercises: index.html's manifest/icon links and iOS metas, the
@@ -111,11 +112,26 @@ describe('manifest.webmanifest', () => {
 });
 
 describe('favicon source', () => {
-  it('ships the replaceable source verbatim (re-run npm run icons after a redraw)', () => {
-    expect(read('public/favicon.svg')).toBe(read('assets/icons/rack-bar-favicon.svg'));
+  // The tiny favicons come from Caitlin's jumbo masters (2026-10-17), not the app icon.
+  it('is built from the jumbo masters (re-run npm run icons after a redraw)', () => {
+    expect(read('public/favicon.svg')).toBe(
+      faviconSvg(
+        read('assets/icons/rack-bar-favicon-jumbo-dark.svg'),
+        read('assets/icons/rack-bar-favicon-jumbo-light.svg'),
+      ),
+    );
   });
 
-  it('switches with the colour scheme', () => {
-    expect(read('public/favicon.svg')).toMatch(/@media\s*\(\s*prefers-color-scheme:\s*dark\s*\)/);
+  it('is dark by default and switches to the light cut in a light browser', () => {
+    const svg = read('public/favicon.svg');
+    expect(svg).toMatch(/@media\s*\(\s*prefers-color-scheme:\s*light\s*\)/);
+    expect(svg).not.toMatch(/xlink|<defs|\sid=/);
+  });
+
+  it('ships 16, 32 and 48 px frames in the ICO', () => {
+    const buf = readFileSync(pub('/favicon.ico'));
+    const n = buf.readUInt16LE(4);
+    const sizes = Array.from({ length: n }, (_, i) => buf[6 + 16 * i]);
+    expect(sizes).toEqual([16, 32, 48]);
   });
 });
