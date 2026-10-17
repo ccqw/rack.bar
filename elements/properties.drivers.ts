@@ -13,6 +13,12 @@ import {
   maxTotal,
 } from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
+import { addPlate } from '../lib/encode.ts';
+import { COLLAR_OPTIONS } from '../lib/plates.ts';
+import type { Plate } from '../lib/plates.ts';
+import { PLATE_SETS, PLATE_SET_KEYS } from '../lib/platesets.ts';
+import { MAX_TARGET_KG } from '../lib/link.ts';
+import type { LinkState } from '../lib/link.ts';
 
 export const SEED = 62;
 export const EPS = 1e-9;
@@ -136,6 +142,31 @@ export const draftArb = fc.oneof(
   fc.integer({ min: 0, max: 900 }).map(String),
   fc.integer({ min: 0, max: 90_000 }).map((c) => String(c / 100)),
 );
+// Every load a share link can carry (ADR-0014), built only through the real core paths
+// -- an offered set, one of its Bars, an offered Collar, a Side Load grown by addPlate
+// so the Sleeve caps it, an optional 2 dp Target in By Weight -- the same shape as the
+// core's own round-trip generator (lib/properties.test.ts "Share link properties").
+export const linkStateArb: fc.Arbitrary<LinkState> = fc
+  .record({
+    key: fc.constantFrom(...PLATE_SET_KEYS),
+    barIx: fc.nat(),
+    collarKg: fc.constantFrom(...COLLAR_OPTIONS),
+    unit: unitArb,
+    mode: fc.constantFrom<'decode' | 'encode'>('decode', 'encode'),
+    picks: fc.array(fc.nat(), { maxLength: 40 }),
+    cents: fc.option(fc.integer({ min: 1, max: MAX_TARGET_KG * 100 }), { nil: undefined }),
+  })
+  .map(({ key, barIx, collarKg, unit, mode, picks, cents }): LinkState => {
+    const set = PLATE_SETS[key];
+    const side = picks.reduce<readonly Plate[]>(
+      (acc, i) => addPlate(acc, set.inventory[i % set.inventory.length]!),
+      [],
+    );
+    const barKg = set.bars[barIx % set.bars.length]!.kg;
+    const base = { set: key, barKg, collarKg, unit, side };
+    if (mode === 'encode') return { ...base, mode };
+    return cents === undefined ? { ...base, mode } : { ...base, mode, targetKg: cents / 100 };
+  });
 // The achievable-grid read-back case: a rig, a unit, and one of that rig's Totals.
 export const gridCaseArb = rigArb.chain((rig) =>
   fc.tuple(fc.constant(rig), unitArb, fc.constantFrom(...achievableTotals(rig))),

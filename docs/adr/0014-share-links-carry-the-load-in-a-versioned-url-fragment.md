@@ -125,3 +125,40 @@ the unrepresentable loads.
 
 `LinkState` is a union split on `mode`, so only a decode-mode load can carry a
 Target (an encode load with a stale Target does not type-check).
+
+## Amendment 2026-10-17: opening a link (RBAR-50 slice 2)
+
+Built as decided above; these are the details settled during the build.
+
+- **Where.** `<rack-app>` reads the fragment first thing in `connectedCallback`, parses
+  it against the recipient's persisted Primary unit (`persistedPrimaryUnit()`, the
+  console's own validated read of `rackbar.unit`), and clears it with
+  `history.replaceState(null, '', pathname + search)` whether or not it parsed. The
+  persisted rig then loads and seeds as on any boot, and a parsed link overrides it: the
+  app pushes the rig (Bar, then set, then Collar -- `adoptPlateSet`'s Bar-before-set
+  order) without any save, then hands the load to `console.applyLink({ mode, side,
+  targetKg?, unit })`. A `hashchange` listener (removed on disconnect) runs the same path
+  for a link pasted into an open tab; `replaceState` fires no `hashchange`, so it cannot
+  loop. An empty fragment is left alone.
+- **Plates win, three ways.** A By Weight link with a Target decodes it. If the linked
+  Plates are the solver's primary, that is the screen (status, round-up offer, Recents
+  chip highlight all live). If they are the round-up, the round-up is shown, as if the
+  recipient had tapped it (its control offers the way back down). If they are neither
+  (the solver changed since the link was made, or a hand-edited link), the console falls
+  back to the ADR-0005 carry: the linked Plates, their Total in the entry, no live
+  decode -- never a status that disagrees with the Plates on the Bar. A By Weight link
+  without a Target, and every By Plates link, is that same carry in its mode.
+- **Recents.** A By Weight link with a Target pushes the Target through the normal
+  `rememberTarget` path (also in the drift fallback: it is the sender's Target).
+  Nothing else is pushed on open; a By Plates link remembers nothing until the
+  recipient shares, as today.
+- **Unit.** The link's unit is applied for the view and not persisted. The Target
+  travels as kg at 2 dp, which reads back exactly for any kg Target and for an lb Target
+  to 1 dp (the rounding is at most 0.011 lb). A 2 dp lb Target (677.51 lb -> 307.31 kg
+  -> 677.5 lb) can re-solve to a different load; the Plates still win via the carry.
+- **Malformed links** are a silent normal boot: nothing applied, nothing written, no
+  console output, the fragment cleared.
+
+Property-tested in `elements/link.properties.test.ts`: opening any link shows exactly
+its Side, Bar, Collar, unit and mode and persists no rig key; a By Weight link built
+from a sender's screen opens to the same Total, Target and status.

@@ -12,10 +12,13 @@
 //                              default, push set + Bar to the console and sheet (RBAR-17,
 //                              ADR-0010)
 //   sheet `close`           -> drop the pill's open state
+//   a share link (#v=1&...) -> on boot or `hashchange`: apply its rig and load for this
+//                              view only, persisting nothing (RBAR-50, ADR-0014)
 //
 // Each config concern persists shell-side under its own localStorage key (ADR-0007);
 // the core stays pure and only ever sees these as function arguments (ADR-0001/0002).
-import './console.ts';
+import { persistedPrimaryUnit } from './console.ts';
+import type { LinkLoad } from './console.ts';
 import './setup.ts';
 import './help.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
@@ -26,8 +29,15 @@ import { SHORT_SCREEN } from './fit.ts';
 import { plateSetFor, isOfferedPlateSet, offeredBarKgs, barUnit } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { format } from '../lib/units.ts';
+import { parseLink } from '../lib/link.ts';
+import type { LinkState } from '../lib/link.ts';
 
-type Console = HTMLElement & { barKg: number; collarKg: number; plateSet: string };
+type Console = HTMLElement & {
+  barKg: number;
+  collarKg: number;
+  plateSet: string;
+  applyLink(link: LinkLoad): void;
+};
 type Setup = HTMLElement & {
   barKg: number;
   collarKg: number;
@@ -57,6 +67,10 @@ class RackApp extends HTMLElement {
   private collarKg = DEFAULT_COLLAR_KG;
 
   connectedCallback(): void {
+    // A share link in the URL (RBAR-50, ADR-0014) is read FIRST and the fragment cleared,
+    // so a reload returns to the lifter's own rig. The persisted rig still loads and seeds
+    // as usual; the link then overrides it for this view (applyLink), writing nothing.
+    const link = this.takeLink();
     this.plateSetKey = this.loadPlateSet();
     this.barKg = this.loadBar();
     this.collarKg = this.loadCollar();
@@ -185,6 +199,53 @@ class RackApp extends HTMLElement {
     );
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
+    );
+
+    if (link) this.applyLink(link);
+    // A link pasted into an already-open tab changes only the hash (no reload).
+    window.addEventListener('hashchange', this.onHashChange);
+  }
+
+  disconnectedCallback(): void {
+    window.removeEventListener('hashchange', this.onHashChange);
+  }
+
+  private onHashChange = (): void => {
+    const link = this.takeLink();
+    if (link) this.applyLink(link);
+  };
+
+  // Parse a share link out of the URL fragment against the lifter's own persisted
+  // Primary unit (a link without `u` reads in it), then clear the fragment either way:
+  // a malformed link is a silent normal boot (ADR-0014), and a reload or a later share
+  // never re-applies a stale one. replaceState fires no hashchange, so this cannot loop.
+  private takeLink(): LinkState | null {
+    if (location.hash === '') return null;
+    const link = parseLink(location.hash, persistedPrimaryUnit());
+    history.replaceState(null, '', location.pathname + location.search);
+    return link;
+  }
+
+  // Apply an opened share link (RBAR-50, ADR-0014): the rig half here, the load half in
+  // the console. Transient -- the set, Bar and Collar override the persisted rig for this
+  // view and NO save runs (a later Setup tap persists that one key, as today). Pushed in
+  // adoptPlateSet's order (Bar before set) so a re-solve never sees a stale Bar, then
+  // the console shows the linked Plates (plates win over a re-solve).
+  private applyLink(link: LinkState): void {
+    this.plateSetKey = link.set;
+    this.barKg = link.barKg;
+    this.collarKg = link.collarKg;
+    this.console.barKg = link.barKg;
+    this.setup.barKg = link.barKg;
+    this.console.plateSet = link.set;
+    this.setup.plateSet = link.set;
+    this.console.collarKg = link.collarKg;
+    this.setup.collarKg = link.collarKg;
+    this.relabel();
+    this.console.applyLink(
+      link.mode === 'decode'
+        ? { mode: 'decode', side: link.side, targetKg: link.targetKg, unit: link.unit }
+        : { mode: 'encode', side: link.side, unit: link.unit },
     );
   }
 
