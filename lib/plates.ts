@@ -175,3 +175,23 @@ export function totalKg(
 export function barWithCollars(barKg: number, collarKg: number): number {
   return barKg + 2 * collarKg;
 }
+
+// The Collars offered: None (0 kg) or a Standard competition collar (2.5 kg per Side,
+// CONTEXT.md). The per-Side weight is the value here; the Total adds it twice (ADR-0008,
+// barWithCollars). The source of truth for "a valid Collar": validated the same way as
+// the Bar at both shell boundaries (ADR-0007) and by the share-link parser (ADR-0014),
+// which is why it lives in the core rather than in <rack-setup>. Default is None.
+export const COLLAR_OPTIONS = [0, 2.5] as const;
+
+/** A Collar the lifter can actually pick: one of the offered Collars. */
+export type CollarKg = (typeof COLLAR_OPTIONS)[number];
+
+/** The default Collar: None. The bare Bar with no clamp weight. `satisfies` checks it
+ * is an offered Collar without annotating it `CollarKg`, so the shells' `collarKg`
+ * fields still infer `number` (mirroring DEFAULT_BAR_KG). */
+export const DEFAULT_COLLAR_KG = 0 satisfies CollarKg;
+
+/** True when `kg` is one of the offered Collars -- the guard every boundary shares. */
+export function isOfferedCollar(kg: number): kg is CollarKg {
+  return (COLLAR_OPTIONS as readonly number[]).includes(kg);
+}

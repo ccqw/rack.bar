@@ -11,7 +11,7 @@
 // ADR-0010), so changing it re-renders the Bar tiles. open()/close() drive visibility;
 // a scrim tap or the Done button closes and emits `close`. A tap inside the panel does
 // not dismiss.
-import { DEFAULT_BAR_KG } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, COLLAR_OPTIONS, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
 import { format } from '../lib/units.ts';
 import {
   PLATE_SETS,
@@ -35,25 +35,6 @@ export type BarKg = (typeof BAR_OPTIONS)[number];
 /** True when `kg` is one of the Competition Bars. */
 export function isOfferedBar(kg: number): kg is BarKg {
   return (BAR_OPTIONS as readonly number[]).includes(kg);
-}
-
-// The Collars offered: None (0 kg) or a Standard competition collar (2.5 kg per Side,
-// CONTEXT.md). The per-Side weight is the value here; the Total adds it twice (ADR-0008,
-// barWithCollars). Exported as the source of truth for "a valid Collar", validated the
-// same way as the Bar at both shell boundaries (ADR-0007). Default is None.
-export const COLLAR_OPTIONS = [0, 2.5] as const;
-
-/** The default Collar: None. The bare Bar with no clamp weight. (Left as a bare literal to
- * mirror DEFAULT_BAR_KG, which can't be CollarKg-typed without the core importing the
- * shell -- ADR-0001; the offered-set guard runs at the shell boundary instead.) */
-export const DEFAULT_COLLAR_KG = 0;
-
-/** A Collar the lifter can actually pick: one of the offered Collars. */
-export type CollarKg = (typeof COLLAR_OPTIONS)[number];
-
-/** True when `kg` is one of the offered Collars -- the guard both boundaries share. */
-export function isOfferedCollar(kg: number): kg is CollarKg {
-  return (COLLAR_OPTIONS as readonly number[]).includes(kg);
 }
 
 // A one-line descriptor for each plate-set row (the family + its native Unit).

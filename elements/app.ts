@@ -18,7 +18,7 @@
 import './console.ts';
 import './setup.ts';
 import './help.ts';
-import { isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
+import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';

@@ -15,7 +15,15 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { decode, decodeWithin } from './decode.ts';
 import { addPlate, removePlate, encode } from './encode.ts';
-import { SLEEVE_MM, sideLoadKg, sideWidthMm, totalKg, barWithCollars } from './plates.ts';
+import {
+  SLEEVE_MM,
+  sideLoadKg,
+  sideWidthMm,
+  totalKg,
+  barWithCollars,
+  COLLAR_OPTIONS,
+  isOfferedCollar,
+} from './plates.ts';
 import type { Plate } from './plates.ts';
 import {
   draftToKg,
@@ -38,6 +46,8 @@ import {
 } from './properties.oracle.ts';
 import type { Rig } from './properties.oracle.ts';
 import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
+import { parseLink, serializeLink, MAX_TARGET_KG } from './link.ts';
+import type { LinkState, LinkMode } from './link.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -543,5 +553,286 @@ describe('Plate set properties (ADR-0010)', () => {
       // The oracle asserts the grid when it builds; reaching here means it held.
       expect(achievableTotals(RIGS.find((r) => r.set === key)!).length).toBeGreaterThan(0);
     }
+  });
+});
+
+// Share links (RBAR-50, ADR-0014). States are built only through the real core paths
+// (an offered set, one of its Bars, an offered Collar, a Side Load grown by addPlate so
+// the Sleeve caps it), so the round-trip is checked over exactly the loads the app can
+// show. The fuzzers then aim arbitrary and grammar-shaped text at the parser.
+describe('Share link properties (ADR-0014)', () => {
+  const modeArb = fc.constantFrom<LinkMode>('decode', 'encode');
+
+  // A deterministic shuffle keyed by generated noise (fast-check shrinks the noise, not
+  // the order), shared by the generators that reorder pairs and Plates.
+  const shuffleBy = <T,>(noise: readonly number[], xs: readonly T[]): T[] =>
+    xs
+      .map((x, i) => ({ x, k: noise[i % noise.length]! + i / 1000 }))
+      .sort((a, b) => a.k - b.k)
+      .map((e) => e.x);
+
+  const linkStateArb: fc.Arbitrary<LinkState> = fc
+    .record({
+      key: fc.constantFrom(...PLATE_SET_KEYS),
+      barIx: fc.nat(),
+      collarKg: fc.constantFrom(...COLLAR_OPTIONS),
+      unit: unitArb,
+      mode: modeArb,
+      picks: fc.array(fc.nat(), { maxLength: 40 }),
+      cents: fc.option(fc.integer({ min: 1, max: MAX_TARGET_KG * 100 }), { nil: undefined }),
+    })
+    .map(({ key, barIx, collarKg, unit, mode, picks, cents }): LinkState => {
+      const set = PLATE_SETS[key];
+      const side = picks.reduce<readonly Plate[]>(
+        (acc, i) => addPlate(acc, set.inventory[i % set.inventory.length]!),
+        [],
+      );
+      const barKg = set.bars[barIx % set.bars.length]!.kg;
+      const base = { set: key, barKg, collarKg, unit, mode, side };
+      return mode === 'decode' && cents !== undefined ? { ...base, targetKg: cents / 100 } : base;
+    });
+
+  // Every invariant a parsed state must hold -- the parser's output contract.
+  function expectValid(s: LinkState): void {
+    expect(isOfferedPlateSet(s.set)).toBe(true);
+    const set = PLATE_SETS[s.set];
+    expect(set.bars.map((b) => b.kg)).toContain(s.barKg);
+    expect(isOfferedCollar(s.collarKg)).toBe(true);
+    expect(UNITS).toContain(s.unit);
+    expect(['decode', 'encode']).toContain(s.mode);
+    for (const p of s.side) expect(set.inventory).toContain(p);
+    for (let i = 1; i < s.side.length; i++) {
+      expect(s.side[i - 1]!.kg).toBeGreaterThanOrEqual(s.side[i]!.kg);
+    }
+    expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+    // Read the Target off the runtime object, not the narrowed type, so an encode load
+    // that somehow carried one would still be caught.
+    const t = (s as { readonly targetKg?: number }).targetKg;
+    if (t !== undefined) {
+      expect(s.mode).toBe('decode');
+      expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeGreaterThan(0);
+      expect(t).toBeLessThanOrEqual(MAX_TARGET_KG);
+      expect(Number(t.toFixed(2))).toBe(t);
+    }
+  }
+
+  // Grammar-shaped links: one optional value per key, MOSTLY valid for the chosen set
+  // (so a real share is accepted and the post-acceptance checks bite), salted with
+  // near-misses (the other set's faces and Bar stamps, counts 0 and past 99, piles past
+  // the Sleeve, t with m=p, junk values, a duplicate key), in a shuffled order. Some
+  // salt is tolerated, not rejected (`c=2.50`, a stamp both sets offer): the checks
+  // below assert validity of whatever is accepted, not which inputs are rejected.
+  const allFaces = [
+    ...new Set(
+      [...PLATE_SETS.comp.inventory, ...PLATE_SETS.training.inventory].map(
+        (p) => p.label ?? String(p.kg),
+      ),
+    ),
+  ];
+  const allStamps = ['20kg', '15kg', '5kg', '45lb', '20lb', '20'];
+  const opt = (arb: fc.Arbitrary<string>) => fc.option(arb, { nil: undefined, freq: 20 });
+  const often = <T,>(good: fc.Arbitrary<T>, bad: fc.Arbitrary<T>): fc.Arbitrary<T> =>
+    fc.oneof({ arbitrary: good, weight: 15 }, { arbitrary: bad, weight: 1 });
+  const grammarArb = fc.constantFrom(...PLATE_SET_KEYS).chain((key) => {
+    const set = PLATE_SETS[key];
+    const ownFaces = set.inventory.map((p) => p.label ?? String(p.kg));
+    const ownStamps = set.bars.map((b) => (b.unit === 'lb' ? `${Math.round(kgToLb(b.kg))}lb` : `${b.kg}kg`));
+    const plateTokenArb = fc
+      .tuple(
+        often(
+          fc.option(fc.integer({ min: 1, max: 3 }), { nil: undefined }),
+          fc.constantFrom<number | undefined>(0, 99, 100, 120),
+        ),
+        often(fc.constantFrom(...ownFaces), fc.constantFrom(...allFaces, 'x', '')),
+      )
+      .map(([n, face]) => (n === undefined ? face : `${n}x${face}`));
+    return fc
+      .tuple(
+        fc.record({
+          v: opt(often(fc.constant('1'), fc.constantFrom('2', '', '01'))),
+          s: opt(often(fc.constant(key), fc.constantFrom('x', '__proto__'))),
+          b: opt(often(fc.constantFrom(...ownStamps), fc.constantFrom(...allStamps))),
+          m: opt(often(fc.constantFrom('w', 'p'), fc.constant('q'))),
+          c: opt(often(fc.constantFrom('0', '2.5'), fc.constantFrom('5', '', '2.50', '0x0'))),
+          u: opt(often(fc.constantFrom('kg', 'lb'), fc.constant('st'))),
+          p: opt(fc.array(plateTokenArb, { maxLength: 4 }).map((ts) => ts.join(','))),
+          t: opt(
+            often(
+              fc.integer({ min: 1, max: 100_000 }).map((c) => String(c / 100)),
+              fc.oneof(fc.integer({ min: -500, max: 110_000 }).map((c) => String(c / 100)), fc.string()),
+            ),
+          ),
+          zz: opt(fc.string()),
+        }),
+        often(fc.constant(undefined), fc.constantFrom('v=1', `s=${key}`, 'p=25')),
+        fc.array(fc.nat(), { minLength: 12, maxLength: 12 }),
+      )
+      .map(([rec, dup, noise]) =>
+        shuffleBy(
+          noise,
+          [...Object.entries(rec).map(([k, v]) => (v === undefined ? undefined : `${k}=${v}`)), dup]
+            .filter((kv): kv is string => kv !== undefined),
+        ).join('&'),
+      );
+  });
+
+  it('round-trips: parseLink(serializeLink(s)) is s for every showable load (ADR-0014)', () => {
+    fc.assert(
+      fc.property(linkStateArb, (s) => {
+        expect(parseLink(serializeLink(s)!, 'kg')).toEqual(s);
+      }),
+      opts,
+    );
+  });
+
+  it('canonical form is a fixed point: serializeLink(parseLink(x)) === x for every canonical x (ADR-0014)', () => {
+    fc.assert(
+      fc.property(linkStateArb, (s) => {
+        const x = serializeLink(s)!;
+        expect(serializeLink(parseLink(x, 'kg')!)).toBe(x);
+      }),
+      opts,
+    );
+  });
+
+  it('canonicalization is idempotent: a reshuffled, defaulted, padded link parses to the same load (ADR-0014 ignore-unknown-keys, re-sort)', () => {
+    fc.assert(
+      fc.property(
+        linkStateArb,
+        fc.array(fc.nat(), { minLength: 50, maxLength: 50 }),
+        fc.boolean(),
+        fc.boolean(),
+        (s, noise, dropDefaults, addUnknown) => {
+          // Rewrite the canonical link: every Plate as a single token in a shuffled
+          // order, defaulted keys dropped, unknown keys added, the pairs shuffled.
+          const shuffle = <T,>(xs: readonly T[]): T[] => shuffleBy(noise, xs);
+          const faces = s.side.map((p) => p.label ?? String(p.kg));
+          const pairs = serializeLink(s)!
+            .split('&')
+            .filter((kv) => !kv.startsWith('p='))
+            .filter((kv) => !(dropDefaults && (kv === 'c=0' || kv === `u=${s.unit}`)));
+          if (!(dropDefaults && faces.length === 0)) pairs.push(`p=${shuffle(faces).join(',')}`);
+          if (addUnknown) pairs.push('zz=later', 'q');
+          const parsed = parseLink(shuffle(pairs).join('&'), s.unit);
+          expect(parsed).toEqual(s);
+          const canon = serializeLink(parsed!);
+          expect(canon).toBe(serializeLink(s));
+          expect(serializeLink(parseLink(canon!, 'kg')!)).toBe(canon);
+        },
+      ),
+      opts,
+    );
+  });
+
+  it('never throws on arbitrary text, and yields null or a fully valid load (ADR-0014 all-or-nothing)', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.string(),
+          fc.string({ unit: 'binary' }),
+          grammarArb,
+          linkStateArb.map((s) => serializeLink(s)!.slice(0, -1)),
+        ),
+        unitArb,
+        (x, primary) => {
+          const s = parseLink(x, primary);
+          if (s === null) return;
+          expectValid(s);
+          // With no `u` in the link, the load reads in the recipient's Primary unit.
+          const raw = x.startsWith('#') ? x.slice(1) : x;
+          if (!raw.split('&').some((seg) => seg === 'u' || seg.startsWith('u='))) {
+            expect(s.unit).toBe(primary);
+          }
+        },
+      ),
+      { ...opts, numRuns: 1000 },
+    );
+  });
+
+  it('every accepted Side Load fits the Sleeve and every accepted Bar is one its set offers (ADR-0014, ADR-0012)', () => {
+    let accepted = 0;
+    fc.assert(
+      fc.property(grammarArb, (x) => {
+        const s = parseLink(x, 'kg');
+        if (s === null) return;
+        accepted++;
+        expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+        expect(PLATE_SETS[s.set].bars.map((b) => b.kg)).toContain(s.barKg);
+      }),
+      { ...opts, numRuns: 2000 },
+    );
+    // The grammar must actually reach acceptance, or this property is vacuous (the
+    // fixed seed accepts ~22%; a tenth is the floor).
+    expect(accepted).toBeGreaterThan(200);
+  });
+
+  it('a whole-lb Target reads back as the same whole pounds after the trip (ADR-0014, ADR-0006)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: Math.floor(kgToLb(MAX_TARGET_KG)) }), (n) => {
+        const s: LinkState = {
+          set: 'training',
+          barKg: PLATE_SETS.training.defaultBarKg,
+          collarKg: 0,
+          unit: 'lb',
+          mode: 'decode',
+          side: [],
+          targetKg: lbToKg(n),
+        };
+        const got = parseLink(serializeLink(s)!, 'kg');
+        expect(got?.mode === 'decode' && shownIn(got.targetKg!, 'lb')).toBe(n);
+      }),
+      opts,
+    );
+  });
+
+  it('the serializer refuses exactly the loads it cannot represent, and everything it writes opens to the same load (ADR-0014)', () => {
+    // Loosely built loads: any Bar weight either set offers (plus an off-menu one), any
+    // Collar-ish weight, Plates drawn from BOTH sets in any order and any number, any
+    // Target double -- so foreign Plates, unsorted or over-Sleeve Sides, off-menu Bars
+    // and unrepresentable Targets are all hit.
+    const anyPlates = [...PLATE_SETS.comp.inventory, ...PLATE_SETS.training.inventory];
+    const allBarKgs = [...PLATE_SETS.comp.bars, ...PLATE_SETS.training.bars].map((b) => b.kg);
+    const looseArb = fc
+      .record({
+        key: fc.constantFrom(...PLATE_SET_KEYS),
+        barKg: fc.constantFrom(...allBarKgs, 20.4),
+        collarKg: fc.constantFrom(0, 2.5, 5),
+        unit: unitArb,
+        mode: modeArb,
+        picks: fc.array(fc.nat(), { maxLength: 12 }),
+        own: fc.boolean(),
+        sorted: fc.boolean(),
+        targetKg: fc.option(
+          fc.oneof(fc.double({ min: -10, max: 1100 }), fc.constantFrom(0.004, 0.005, 1000, 1000.004, 1000.006)),
+          { nil: undefined },
+        ),
+      })
+      .map(({ key, barKg, collarKg, unit, mode, picks, own, sorted, targetKg }) => {
+        const pool = own ? PLATE_SETS[key].inventory : anyPlates;
+        const drawn = picks.map((i) => pool[i % pool.length]!);
+        const side = sorted ? [...drawn].sort((a, b) => b.kg - a.kg) : drawn;
+        return { set: key, barKg, collarKg, unit, mode, side, targetKg } as unknown as LinkState;
+      });
+    fc.assert(
+      fc.property(looseArb, (s) => {
+        const set = PLATE_SETS[s.set];
+        const raw = s as unknown as { readonly targetKg?: number; readonly collarKg: number };
+        const t = s.mode === 'decode' && raw.targetKg !== undefined ? Number(raw.targetKg.toFixed(2)) : undefined;
+        const representable =
+          set.bars.some((b) => b.kg === s.barKg) &&
+          isOfferedCollar(raw.collarKg) &&
+          s.side.every((p) => set.inventory.includes(p)) &&
+          s.side.every((p, i) => i === 0 || s.side[i - 1]!.kg >= p.kg) &&
+          sideWidthMm(s.side) <= SLEEVE_MM + EPS &&
+          (t === undefined || (Number.isFinite(t) && t > 0 && t <= MAX_TARGET_KG));
+        const x = serializeLink(s);
+        expect(x !== null).toBe(representable);
+        if (x === null) return;
+        const { targetKg: _dropped, ...rest } = s as LinkState & { targetKg?: number };
+        expect(parseLink(x, 'kg')).toEqual(t === undefined ? rest : { ...rest, targetKg: t });
+      }),
+      { ...opts, numRuns: 1000 },
+    );
   });
 });
