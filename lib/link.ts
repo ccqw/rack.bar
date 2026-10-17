@@ -34,8 +34,8 @@ import {
 import type { CollarKg, Plate } from './plates.ts';
 import { PLATE_SETS, isOfferedPlateSet } from './platesets.ts';
 import type { Bar, PlateSet, PlateSetKey } from './platesets.ts';
-import { groupSide, SHARE_LINK } from './summary.ts';
-import { toLbWhole } from './units.ts';
+import { groupSide, plateFace, SHARE_LINK } from './summary.ts';
+import { isUnit, toLbWhole } from './units.ts';
 import type { Unit } from './units.ts';
 
 /** The console's two modes: By Weight (decode) and By Plates (encode). */
@@ -97,12 +97,6 @@ function barStamp(bar: Bar): string {
   return bar.unit === 'lb' ? `${toLbWhole(bar.kg)}lb` : `${bar.kg}kg`;
 }
 
-/** A Plate's face stamp: its lb `label` (iron) or its kg (Eleiko) -- the same face
- * the share card and summary print (groupSide). */
-function plateFace(p: Plate): string {
-  return p.label ?? String(p.kg);
-}
-
 /** A Target as it travels -- kg at 2 dp, the precision Recents store (ADR-0009) -- or
  * null when that is not finite, not > 0, or over MAX_TARGET_KG. One rule for both
  * directions. */
@@ -150,7 +144,7 @@ export function serializeLink(state: LinkState): string | null {
   const set = PLATE_SETS[state.set];
   const bar = set.bars.find((b) => b.kg === state.barKg);
   if (!bar || !isOfferedCollar(state.collarKg)) return null;
-  if (state.unit !== 'kg' && state.unit !== 'lb') return null;
+  if (!isUnit(state.unit)) return null;
   if (!isLinkableSide(state.side, set)) return null;
   const plates = groupSide(state.side)
     .map((g) => (g.count > 1 ? `${g.count}x${g.face}` : g.face))
@@ -270,7 +264,7 @@ export function parseLink(fragment: string, defaultUnit: Unit): LinkState | null
   const unitToken = pairs.get('u');
   let unit: Unit = defaultUnit;
   if (unitToken !== undefined) {
-    if (unitToken !== 'kg' && unitToken !== 'lb') return null;
+    if (!isUnit(unitToken)) return null;
     unit = unitToken;
   }
 

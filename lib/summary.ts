@@ -53,8 +53,9 @@ export interface PlateGroup {
   readonly count: number;
 }
 
-/** A Plate's face stamp: its lb `label` when it has one (iron), else its kg. */
-function plateFace(p: Plate): string {
+/** A Plate's face stamp: its lb `label` when it has one (iron), else its kg. The one
+ * definition the card, the summary and the share link (ADR-0014) all read. */
+export function plateFace(p: Plate): string {
   return p.label ?? String(p.kg);
 }
 

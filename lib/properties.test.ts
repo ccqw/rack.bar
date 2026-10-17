@@ -567,6 +567,14 @@ describe('Plate set properties (ADR-0010)', () => {
 describe('Share link properties (ADR-0014)', () => {
   const modeArb = fc.constantFrom<LinkMode>('decode', 'encode');
 
+  // A deterministic shuffle keyed by generated noise (fast-check shrinks the noise, not
+  // the order), shared by the generators that reorder pairs and Plates.
+  const shuffleBy = <T,>(noise: readonly number[], xs: readonly T[]): T[] =>
+    xs
+      .map((x, i) => ({ x, k: noise[i % noise.length]! + i / 1000 }))
+      .sort((a, b) => a.k - b.k)
+      .map((e) => e.x);
+
   const linkStateArb: fc.Arbitrary<LinkState> = fc
     .record({
       key: fc.constantFrom(...PLATE_SET_KEYS),
@@ -663,12 +671,11 @@ describe('Share link properties (ADR-0014)', () => {
         fc.array(fc.nat(), { minLength: 12, maxLength: 12 }),
       )
       .map(([rec, dup, noise]) =>
-        [...Object.entries(rec).map(([k, v]) => (v === undefined ? undefined : `${k}=${v}`)), dup]
-          .filter((kv): kv is string => kv !== undefined)
-          .map((kv, i) => ({ kv, k: noise[i]! + i / 100 }))
-          .sort((a, b) => a.k - b.k)
-          .map((e) => e.kv)
-          .join('&'),
+        shuffleBy(
+          noise,
+          [...Object.entries(rec).map(([k, v]) => (v === undefined ? undefined : `${k}=${v}`)), dup]
+            .filter((kv): kv is string => kv !== undefined),
+        ).join('&'),
       );
   });
 
@@ -701,11 +708,7 @@ describe('Share link properties (ADR-0014)', () => {
         (s, noise, dropDefaults, addUnknown) => {
           // Rewrite the canonical link: every Plate as a single token in a shuffled
           // order, defaulted keys dropped, unknown keys added, the pairs shuffled.
-          const shuffle = <T,>(xs: readonly T[]): T[] =>
-            xs
-              .map((x, i) => ({ x, k: noise[i % noise.length]! + i / 1000 }))
-              .sort((a, b) => a.k - b.k)
-              .map((e) => e.x);
+          const shuffle = <T,>(xs: readonly T[]): T[] => shuffleBy(noise, xs);
           const faces = s.side.map((p) => p.label ?? String(p.kg));
           const pairs = serializeLink(s)!
             .split('&')
