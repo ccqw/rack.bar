@@ -61,3 +61,43 @@ later addition, not a rewrite:
 Overflow nudge gradients are CSS edge fades on the scroll viewport (a thin
 affordance); scroll-position-aware fades are deferred polish, folded with the
 RBAR-10 visual treatment.
+
+## 2026-10-17 -- removing a Recent: a second event up, Undo in the chip's slot (RBAR-73)
+
+Opening a shared link (RBAR-50) will add its Target to Recents, so a lifter needs to
+remove a chip they don't want. An x on every chip would eat the rail's width, so the
+removal is a long-press. Ownership does not change: the console still owns the list.
+
+- **Core.** `lib/recents.ts` gains `removeRecent(list, target)` (drop that Target at
+  stored precision, keep the rest in order) and `restoreRecent(list, target, index)`
+  (its inverse for Undo: put it back at its old slot, clamped; never duplicate, never
+  admit a non-loadable Target, still capped). Both are pure, like `pushRecent`.
+- **Shell contract.** `<rack-recents>` keeps one property down (`targets`) and now
+  has three events up: `recentapply` (as before), `recentremove` and `recentrestore`,
+  each `{ target, index }`. The console applies them with the core and persists to
+  `rackbar.recents` straight away, so a removal survives a reload even if the Undo is
+  never used.
+- **Gesture.** A still press of 500 ms (8 px slop on either axis) opens a one-item
+  "Remove" popover over the chip. Moving past the slop, a `pointercancel` (the browser
+  took the touch as a pan) or the rail scrolling drops the hold, so scrolling never
+  removes. A short tap still loads the Target. The non-gesture routes are
+  `contextmenu` (the context-menu key, Shift+F10, right-click) for the same popover,
+  and Delete/Backspace on a focused chip, which removes it at once. Each chip carries
+  an `aria-describedby` hint and `aria-keyshortcuts="Delete"`.
+- **Undo.** A removal turns that chip's slot into its own Undo chip inside the rail.
+  The Undo is locked to the removed chip's width, so it adds no row (ADR-0013) and no
+  neighbour shifts. Several Undos can be pending at once. While any are pending, the
+  rail is frozen into slots, and each slot's list index is the number of live slots
+  before it. That is the index `recentremove` and `recentrestore` carry. Tapping an
+  Undo restores that Target to its own slot. One shared timer of 5 s restarts on every
+  removal. When it lapses, all the pending slots collapse together (width and opacity,
+  200 ms ease-out; with reduced motion they disappear at once). That collapse is the
+  only time chips move, and it comes after the lifter has stopped. A new history from
+  anywhere else (a fresh commit or a chip re-apply) makes the pending removals final
+  with the same collapse. The frozen slots are the only state the row keeps for
+  itself, and they are UI state, not history. The console keeps the row visible while
+  any Undo is pending, even when the list is empty.
+
+  *Revised the same day, after Caitlin's phone check:* the first cut kept one Undo at
+  a time, and each new removal collapsed the previous slot. During a quick cleanup of
+  several chips, that moved the rail under her finger.

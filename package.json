@@ -1,6 +1,6 @@
 {
   "name": "rack-bar",
-  "version": "0.36.0",
+  "version": "0.38.0",
   "private": true,
   "type": "module",
   "description": "Load a barbell to a target weight. rack.bar",
@@ -13,9 +13,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "icons": "node scripts/icons.mjs"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "fast-check": "^4.10.2",
     "happy-dom": "^21.0.3",
     "typescript": "^7.0.2",

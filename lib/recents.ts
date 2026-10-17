@@ -70,3 +70,35 @@ export function parseRecents(
     .filter((t): t is number => typeof t === 'number' && isRememberable(t))
     .reduceRight<readonly number[]>((acc, t) => pushRecent(acc, t, max), []);
 }
+
+/**
+ * Remove `target` from the history (RBAR-73): the long-press / Delete-key removal. The
+ * Target is matched at stored precision (the same key pushRecent dedupes on), so the
+ * chip's own data value always finds its entry. The rest of the row keeps its order;
+ * removing a Target that is not held returns an equal list. Removal can only shrink a
+ * valid row, so it stays capped, deduped and rememberable. Pure: never mutates.
+ */
+export function removeRecent(list: readonly number[], target: number): readonly number[] {
+  const kg = toStoredKg(target);
+  return list.filter((t) => t !== kg);
+}
+
+/**
+ * Put a removed Target back at `index` (RBAR-73 Undo, "restores it in place"): the
+ * inverse of removeRecent, so restoreRecent(removeRecent(list, t), t, list.indexOf(t))
+ * is the original list. The index is clamped into the row (a negative or past-the-end
+ * index lands at the front or the back). A Target the row already holds is left where
+ * it is (Undo never duplicates), a non-loadable one is ignored (as pushRecent), and the
+ * result is capped at `max` like every other write. Pure: never mutates.
+ */
+export function restoreRecent(
+  list: readonly number[],
+  target: number,
+  index: number,
+  max: number = MAX_RECENTS,
+): readonly number[] {
+  const kg = toStoredKg(target);
+  if (!isRememberable(kg) || list.includes(kg)) return [...list];
+  const at = Math.min(Math.max(0, Math.trunc(index) || 0), list.length);
+  return [...list.slice(0, at), kg, ...list.slice(at)].slice(0, Math.max(0, max));
+}

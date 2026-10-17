@@ -15,7 +15,15 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { decode, decodeWithin } from './decode.ts';
 import { addPlate, removePlate, encode } from './encode.ts';
-import { SLEEVE_MM, sideLoadKg, sideWidthMm, totalKg, barWithCollars } from './plates.ts';
+import {
+  SLEEVE_MM,
+  sideLoadKg,
+  sideWidthMm,
+  totalKg,
+  barWithCollars,
+  COLLAR_OPTIONS,
+  isOfferedCollar,
+} from './plates.ts';
 import type { Plate } from './plates.ts';
 import { SLEEVE_PAD_PX, sleeveLayout } from './sleevefit.ts';
 import {
@@ -27,8 +35,19 @@ import {
   stepFor,
 } from './units.ts';
 import type { Unit } from './units.ts';
-import { pushRecent, parseRecents, MAX_RECENTS, isRememberable } from './recents.ts';
+import {
+  pushRecent,
+  parseRecents,
+  removeRecent,
+  restoreRecent,
+  MAX_RECENTS,
+  isRememberable,
+} from './recents.ts';
 import { plateSetFor, PLATE_SET_KEYS, isOfferedPlateSet, PLATE_SETS } from './platesets.ts';
+import { plateFace, withLimits } from './plates.ts';
+import type { InventoryEntry } from './plates.ts';
+import { cappedFewestOracle, greatestSumAtOrUnder } from './fewest.oracle.ts';
+import { sideLoads } from './sideloads.ts';
 import {
   RIGS,
   achievableTotals,
@@ -36,8 +55,27 @@ import {
   leastAbove,
   fewestPlatesFor,
   maxTotal,
+  rampTotalsOracle,
+  stationRampOracle,
+  oracleStationCost,
+  oracleMoveCost,
+  oracleCaps,
+  legalSides,
 } from './properties.oracle.ts';
+import type { StationRule } from './properties.oracle.ts';
+import {
+  planEasyRamp,
+  RAMP_BAND,
+  RAMP_COST,
+  PLATES_PER_SIZE,
+  BIG_PLATE_DIAMETER_MM,
+} from './moves.ts';
+import { planRamp, DEFAULT_RAMP } from './plan.ts';
+import type { RampStep } from './plan.ts';
 import type { Rig } from './properties.oracle.ts';
+import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
+import { parseLink, serializeLink, MAX_TARGET_KG } from './link.ts';
+import type { LinkState, LinkMode } from './link.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -116,8 +154,7 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
         const fewest = fewestPlatesFor(rig, total);
         if (primary.side.length !== fewest) {
           const plates = primary.side.map((p) => p.label ?? String(p.kg)).join('+');
-          const by = fewest !== null && primary.side.length === fewest + 1 ? ' (one over)' : '';
-          misses.push(`${rig.name}: ${total.toFixed(2)} kg -> ${plates} (fewest is ${fewest})${by}`);
+          misses.push(`${rig.name}: ${total.toFixed(2)} kg -> ${plates} (fewest is ${fewest})`);
         }
       }
     }
@@ -128,30 +165,27 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
     expect(fewestPlateMisses(RIGS.filter((r) => r.set === 'comp'))).toEqual([]);
   });
 
-  // KNOWN GAP, filed as RBAR-69 (not fixed here: it changes visible output). The iron
-  // ladder {45,35,25,10,5,2.5} lb is canonical for "greatest at or under" (ADR-0010's DP
-  // check) but NOT for fewest Plates, so the heaviest-first greedy loads one Plate too
-  // many on 14 of the 143 Totals of every Training rig. Smallest counterexample, the
-  // default 45 lb Bar: 165 lb -> greedy 45 + 10 + 5 per Side (3 Plates), while 35 + 25
-  // (2 Plates) reaches the same Total; likewise 255 lb -> 45+45+10+5 vs 45+35+25.
-  // Which rule wins for iron (fewest Plates, or "45s first" gym habit) is a product
-  // call, so the property stays pinned as an expected failure until it is decided.
-  // When the loader is fixed this starts passing and `it.fails` flags it -- flip it.
-  it.fails('loads the fewest Plates for every Training Total (ADR-0003; KNOWN GAP RBAR-69)', () => {
+  // Fixed by RBAR-69: the iron ladder {45,35,25,10,5,2.5} lb is not canonical for
+  // fewest Plates (165 lb on the 45 lb Bar is 35 + 25 per Side, greedy loaded
+  // 45 + 10 + 5), so the fill is an exact search now. lib/fewest.test.ts also pins the
+  // exact Plates and order against an independent DP.
+  it('loads the fewest Plates for every Training Total (ADR-0003 as amended by RBAR-69; exhaustive)', () => {
     expect(fewestPlateMisses(RIGS.filter((r) => r.set === 'training'))).toEqual([]);
   });
 
-  // `it.fails` passes on ANY throw, so on its own it would stay green if the gap grew
-  // or the helper broke. This pins the gap's exact size and shape in both directions:
-  // 14 Totals per Training rig, each exactly one Plate over, the 165 lb case among
-  // them. When RBAR-69 lands, delete this and flip the it.fails above to `it`.
-  it('pins the RBAR-69 gap exactly: 14 Totals per Training rig, one extra Plate each (ADR-0003)', () => {
-    const training = RIGS.filter((r) => r.set === 'training');
-    const misses = fewestPlateMisses(training);
-    expect(misses).toHaveLength(14 * training.length);
-    for (const m of misses) expect(m).toMatch(/\(one over\)$/);
-    expect(misses).toContain(
-      'training bar 20.412 kg collar 0: 74.84 kg -> 45+10+5 (fewest is 2) (one over)',
+  // The full rule, not just the count: for ANY Target (on the grid, between it, past the
+  // Sleeve), primary and round-up are the exact stack an independent DP picks -- fewest
+  // Plates, then heaviest-first (lib/fewest.oracle.ts).
+  it('loads the canonical stack for any Target: fewest Plates, then heaviest-first, round-up included (ADR-0003 as amended by RBAR-69)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, ({ rig, t }) => {
+        const o = fewestOracle(rig.inventory, GRID_KG[rig.set]);
+        const { primary, over } = decode(t, rig.baselineKg, rig.inventory);
+        const unitsOf = (total: number) => Math.round((total - rig.baselineKg) / 2 / o.gridKg);
+        expect(primary.side).toEqual(o.pick(unitsOf(primary.total)));
+        if (over) expect(over.side).toEqual(o.pick(unitsOf(over.total)));
+      }),
+      opts,
     );
   });
 
@@ -319,6 +353,638 @@ describe('Decode as read: decodeWithin + displayCeilingKg (ADR-0010 RBAR-60, ADR
   });
 });
 
+describe('Plate limit properties (ADR-0016, ADR-0003)', () => {
+  // A Plate limit per size, as the pairs on hand: mostly small counts (where the caps
+  // bite), sometimes unlimited. One entry per size of the rig's set, in set order.
+  const face = plateFace;
+  const capArb = fc.oneof(
+    fc.integer({ min: 0, max: 4 }),
+    fc.constant(Infinity),
+  );
+  const capsArb = (rig: Rig) => fc.array(capArb, { minLength: rig.inventory.length, maxLength: rig.inventory.length });
+  const limited = (rig: Rig, caps: readonly number[]) =>
+    withLimits(rig.inventory, Object.fromEntries(rig.inventory.map((p, i) => [face(p), caps[i]])));
+  const cappedArb = rigArb.chain((rig) =>
+    fc.record({ rig: fc.constant(rig), caps: capsArb(rig), t: targetArb(rig) }),
+  );
+  const countOf = (side: readonly Plate[], p: Plate) => side.filter((q) => face(q) === face(p)).length;
+  const sides = (d: { primary: { side: readonly Plate[] }; over?: { side: readonly Plate[] } }) =>
+    d.over ? [d.primary.side, d.over.side] : [d.primary.side];
+  // A Decode result as plain data, so loads from copied entries compare by value.
+  const shape = (d: ReturnType<typeof decode>) => ({
+    primary: { ...d.primary, side: d.primary.side.map(face) },
+    over: d.over && { ...d.over, side: d.over.side.map(face) },
+  });
+
+  it('no cap is ever exceeded, round-up included (ADR-0016)', () => {
+    fc.assert(
+      fc.property(cappedArb, ({ rig, caps, t }) => {
+        const inv = limited(rig, caps);
+        const d = decode(t, rig.baselineKg, inv);
+        for (const side of sides(d)) {
+          rig.inventory.forEach((p, i) => expect(countOf(side, p)).toBeLessThanOrEqual(caps[i]));
+        }
+      }),
+      opts,
+    );
+  });
+
+  it("a 'none' size never appears in any load (ADR-0016)", () => {
+    fc.assert(
+      fc.property(cappedArb, ({ rig, caps, t }) => {
+        const d = decode(t, rig.baselineKg, limited(rig, caps));
+        const none = rig.inventory.filter((_, i) => caps[i] === 0).map(face);
+        for (const side of sides(d)) expect(side.map(face).filter((f) => none.includes(f))).toEqual([]);
+      }),
+      opts,
+    );
+  });
+
+  it('tightening caps never raises the at-or-under Total (ADR-0016, ADR-0003)', () => {
+    const pairArb = cappedArb.chain(({ rig, caps, t }) =>
+      fc
+        .array(fc.integer({ min: 0, max: 4 }), { minLength: caps.length, maxLength: caps.length })
+        .map((cut) => ({ rig, t, loose: caps, tight: caps.map((c, i) => Math.max(0, Math.min(c, 4) - cut[i])) })),
+    );
+    fc.assert(
+      fc.property(pairArb, ({ rig, t, loose, tight }) => {
+        const looser = decode(t, rig.baselineKg, limited(rig, loose)).primary.total;
+        const tighter = decode(t, rig.baselineKg, limited(rig, tight)).primary.total;
+        const unlimited = decode(t, rig.baselineKg, rig.inventory).primary.total;
+        expect(tighter).toBeLessThanOrEqual(looser + EPS);
+        expect(looser).toBeLessThanOrEqual(unlimited + EPS);
+      }),
+      opts,
+    );
+  });
+
+  it('all-unlimited is identical to the uncapped output, every rig, exhaustively (ADR-0016)', () => {
+    // Over the runtime-budget range (every 0.7 kg for 400 kg above the rig) and every
+    // achievable Total, with explicit unlimited caps (Infinity) and with caps too large
+    // to ever bind (99 pairs), which take the capped walk.
+    const misses: string[] = [];
+    for (const rig of RIGS) {
+      const unlimited = limited(rig, rig.inventory.map(() => Infinity));
+      const huge = limited(rig, rig.inventory.map(() => 99));
+      const targets: number[] = [...achievableTotals(rig)];
+      for (let t = rig.baselineKg; t < rig.baselineKg + 400; t += 0.7) targets.push(t);
+      for (const t of targets) {
+        const want = JSON.stringify(shape(decode(t, rig.baselineKg, rig.inventory)));
+        for (const inv of [unlimited, huge]) {
+          const got = JSON.stringify(shape(decode(t, rig.baselineKg, inv)));
+          if (got !== want) misses.push(`${rig.name} ${t}: ${got} != ${want}`);
+        }
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it("the capped Decode equals the bounded oracle's best, round-up included (ADR-0016, ADR-0003)", () => {
+    fc.assert(
+      fc.property(cappedArb, ({ rig, caps, t }) => {
+        const inv: InventoryEntry[] = limited(rig, caps);
+        const o = cappedFewestOracle(inv, GRID_KG[rig.set]);
+        const budget = (t - rig.baselineKg) / 2;
+        const best = greatestSumAtOrUnder(o, Math.floor((budget + EPS) / o.gridKg));
+        const { primary, over } = decode(t, rig.baselineKg, inv);
+        expect(primary.side).toEqual(o.pick(best));
+        const above = o.sums.find((s) => s * o.gridKg > budget + EPS);
+        if (primary.total < t - EPS && above !== undefined) {
+          expect(over?.side).toEqual(o.pick(above));
+        } else {
+          expect(over).toBeUndefined();
+        }
+      }),
+      { seed: SEED, numRuns: 80 },
+    );
+  });
+
+  it('caps only remove candidate stacks, the rank order is unchanged (ADR-0016, ADR-0003)', () => {
+    // The uncapped ranking is oracle-locked (RBAR-69), so it is the reference: the capped
+    // enumeration must be exactly its within-cap stacks, in the same order. The reference
+    // scan is bounded; whatever prefix of it was scanned pins a prefix of the capped list.
+    const LIMIT = 20;
+    const SCAN = 5000;
+    const caseArb = rigArb.chain((rig) =>
+      fc.record({
+        rig: fc.constant(rig),
+        caps: fc.array(fc.oneof(fc.integer({ min: 0, max: 3 }), fc.constant(Infinity)), {
+          minLength: rig.inventory.length,
+          maxLength: rig.inventory.length,
+        }),
+        units: fc.integer({ min: 0, max: Math.floor(150 / GRID_KG[rig.set]) }),
+      }),
+    );
+    const key = (side: readonly Plate[]) => side.map(face).join('+');
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, units }) => {
+        const sideKg = units * GRID_KG[rig.set];
+        const within = (side: readonly Plate[]) => rig.inventory.every((p, i) => countOf(side, p) <= caps[i]);
+        const got: string[] = [];
+        for (const side of sideLoads(sideKg, limited(rig, caps))) {
+          got.push(key(side));
+          if (got.length >= LIMIT) break;
+        }
+        const want: string[] = [];
+        let scanned = 0;
+        let complete = true;
+        for (const side of sideLoads(sideKg, rig.inventory)) {
+          if (++scanned > SCAN) {
+            complete = false;
+            break;
+          }
+          if (within(side)) want.push(key(side));
+          if (want.length >= LIMIT) break;
+        }
+        if (complete || want.length >= LIMIT) expect(got).toEqual(want);
+        else expect(got.slice(0, want.length)).toEqual(want);
+      }),
+      { seed: SEED, numRuns: 150 },
+    );
+  });
+
+  it('withLimits composes as the tighter cap, in either order (ADR-0016)', () => {
+    // Absent (no key) counts as unlimited; an explicit All (Infinity) over a finite cap
+    // must stay finite -- "today: All" never resets "this gym".
+    const optCapArb = fc.oneof(fc.integer({ min: 0, max: 4 }), fc.constant(Infinity), fc.constant(undefined));
+    const caseArb = rigArb.chain((rig) => {
+      const arr = fc.array(optCapArb, { minLength: rig.inventory.length, maxLength: rig.inventory.length });
+      return fc.record({ rig: fc.constant(rig), a: arr, b: arr, t: targetArb(rig) });
+    });
+    const record = (rig: Rig, caps: readonly (number | undefined)[]) =>
+      Object.fromEntries(
+        rig.inventory.flatMap((p, i) => (caps[i] === undefined ? [] : [[face(p), caps[i] as number]])),
+      );
+    fc.assert(
+      fc.property(caseArb, ({ rig, a, b, t }) => {
+        const min = rig.inventory.map((_, i) =>
+          a[i] === undefined && b[i] === undefined ? undefined : Math.min(a[i] ?? Infinity, b[i] ?? Infinity),
+        );
+        const direct = withLimits(rig.inventory, record(rig, min));
+        const want = JSON.stringify(shape(decode(t, rig.baselineKg, direct)));
+        for (const composed of [
+          withLimits(withLimits(rig.inventory, record(rig, a)), record(rig, b)),
+          withLimits(withLimits(rig.inventory, record(rig, b)), record(rig, a)),
+        ]) {
+          rig.inventory.forEach((p, i) => {
+            if (min[i] === undefined) expect(composed[i]).toBe(p);
+            else expect(composed[i].maxPerSide).toBe(min[i]);
+          });
+          expect(JSON.stringify(shape(decode(t, rig.baselineKg, composed)))).toBe(want);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('every size none: Decode is the bare rig and planRamp and planEasyRamp give bare-rig rows (ADR-0016)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, ({ rig, t }) => {
+        const none = limited(rig, rig.inventory.map(() => 0));
+        const { primary, over } = decode(t, rig.baselineKg, none);
+        expect(primary.side).toEqual([]);
+        expect(primary.total).toBe(rig.baselineKg);
+        expect(over).toBeUndefined();
+        fc.pre(t > 0);
+        const ramp = planRamp(t, DEFAULT_RAMP, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: none });
+        // planEasyRamp guards with hasUsablePlates, so plateGridKg never sees all-none.
+        const easy = planEasyRamp(t, DEFAULT_RAMP, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: none });
+        for (const row of [...ramp.rows, ...easy.rows]) {
+          expect(row.side).toEqual([]);
+          expect(row.total).toBeCloseTo(rig.barKg + (row.collars ? 2 * rig.collarKg : 0), 9);
+        }
+      }),
+      opts,
+    );
+  });
+});
+
+describe('Warm-up Ramp properties (ADR-0015)', () => {
+  // A template: up to two leading bare-Bar steps, then up to six percentages that never
+  // fall (planRamp rejects a falling one, ADR-0015 as amended), whole or fractional.
+  const pctArb = fc.oneof(
+    fc.integer({ min: 1, max: 100 }),
+    fc.double({ min: 0.01, max: 100, noNaN: true }),
+  );
+  const stepsArb: fc.Arbitrary<RampStep[]> = fc
+    .tuple(
+      fc.integer({ min: 0, max: 2 }),
+      fc.array(pctArb, { maxLength: 6 }),
+    )
+    .map(([bars, pcts]) => [
+      ...Array.from({ length: bars }, (): RampStep => ({ kind: 'bar' })),
+      ...[...pcts].sort((x, y) => x - y).map((pct): RampStep => ({ kind: 'pct', pct })),
+    ]);
+  const caseArb = fc.record({ rt: rigTargetArb, u: unitArb, steps: fc.oneof(stepsArb, fc.constant([...DEFAULT_RAMP])) });
+
+  // The console's call, exactly: the Working set solved as read in the active unit.
+  const plan = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
+    planRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
+      ceilingKg: displayCeilingKg(t, u),
+    });
+
+  it('every row is loadable within the Sleeve: Total = its baseline + 2 x Side Load, Plates from the Inventory, the canonical stack (ADR-0015, ADR-0012, ADR-0003)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const o = fewestOracle(rig.inventory, GRID_KG[rig.set]);
+        for (const row of plan(rig, t, u, steps).rows) {
+          const baseline = row.collars ? rig.baselineKg : rig.barKg;
+          expect(row.total).toBeCloseTo(totalKg(row.side, baseline), 9);
+          expect(sideWidthMm(row.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+          expect(fromInventory(row.side, rig)).toBe(true);
+          const units = Math.round((row.total - baseline) / 2 / o.gridKg);
+          expect(row.side).toEqual(o.pick(units));
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('Totals never decrease, start at or above the bare Bar, and never pass the Working set; no row is dropped (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const { rows } = plan(rig, t, u, steps);
+        expect(rows).toHaveLength(steps.length + 1);
+        const work = rows[rows.length - 1].total;
+        rows.forEach((row, i) => {
+          expect(row.total).toBeGreaterThanOrEqual(rig.barKg - EPS);
+          expect(row.total).toBeLessThanOrEqual(work + EPS);
+          if (i > 0) expect(row.total).toBeGreaterThanOrEqual(rows[i - 1].total - EPS);
+        });
+      }),
+      opts,
+    );
+  });
+
+  it('the Working set is the at-or-under solve as read and never overshoots (ADR-0015, ADR-0003)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const { rows, working } = plan(rig, t, u, steps);
+        const solved = decodeWithin(t, displayCeilingKg(t, u), rig.baselineKg, rig.inventory);
+        expect(working).toEqual(solved);
+        const last = rows[rows.length - 1];
+        expect(last.kind).toBe('working');
+        expect(last.side).toEqual(solved.primary.side);
+        expect(last.total).toBeCloseTo(greatestAtOrUnder(rig, displayCeilingKg(t, u)), 9);
+        if (shownIn(t, u) >= shownIn(rig.baselineKg, u)) {
+          expect(shownIn(last.total, u)).toBeLessThanOrEqual(shownIn(t, u));
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('each Warm-up set is the nearest loadable Total to its percentage within its floor and the Working set, ties down (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = plan(rig, t, u, steps).rows.map((r) => r.total);
+        const want = rampTotalsOracle(rig, t, displayCeilingKg(t, u), steps);
+        expect(got.length).toBe(want.length);
+        got.forEach((g, i) => expect(g).toBeCloseTo(want[i], 9));
+      }),
+      opts,
+    );
+  });
+
+  it('the default Ramp matches the oracle for every achievable Working Total on every rig (ADR-0015; exhaustive)', () => {
+    const misses: string[] = [];
+    for (const rig of RIGS) {
+      for (const total of achievableTotals(rig)) {
+        const got = plan(rig, total, 'kg', DEFAULT_RAMP).rows.map((r) => r.total);
+        const want = rampTotalsOracle(rig, total, displayCeilingKg(total, 'kg'), DEFAULT_RAMP);
+        if (got.some((g, i) => Math.abs(g - want[i]) > 1e-6)) {
+          misses.push(`${rig.name}: ${total} -> ${got.join(',')} (want ${want.join(',')})`);
+        }
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it('a bare-Bar row is the Bar alone: no Plates, no Collars (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        for (const row of plan(rig, t, u, steps).rows.filter((r) => r.kind === 'bar')) {
+          expect(row.side).toEqual([]);
+          expect(row.collars).toBe(false);
+          expect(row.total).toBe(rig.barKg);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('warm-ups and the Working set carry Collars exactly when the rig has them (ADR-0015, ADR-0008)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        for (const row of plan(rig, t, u, steps).rows.filter((r) => r.kind !== 'bar')) {
+          expect(row.collars).toBe(rig.collarKg > 0);
+          expect(row.total).toBeGreaterThanOrEqual(rig.baselineKg - EPS);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('sameAsPrevious marks exactly the rows repeating the previous Total, and realPct is Total over the Working Total (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const { rows } = plan(rig, t, u, steps);
+        const work = rows[rows.length - 1].total;
+        rows.forEach((row, i) => {
+          const repeats = i > 0 && Math.abs(row.total - rows[i - 1].total) <= EPS;
+          expect(row.sameAsPrevious).toBe(repeats);
+          expect(row.realPct).toBeCloseTo((row.total / work) * 100, 9);
+        });
+      }),
+      opts,
+    );
+  });
+});
+
+describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's station rule)", () => {
+  // Each full-rig run plans a whole Ramp, so these take fewer runs than the rest.
+  const rampOpts = { seed: SEED, numRuns: 100 };
+  // The ADR-0015 numbers, stated here rather than read from moves.ts, so a changed
+  // weight in the planner fails the oracle instead of moving it too.
+  const RULE: StationRule = {
+    band: 0.05,
+    cap: 2,
+    bigDiameterMm: 450,
+    missPerKg: 1,
+    overFactor: 1.5,
+    perPlate: 1,
+    bigOff: 2,
+    perMove: 0.2,
+    perStationPlate: 0.2,
+  };
+  it('the planner\'s constants are the ADR-0015 numbers the oracle states', () => {
+    expect({ band: RAMP_BAND, cap: PLATES_PER_SIZE, bigDiameterMm: BIG_PLATE_DIAMETER_MM, ...RAMP_COST }).toEqual(RULE);
+  });
+  // Percentages ascending, as the template editor saves them (RBAR-65 Q15).
+  const pctStepsArb: fc.Arbitrary<RampStep[]> = fc
+    .tuple(fc.integer({ min: 0, max: 1 }), fc.uniqueArray(fc.integer({ min: 1, max: 99 }), { maxLength: 4 }))
+    .map(([bars, pcts]) => [
+      ...Array.from({ length: bars }, (): RampStep => ({ kind: 'bar' })),
+      ...[...pcts].sort((x, y) => x - y).map((pct): RampStep => ({ kind: 'pct', pct })),
+    ]);
+  const fullCaseArb = fc.record({
+    rt: rigTargetArb,
+    u: unitArb,
+    steps: fc.oneof(pctStepsArb, fc.constant([...DEFAULT_RAMP])),
+  });
+  const easy = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
+    planEasyRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
+      ceilingKg: displayCeilingKg(t, u),
+    });
+  const isBig = (p: Plate) => p.diameterMm >= RULE.bigDiameterMm;
+  // Totals as map keys, to 1e-6 kg (the iron kg are lbToKg products).
+  const key = (total: number) => Math.round(total * 1e6);
+  // Every Total `rig` can load with at most caps(p) of each Plate within the Sleeve: an
+  // order-free walk over capped multisets (order never changes loadability), cached.
+  const cappedCache = new Map<string, Map<number, number>>();
+  const cappedTotals = (rig: Rig, caps: (p: Plate) => number): Map<number, number> => {
+    const id = `${rig.name}|${rig.inventory.map(caps).join(',')}`;
+    const hit = cappedCache.get(id);
+    if (hit) return hit;
+    const out = new Map<number, number>();
+    const walk = (j: number, kg: number, mm: number) => {
+      if (j === rig.inventory.length) {
+        const total = rig.baselineKg + 2 * kg;
+        out.set(key(total), total);
+        return;
+      }
+      const p = rig.inventory[j];
+      for (let c = 0; c <= caps(p); c++) {
+        if (mm + c * p.widthMm > SLEEVE_MM + 1e-9) break;
+        walk(j + 1, kg + c * p.kg, mm + c * p.widthMm);
+      }
+    };
+    walk(0, 0, 0);
+    cappedCache.set(id, out);
+    return out;
+  };
+  const mostOfOne = (side: readonly Plate[]) =>
+    Math.max(0, ...side.map((p) => side.filter((q) => q === p).length));
+  const sumKg = (side: readonly Plate[]) => side.reduce((x, p) => x + p.kg, 0);
+
+  // Small rigs the brute force can exhaust: a few Plates of each set (the Inventory's
+  // own Plate objects, so Plate identity -- what a move compares -- is shared).
+  const pick = (set: 'comp' | 'training', keep: (p: Plate) => boolean) =>
+    PLATE_SETS[set].inventory.filter(keep);
+  const SMALL_RIGS: readonly Rig[] = [
+    { set: 'comp' as const, barKg: 20, collarKg: 0, inventory: pick('comp', (p) => [20, 10, 5, 2.5].includes(p.kg)) },
+    { set: 'comp' as const, barKg: 20, collarKg: 2.5, inventory: pick('comp', (p) => [15, 5, 2.5].includes(p.kg)) },
+    { set: 'comp' as const, barKg: 15, collarKg: 0, inventory: pick('comp', (p) => [25, 10, 5].includes(p.kg)) },
+    { set: 'comp' as const, barKg: 20, collarKg: 0, inventory: pick('comp', (p) => [25, 15, 1].includes(p.kg)) },
+    { set: 'training' as const, barKg: lbToKg(45), collarKg: 0, inventory: pick('training', (p) => ['45', '25', '10', '5'].includes(p.label!)) },
+  ].map((r) => ({ ...r, baselineKg: r.barKg + 2 * r.collarKg, name: `small ${r.set} ${r.inventory.map((p) => p.label ?? p.kg).join('/')} collar ${r.collarKg}` }));
+  const smallCaseArb = fc
+    .constantFrom(...SMALL_RIGS)
+    .chain((rig) =>
+      fc.record({
+        rig: fc.constant(rig),
+        t: fc.oneof(
+          fc.integer({ min: 0, max: 14000 }).map((c) => c / 100),
+          fc.constantFrom(...achievableTotals(rig).filter((x) => x <= 140)),
+        ),
+        u: unitArb,
+        steps: fc.oneof(fc.constant([...DEFAULT_RAMP]), pctStepsArb),
+      }),
+    );
+  type Row = { kind: string; targetKg: number; side: readonly Plate[]; total: number };
+  const costOf = (rows: readonly Row[], tol: number) =>
+    oracleStationCost(
+      rows.map((r) => r.side),
+      rows.map((r) => r.total),
+      rows.map((r) => (r.kind === 'warmup' ? r.targetKg : null)),
+      rows.map((r) => r.kind),
+      tol,
+      RULE,
+    );
+
+  it("the planner's cost equals the brute-force minimum on small Inventories (ADR-0015 as amended, station rule)", () => {
+    fc.assert(
+      fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+        const cost = costOf(got.rows, tol);
+        cost.forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
+        expect(got.cost).toBeCloseTo(cost[2], 6);
+      }),
+      { seed: SEED, numRuns: 150 },
+    );
+  });
+
+  it('no small Plate sits inside a big one, and small Plates go heaviest-first (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        for (const row of easy(rig, t, u, steps).rows) {
+          const firstSmall = row.side.findIndex((p) => !isBig(p));
+          if (firstSmall < 0) continue;
+          const outside = row.side.slice(firstSmall);
+          expect(outside.some(isBig)).toBe(false);
+          outside.forEach((p, i) => i > 0 && expect(outside[i - 1].kg).toBeGreaterThanOrEqual(p.kg));
+        }
+      }),
+      rampOpts,
+    );
+  });
+
+  it('no size exceeds PLATES_PER_SIZE per Side unless the Working Total needs more, and then no more than Decode\'s own Side uses (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        if (Math.max(...got.rows.map((r) => mostOfOne(r.side))) <= PLATES_PER_SIZE) return;
+        // A raised cap: 2 of each must not load the Working Total within the Sleeve (an
+        // order-free capped walk), and no Plate goes past its count in Decode's own Side.
+        const work = got.rows[got.rows.length - 1];
+        expect(cappedTotals(rig, () => RULE.cap).has(key(work.total))).toBe(false);
+        const own = got.working.primary.side;
+        for (const r of got.rows) {
+          for (const p of r.side) {
+            const n = r.side.filter((q) => q === p).length;
+            expect(n).toBeLessThanOrEqual(Math.max(PLATES_PER_SIZE, own.filter((q) => q === p).length));
+          }
+        }
+      }),
+      rampOpts,
+    );
+    fc.assert(
+      fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const caps = oracleCaps(rig, got.rows[got.rows.length - 1].total, RULE);
+        for (const r of got.rows) {
+          for (const p of r.side) expect(r.side.filter((q) => q === p).length).toBeLessThanOrEqual(caps(p));
+        }
+      }),
+      { seed: SEED, numRuns: 60 },
+    );
+  });
+
+  it('the Working Total equals the at-or-under Total as read; only its Side may differ (ADR-0015 as amended, ADR-0003)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const solved = decodeWithin(t, displayCeilingKg(t, u), rig.baselineKg, rig.inventory);
+        const last = got.rows[got.rows.length - 1];
+        expect(last.kind).toBe('working');
+        expect(last.total).toBeCloseTo(solved.primary.total, 9);
+        expect(got.working).toEqual(solved);
+      }),
+      rampOpts,
+    );
+  });
+
+  it('every Warm-up set is within the band of its percentage unless no loadable Total in the band can climb to it (ADR-0015 as amended)', () => {
+    const check = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[], small: boolean) => {
+        const got = easy(rig, t, u, steps);
+        const work = got.rows[got.rows.length - 1].total;
+        const tol = Math.max(RULE.band * work, Math.min(...rig.inventory.map((p) => p.kg)));
+        // The caps: brute force on a small rig; on a full one, 2 of each when that loads
+        // the Working Total, else Decode's own counts (an order-free capped walk).
+        const own = got.working.primary.side;
+        const caps: (p: Plate) => number = small
+          ? oracleCaps(rig, work, RULE)
+          : cappedTotals(rig, () => RULE.cap).has(key(work))
+            ? () => RULE.cap
+            : (p) => Math.max(RULE.cap, own.filter((q) => q === p).length);
+        const loadable = small
+          ? legalSides(rig.inventory, RULE, caps).map((s) => rig.baselineKg + 2 * sumKg(s))
+          : [...cappedTotals(rig, caps).values()];
+        got.rows.forEach((row, i) => {
+          if (row.kind !== 'warmup') return;
+          if (Math.abs(row.total - row.targetKg) <= tol + 1e-9) return;
+          const floor = Math.max(rig.baselineKg, i > 0 ? got.rows[i - 1].total : -Infinity);
+          const forced = !loadable.some(
+            (x) => x >= floor - 1e-9 && x <= work + 1e-9 && Math.abs(x - row.targetKg) <= tol + 1e-9,
+          );
+          expect(forced).toBe(true);
+        });
+    };
+    fc.assert(fc.property(smallCaseArb, ({ rig, t, u, steps }) => check(rig, t, u, steps, true)), { seed: SEED, numRuns: 150 });
+    fc.assert(fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => check(rig, t, u, steps, false)), rampOpts);
+  });
+
+  it('the pruned search reaches the brute-force minimum on the full iron set (ADR-0015 as amended, station rule)', () => {
+    // 6 iron sizes are 729 capped multisets, past EXHAUSTIVE_LIMIT: this is the pruned
+    // path. Only the 45 is big, so the oracle stays tractable up to 100 kg.
+    const ironRigs = RIGS.filter((r) => r.set === 'training');
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...ironRigs).chain((rig) => fc.record({
+          rig: fc.constant(rig),
+          t: fc.constantFrom(...achievableTotals(rig).filter((x) => x <= 100)),
+          u: unitArb,
+          steps: fc.oneof(fc.constant([...DEFAULT_RAMP]), pctStepsArb),
+        })),
+        ({ rig, t, u, steps }) => {
+          const got = easy(rig, t, u, steps);
+          const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+          costOf(got.rows, tol).forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
+        },
+      ),
+      { seed: SEED, numRuns: 40 },
+    );
+  }, 60000);
+
+  it('the search never falls back to planRamp\'s own Ramp (degraded) (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        expect(easy(rig, t, u, steps).degraded).toBe(false);
+      }),
+      rampOpts,
+    );
+    fc.assert(
+      fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
+        expect(easy(rig, t, u, steps).degraded).toBe(false);
+      }),
+      { seed: SEED, numRuns: 60 },
+    );
+  });
+
+  it('each row carries its stack moves from the row before, and they add up (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        let prev: readonly Plate[] = [];
+        let sum = 0;
+        for (const row of got.rows) {
+          expect(row.moves.cost).toBeCloseTo(oracleMoveCost(prev, row.side, RULE), 9);
+          const kept = prev.slice(0, prev.length - row.moves.off.length);
+          expect([...kept, ...row.moves.on]).toEqual(row.side);
+          sum += row.moves.cost;
+          prev = row.side;
+        }
+        expect(got.totalMoves).toBeCloseTo(sum, 9);
+      }),
+      rampOpts,
+    );
+  });
+
+  it('Totals never decrease, Warm-up sets stay at or under the Working set, bare-Bar rows stay bare, and every Side fits the Sleeve (ADR-0015 as amended, ADR-0012)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const work = got.rows[got.rows.length - 1].total;
+        got.rows.forEach((row, i) => {
+          if (i > 0) expect(row.total).toBeGreaterThanOrEqual(got.rows[i - 1].total - EPS);
+          const baseline = row.collars ? rig.baselineKg : rig.barKg;
+          expect(row.total).toBeCloseTo(totalKg(row.side, baseline), 9);
+          expect(sideWidthMm(row.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+          expect(fromInventory(row.side, rig)).toBe(true);
+          if (row.kind === 'warmup') expect(row.total).toBeLessThanOrEqual(work + EPS);
+          if (row.kind === 'bar') {
+            expect(row.side).toEqual([]);
+            expect(row.total).toBe(rig.barKg);
+          }
+          if (i > 0) expect(row.sameAsPrevious).toBe(Math.abs(row.total - got.rows[i - 1].total) <= EPS);
+        });
+      }),
+      rampOpts,
+    );
+  });
+});
+
 describe('Units and conversion properties (ADR-0006, ADR-0010)', () => {
   const kgArb = fc.oneof(
     fc.integer({ min: 0, max: 100_000 }).map((c) => c / 100),
@@ -453,7 +1119,7 @@ describe('Encode properties (ADR-0005, ADR-0012)', () => {
     );
   });
 
-  it('Encode reads Bar + 2 x Collar + 2 x Side Load, and Decode of that Total reaches it (with no more Plates on Competition) (ADR-0005, ADR-0008, ADR-0003)', () => {
+  it('Encode reads Bar + 2 x Collar + 2 x Side Load, and Decode of that Total reaches it with no more Plates (ADR-0005, ADR-0008, ADR-0003)', () => {
     fc.assert(
       fc.property(rigTapsArb, ({ rig, taps }) => {
         let side: readonly Plate[] = [];
@@ -462,10 +1128,9 @@ describe('Encode properties (ADR-0005, ADR-0012)', () => {
         expect(t).toBeCloseTo(rig.barKg + 2 * rig.collarKg + 2 * sideLoadKg(side), 9);
         const { primary } = decode(t, rig.baselineKg, rig.inventory);
         expect(primary.total).toBeCloseTo(t, 9);
-        // Fewest Plates is only guaranteed on Competition today -- the Training gap is
-        // pinned by the RBAR-69 it.fails above (a hand-built 35+35+35 beats Decode's
-        // 45+45+10+5).
-        if (rig.set === 'comp') expect(primary.side.length).toBeLessThanOrEqual(side.length);
+        // On every set since RBAR-69 (a hand-built 35+35+35 used to beat Decode's
+        // 45+45+10+5 on iron).
+        expect(primary.side.length).toBeLessThanOrEqual(side.length);
       }),
       opts,
     );
@@ -513,6 +1178,110 @@ describe('Recents properties (ADR-0009)', () => {
     );
   });
 
+  // A reachable row: any push sequence (the only way the live row is ever built).
+  const rowArb = fc
+    .array(targetLikeArb, { maxLength: 30 })
+    .map((pushes) => pushes.reduce<readonly number[]>((l, t) => pushRecent(l, t), []));
+  const isValidRow = (list: readonly number[]): void => {
+    expect(list.length).toBeLessThanOrEqual(MAX_RECENTS);
+    expect(new Set(list).size).toBe(list.length);
+    for (const v of list) {
+      expect(isRememberable(v)).toBe(true);
+      expect(Number(v.toFixed(2))).toBe(v);
+    }
+  };
+
+  it('removing a Target drops exactly that chip, keeps the rest in order, and leaves a valid row (ADR-0009 RBAR-73)', () => {
+    // Half the time a held Target (by its index), so the "found it" path is exercised as
+    // hard as the "not held" one.
+    const caseArb = rowArb.chain((list) =>
+      fc.oneof(
+        targetLikeArb.map((t) => ({ list, t })),
+        list.length > 0
+          ? fc.nat({ max: list.length - 1 }).map((i) => ({ list, t: list[i] }))
+          : fc.constant({ list, t: 100 }),
+      ),
+    );
+    fc.assert(
+      fc.property(caseArb, ({ list, t }) => {
+        const next = removeRecent(list, t);
+        const stored = Number(t.toFixed(2));
+        expect(next).toEqual(list.filter((v) => v !== stored));
+        expect(next).not.toContain(stored);
+        isValidRow(next);
+      }),
+      opts,
+    );
+  });
+
+  it('Undo restores a removed chip in place: restore(remove(row, t), t, i) is the row (ADR-0009 RBAR-73)', () => {
+    fc.assert(
+      fc.property(rowArb, fc.nat(), (list, n) => {
+        fc.pre(list.length > 0);
+        const i = n % list.length;
+        const t = list[i];
+        expect(restoreRecent(removeRecent(list, t), t, i)).toEqual(list);
+      }),
+      opts,
+    );
+  });
+
+  it('restoring any subset of pending removals, in any order, gives the row minus the un-restored ones (ADR-0009 RBAR-73)', () => {
+    // The rail's model while removals are pending: the row frozen into slots. Each
+    // removal and each restore uses the slot's list index -- the live slots before it --
+    // exactly as <rack-recents> hands them to the console.
+    const caseArb = rowArb.chain((row) =>
+      fc
+        .shuffledSubarray([...row.keys()])
+        .chain((removedIdx) =>
+          fc
+            .shuffledSubarray(removedIdx)
+            .map((restoredIdx) => ({ row, removedIdx, restoredIdx })),
+        ),
+    );
+    fc.assert(
+      fc.property(caseArb, ({ row, removedIdx, restoredIdx }) => {
+        const live = row.map(() => true);
+        const at = (slot: number) => live.slice(0, slot).filter(Boolean).length;
+        let list = row;
+        for (const slot of removedIdx) {
+          expect(list.indexOf(row[slot])).toBe(at(slot)); // the index the rail sends
+          list = removeRecent(list, row[slot]);
+          live[slot] = false;
+        }
+        for (const slot of restoredIdx) {
+          list = restoreRecent(list, row[slot], at(slot));
+          live[slot] = true;
+        }
+        const restored = new Set(restoredIdx);
+        expect(list).toEqual(row.filter((_, i) => !removedIdx.includes(i) || restored.has(i)));
+        isValidRow(list);
+      }),
+      opts,
+    );
+  });
+
+  it('a restore never duplicates, never passes the cap, and never admits a non-loadable Target (ADR-0009 RBAR-73)', () => {
+    fc.assert(
+      fc.property(rowArb, targetLikeArb, fc.integer({ min: -10, max: 20 }), (list, t, i) => {
+        const next = restoreRecent(list, t, i);
+        isValidRow(next);
+        const stored = Number(t.toFixed(2));
+        if (!isRememberable(stored) || list.includes(stored)) {
+          expect(next).toEqual(list);
+          return;
+        }
+        // Below the cap the Target always comes back; at the cap at most one entry (the
+        // oldest, or the restored one itself when placed last) falls off the end.
+        if (list.length < MAX_RECENTS) expect(next).toContain(stored);
+        const others = next.filter((v) => v !== stored);
+        expect(others).toEqual(list.slice(0, others.length));
+        expect(others.length).toBeGreaterThanOrEqual(list.length - 1);
+      }),
+      opts,
+    );
+  });
+
   it('a corrupt persisted row never throws and loads as a valid row (ADR-0009)', () => {
     fc.assert(
       fc.property(
@@ -548,6 +1317,287 @@ describe('Plate set properties (ADR-0010)', () => {
       // The oracle asserts the grid when it builds; reaching here means it held.
       expect(achievableTotals(RIGS.find((r) => r.set === key)!).length).toBeGreaterThan(0);
     }
+  });
+});
+
+// Share links (RBAR-50, ADR-0014). States are built only through the real core paths
+// (an offered set, one of its Bars, an offered Collar, a Side Load grown by addPlate so
+// the Sleeve caps it), so the round-trip is checked over exactly the loads the app can
+// show. The fuzzers then aim arbitrary and grammar-shaped text at the parser.
+describe('Share link properties (ADR-0014)', () => {
+  const modeArb = fc.constantFrom<LinkMode>('decode', 'encode');
+
+  // A deterministic shuffle keyed by generated noise (fast-check shrinks the noise, not
+  // the order), shared by the generators that reorder pairs and Plates.
+  const shuffleBy = <T,>(noise: readonly number[], xs: readonly T[]): T[] =>
+    xs
+      .map((x, i) => ({ x, k: noise[i % noise.length]! + i / 1000 }))
+      .sort((a, b) => a.k - b.k)
+      .map((e) => e.x);
+
+  const linkStateArb: fc.Arbitrary<LinkState> = fc
+    .record({
+      key: fc.constantFrom(...PLATE_SET_KEYS),
+      barIx: fc.nat(),
+      collarKg: fc.constantFrom(...COLLAR_OPTIONS),
+      unit: unitArb,
+      mode: modeArb,
+      picks: fc.array(fc.nat(), { maxLength: 40 }),
+      cents: fc.option(fc.integer({ min: 1, max: MAX_TARGET_KG * 100 }), { nil: undefined }),
+    })
+    .map(({ key, barIx, collarKg, unit, mode, picks, cents }): LinkState => {
+      const set = PLATE_SETS[key];
+      const side = picks.reduce<readonly Plate[]>(
+        (acc, i) => addPlate(acc, set.inventory[i % set.inventory.length]!),
+        [],
+      );
+      const barKg = set.bars[barIx % set.bars.length]!.kg;
+      const base = { set: key, barKg, collarKg, unit, mode, side };
+      return mode === 'decode' && cents !== undefined ? { ...base, targetKg: cents / 100 } : base;
+    });
+
+  // Every invariant a parsed state must hold -- the parser's output contract.
+  function expectValid(s: LinkState): void {
+    expect(isOfferedPlateSet(s.set)).toBe(true);
+    const set = PLATE_SETS[s.set];
+    expect(set.bars.map((b) => b.kg)).toContain(s.barKg);
+    expect(isOfferedCollar(s.collarKg)).toBe(true);
+    expect(UNITS).toContain(s.unit);
+    expect(['decode', 'encode']).toContain(s.mode);
+    for (const p of s.side) expect(set.inventory).toContain(p);
+    for (let i = 1; i < s.side.length; i++) {
+      expect(s.side[i - 1]!.kg).toBeGreaterThanOrEqual(s.side[i]!.kg);
+    }
+    expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+    // Read the Target off the runtime object, not the narrowed type, so an encode load
+    // that somehow carried one would still be caught.
+    const t = (s as { readonly targetKg?: number }).targetKg;
+    if (t !== undefined) {
+      expect(s.mode).toBe('decode');
+      expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeGreaterThan(0);
+      expect(t).toBeLessThanOrEqual(MAX_TARGET_KG);
+      expect(Number(t.toFixed(2))).toBe(t);
+    }
+  }
+
+  // Grammar-shaped links: one optional value per key, MOSTLY valid for the chosen set
+  // (so a real share is accepted and the post-acceptance checks bite), salted with
+  // near-misses (the other set's faces and Bar stamps, counts 0 and past 99, piles past
+  // the Sleeve, t with m=p, junk values, a duplicate key), in a shuffled order. Some
+  // salt is tolerated, not rejected (`c=2.50`, a stamp both sets offer): the checks
+  // below assert validity of whatever is accepted, not which inputs are rejected.
+  const allFaces = [
+    ...new Set(
+      [...PLATE_SETS.comp.inventory, ...PLATE_SETS.training.inventory].map(
+        (p) => p.label ?? String(p.kg),
+      ),
+    ),
+  ];
+  const allStamps = ['20kg', '15kg', '5kg', '45lb', '20lb', '20'];
+  const opt = (arb: fc.Arbitrary<string>) => fc.option(arb, { nil: undefined, freq: 20 });
+  const often = <T,>(good: fc.Arbitrary<T>, bad: fc.Arbitrary<T>): fc.Arbitrary<T> =>
+    fc.oneof({ arbitrary: good, weight: 15 }, { arbitrary: bad, weight: 1 });
+  const grammarArb = fc.constantFrom(...PLATE_SET_KEYS).chain((key) => {
+    const set = PLATE_SETS[key];
+    const ownFaces = set.inventory.map((p) => p.label ?? String(p.kg));
+    const ownStamps = set.bars.map((b) => (b.unit === 'lb' ? `${Math.round(kgToLb(b.kg))}lb` : `${b.kg}kg`));
+    const plateTokenArb = fc
+      .tuple(
+        often(
+          fc.option(fc.integer({ min: 1, max: 3 }), { nil: undefined }),
+          fc.constantFrom<number | undefined>(0, 99, 100, 120),
+        ),
+        often(fc.constantFrom(...ownFaces), fc.constantFrom(...allFaces, 'x', '')),
+      )
+      .map(([n, face]) => (n === undefined ? face : `${n}x${face}`));
+    return fc
+      .tuple(
+        fc.record({
+          v: opt(often(fc.constant('1'), fc.constantFrom('2', '', '01'))),
+          s: opt(often(fc.constant(key), fc.constantFrom('x', '__proto__'))),
+          b: opt(often(fc.constantFrom(...ownStamps), fc.constantFrom(...allStamps))),
+          m: opt(often(fc.constantFrom('w', 'p'), fc.constant('q'))),
+          c: opt(often(fc.constantFrom('0', '2.5'), fc.constantFrom('5', '', '2.50', '0x0'))),
+          u: opt(often(fc.constantFrom('kg', 'lb'), fc.constant('st'))),
+          p: opt(fc.array(plateTokenArb, { maxLength: 4 }).map((ts) => ts.join(','))),
+          t: opt(
+            often(
+              fc.integer({ min: 1, max: 100_000 }).map((c) => String(c / 100)),
+              fc.oneof(fc.integer({ min: -500, max: 110_000 }).map((c) => String(c / 100)), fc.string()),
+            ),
+          ),
+          zz: opt(fc.string()),
+        }),
+        often(fc.constant(undefined), fc.constantFrom('v=1', `s=${key}`, 'p=25')),
+        fc.array(fc.nat(), { minLength: 12, maxLength: 12 }),
+      )
+      .map(([rec, dup, noise]) =>
+        shuffleBy(
+          noise,
+          [...Object.entries(rec).map(([k, v]) => (v === undefined ? undefined : `${k}=${v}`)), dup]
+            .filter((kv): kv is string => kv !== undefined),
+        ).join('&'),
+      );
+  });
+
+  it('round-trips: parseLink(serializeLink(s)) is s for every showable load (ADR-0014)', () => {
+    fc.assert(
+      fc.property(linkStateArb, (s) => {
+        expect(parseLink(serializeLink(s)!, 'kg')).toEqual(s);
+      }),
+      opts,
+    );
+  });
+
+  it('canonical form is a fixed point: serializeLink(parseLink(x)) === x for every canonical x (ADR-0014)', () => {
+    fc.assert(
+      fc.property(linkStateArb, (s) => {
+        const x = serializeLink(s)!;
+        expect(serializeLink(parseLink(x, 'kg')!)).toBe(x);
+      }),
+      opts,
+    );
+  });
+
+  it('canonicalization is idempotent: a reshuffled, defaulted, padded link parses to the same load (ADR-0014 ignore-unknown-keys, re-sort)', () => {
+    fc.assert(
+      fc.property(
+        linkStateArb,
+        fc.array(fc.nat(), { minLength: 50, maxLength: 50 }),
+        fc.boolean(),
+        fc.boolean(),
+        (s, noise, dropDefaults, addUnknown) => {
+          // Rewrite the canonical link: every Plate as a single token in a shuffled
+          // order, defaulted keys dropped, unknown keys added, the pairs shuffled.
+          const shuffle = <T,>(xs: readonly T[]): T[] => shuffleBy(noise, xs);
+          const faces = s.side.map((p) => p.label ?? String(p.kg));
+          const pairs = serializeLink(s)!
+            .split('&')
+            .filter((kv) => !kv.startsWith('p='))
+            .filter((kv) => !(dropDefaults && (kv === 'c=0' || kv === `u=${s.unit}`)));
+          if (!(dropDefaults && faces.length === 0)) pairs.push(`p=${shuffle(faces).join(',')}`);
+          if (addUnknown) pairs.push('zz=later', 'q');
+          const parsed = parseLink(shuffle(pairs).join('&'), s.unit);
+          expect(parsed).toEqual(s);
+          const canon = serializeLink(parsed!);
+          expect(canon).toBe(serializeLink(s));
+          expect(serializeLink(parseLink(canon!, 'kg')!)).toBe(canon);
+        },
+      ),
+      opts,
+    );
+  });
+
+  it('never throws on arbitrary text, and yields null or a fully valid load (ADR-0014 all-or-nothing)', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.string(),
+          fc.string({ unit: 'binary' }),
+          grammarArb,
+          linkStateArb.map((s) => serializeLink(s)!.slice(0, -1)),
+        ),
+        unitArb,
+        (x, primary) => {
+          const s = parseLink(x, primary);
+          if (s === null) return;
+          expectValid(s);
+          // With no `u` in the link, the load reads in the recipient's Primary unit.
+          const raw = x.startsWith('#') ? x.slice(1) : x;
+          if (!raw.split('&').some((seg) => seg === 'u' || seg.startsWith('u='))) {
+            expect(s.unit).toBe(primary);
+          }
+        },
+      ),
+      { ...opts, numRuns: 1000 },
+    );
+  });
+
+  it('every accepted Side Load fits the Sleeve and every accepted Bar is one its set offers (ADR-0014, ADR-0012)', () => {
+    let accepted = 0;
+    fc.assert(
+      fc.property(grammarArb, (x) => {
+        const s = parseLink(x, 'kg');
+        if (s === null) return;
+        accepted++;
+        expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+        expect(PLATE_SETS[s.set].bars.map((b) => b.kg)).toContain(s.barKg);
+      }),
+      { ...opts, numRuns: 2000 },
+    );
+    // The grammar must actually reach acceptance, or this property is vacuous (the
+    // fixed seed accepts ~22%; a tenth is the floor).
+    expect(accepted).toBeGreaterThan(200);
+  });
+
+  it('a whole-lb Target reads back as the same whole pounds after the trip (ADR-0014, ADR-0006)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: Math.floor(kgToLb(MAX_TARGET_KG)) }), (n) => {
+        const s: LinkState = {
+          set: 'training',
+          barKg: PLATE_SETS.training.defaultBarKg,
+          collarKg: 0,
+          unit: 'lb',
+          mode: 'decode',
+          side: [],
+          targetKg: lbToKg(n),
+        };
+        const got = parseLink(serializeLink(s)!, 'kg');
+        expect(got?.mode === 'decode' && shownIn(got.targetKg!, 'lb')).toBe(n);
+      }),
+      opts,
+    );
+  });
+
+  it('the serializer refuses exactly the loads it cannot represent, and everything it writes opens to the same load (ADR-0014)', () => {
+    // Loosely built loads: any Bar weight either set offers (plus an off-menu one), any
+    // Collar-ish weight, Plates drawn from BOTH sets in any order and any number, any
+    // Target double -- so foreign Plates, unsorted or over-Sleeve Sides, off-menu Bars
+    // and unrepresentable Targets are all hit.
+    const anyPlates = [...PLATE_SETS.comp.inventory, ...PLATE_SETS.training.inventory];
+    const allBarKgs = [...PLATE_SETS.comp.bars, ...PLATE_SETS.training.bars].map((b) => b.kg);
+    const looseArb = fc
+      .record({
+        key: fc.constantFrom(...PLATE_SET_KEYS),
+        barKg: fc.constantFrom(...allBarKgs, 20.4),
+        collarKg: fc.constantFrom(0, 2.5, 5),
+        unit: unitArb,
+        mode: modeArb,
+        picks: fc.array(fc.nat(), { maxLength: 12 }),
+        own: fc.boolean(),
+        sorted: fc.boolean(),
+        targetKg: fc.option(
+          fc.oneof(fc.double({ min: -10, max: 1100 }), fc.constantFrom(0.004, 0.005, 1000, 1000.004, 1000.006)),
+          { nil: undefined },
+        ),
+      })
+      .map(({ key, barKg, collarKg, unit, mode, picks, own, sorted, targetKg }) => {
+        const pool = own ? PLATE_SETS[key].inventory : anyPlates;
+        const drawn = picks.map((i) => pool[i % pool.length]!);
+        const side = sorted ? [...drawn].sort((a, b) => b.kg - a.kg) : drawn;
+        return { set: key, barKg, collarKg, unit, mode, side, targetKg } as unknown as LinkState;
+      });
+    fc.assert(
+      fc.property(looseArb, (s) => {
+        const set = PLATE_SETS[s.set];
+        const raw = s as unknown as { readonly targetKg?: number; readonly collarKg: number };
+        const t = s.mode === 'decode' && raw.targetKg !== undefined ? Number(raw.targetKg.toFixed(2)) : undefined;
+        const representable =
+          set.bars.some((b) => b.kg === s.barKg) &&
+          isOfferedCollar(raw.collarKg) &&
+          s.side.every((p) => set.inventory.includes(p)) &&
+          s.side.every((p, i) => i === 0 || s.side[i - 1]!.kg >= p.kg) &&
+          sideWidthMm(s.side) <= SLEEVE_MM + EPS &&
+          (t === undefined || (Number.isFinite(t) && t > 0 && t <= MAX_TARGET_KG));
+        const x = serializeLink(s);
+        expect(x !== null).toBe(representable);
+        if (x === null) return;
+        const { targetKg: _dropped, ...rest } = s as LinkState & { targetKg?: number };
+        expect(parseLink(x, 'kg')).toEqual(t === undefined ? rest : { ...rest, targetKg: t });
+      }),
+      { ...opts, numRuns: 1000 },
+    );
   });
 });
 

@@ -64,8 +64,17 @@ _Avoid_: sum, result.
 
 **Inventory**:
 The Plates available to draw from when decoding a Target. Defaults to an unlimited
-standard Eleiko set; will later support finite pair-counts for a home gym.
+standard Eleiko set. Each size may carry a Plate limit (ADR-0016), which makes it a
+finite Inventory.
 _Avoid_: stock, supply.
+
+**Plate limit**:
+How many pairs of one size the lifter has: all (unlimited, the default), N pairs,
+or none. Counted in pairs because loading is symmetric (one per Side), so N pairs
+is at most N of that Plate on a Side. Decode never loads past a Plate limit and
+picks among the loads the limits allow by the usual rule (ADR-0003). The UI may say
+"pairs" and "none here".
+_Avoid_: stock, missing, excluded, out, unavailable.
 
 **Plate set**:
 The family of Plates (with its matching Bar and native Unit) the lifter is loading:
@@ -93,12 +102,50 @@ The other Unit, shown small alongside the Primary for reference. The lifter may
 hide it to read in just one Unit.
 _Avoid_: alternate unit.
 
+**Working set**:
+The top set of a session -- the heaviest load the lifter trains at. Its Target is
+the one the lifter enters for a Ramp; its Total is Decode's at-or-under answer
+(ADR-0003) and is the Ramp's 100%. The UI may label its Target "working weight"
+(plain-language copy), but in code and docs it is the Working set's Target.
+_Avoid_: top set, work set, working weight (as a glossary term).
+
+**Warm-up set**:
+A lighter set before the Working set, specified as a percentage of the Working
+set's Total (or as the bare Bar). Its Total is the nearest loadable Total to that
+percentage, ties down (ADR-0015) -- unlike Decode, it may land slightly over. In
+Warm up mode the station rule may move it within 5% of the Working Total of that
+percentage, so the Ramp is easy to load.
+_Avoid_: ramp-up set, light set, feeder set.
+
+**Ramp**:
+The ordered list of Warm-up sets that builds to a Working set, with the Working set
+as its last row. Totals never decrease down a Ramp. The default is Caitlin's
+deadlift ramp: Bar x7, 50% x7, 70%, 90%, then the Working set. The mode that shows
+it is labelled **"Warm up"** in the UI.
+_Avoid_: plan, pyramid, progression, warm-up ladder.
+
+**Plate move**:
+Taking one Plate off a Side or putting one on, between two sets of a Ramp. A Side is
+a stack, inside to outside, so changing an inside Plate costs every Plate outside it.
+Taking off a **big Plate** (full diameter, 450 mm: Competition 25-10 kg, the iron
+45 lb) costs most. Big Plates may go on in any order; every other Plate goes outside
+them, heaviest-first (ADR-0015, the station rule).
+_Avoid_: swap, step, change (alone).
+
+**Station**:
+The Plates a lifter gathers beside the rack for one Ramp: for each size, the most of
+it any one set needs on a Side. The station rule plans a Ramp to need a small one
+(ADR-0015).
+_Avoid_: pile, stash, plate tree.
+
 ## Relationships
 
 - A **Bar** plus a symmetric **Side Load** on each **Side** produces a **Total**.
 - A **Side Load** is built from **Plates** drawn from the **Inventory**.
 - **Decode**: a **Target** maps to a **Side Load** (and the **Total** it achieves).
 - **Encode**: a tapped-on **Side Load** maps to its **Total**.
+- A **Ramp** is **Warm-up sets** then a **Working set**; each Warm-up set's Total is
+  a percentage of the Working set's Total, rounded to a loadable one.
 - A **Target** and a **Total** are weights; each can be read in either **Unit**, but
   the **Plates** that build them are always kilograms.
 

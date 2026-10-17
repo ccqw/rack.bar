@@ -13,6 +13,11 @@
 /** The Unit a weight is shown and entered in (CONTEXT.md). kg is canonical internally. */
 export type Unit = 'kg' | 'lb';
 
+/** True when `u` is a Unit -- the guard a boundary (a share link, ADR-0014) uses. */
+export function isUnit(u: string): u is Unit {
+  return u === 'kg' || u === 'lb';
+}
+
 /** Exact pounds-to-kilograms factor (ADR-0006): 1 lb = 0.45359237 kg. */
 export const KG_PER_LB = 0.45359237;
 

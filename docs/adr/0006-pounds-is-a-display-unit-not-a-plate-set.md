@@ -92,3 +92,9 @@ What still stands from this ADR, carried into ADR-0010 unchanged: the Primary/
 Secondary lifter model, the exact 0.45359237 factor with whole-pound lb rounding,
 the 5 lb / 1 kg steppers, and **displayed-unit exactness** (the under/over notes key
 off the rounded numbers on screen, not the raw kg delta).
+
+## 2026-10-16 -- the greedy solver is gone (RBAR-69)
+
+Read "the greedy solver" above as "the solver core": kg stays canonical, but Decode
+now picks Plates with an exact search (fewest Plates, then heaviest-first). See the
+ADR-0003 amendment of this date.

@@ -81,3 +81,45 @@ Target *as read* in the active unit -- the console solves to the top of the
 reading's rounding bucket (`decodeWithin` + `displayCeilingKg`), so typing back a
 displayed Total lands on it. The raw-kg overshoot is under one displayed unit and
 never reads as over. See the ADR-0010 amendment.
+
+## 2026-10-16 -- fewest Plates is exact on every Inventory (RBAR-69)
+
+"Among loadouts reaching the same Total, the canonical pick is the fewest plates,
+loaded biggest-first" was implemented as a heaviest-first greedy pass, which only
+delivers fewest Plates on a set that is canonical for Plate count. Eleiko is; the
+iron Training set {45,35,25,10,5,2.5} lb is not. 165 lb on the 45 lb Bar decoded to
+45 + 10 + 5 per Side when 35 + 25 reaches the same Total with one Plate fewer -- 14
+Totals per Training Bar and Collar setting (found by the RBAR-66 planning pass and
+pinned as an expected failure by the RBAR-62 property suite). ADR-0010's oracle had
+checked only the Total, never the count. Caitlin's call: fix it.
+
+The rule, now stated precisely and exact for every Inventory (reduced ones included):
+
+1. Only stacks that fit the Sleeve are candidates (ADR-0012) -- a filter, not a
+   ranking key.
+2. The Total comes first: the greatest one at or under the Target (unchanged).
+3. Then the fewest Plates reaching it.
+4. Then, among equally few, heaviest-first: compare the heaviest Plate, then the next.
+
+The round-up `over` is picked the same way at the least loadable Total above the
+Target. The search lives in `lib/sideloads.ts` (`sideAtOrUnder`, `sideAbove`,
+`canonicalSide`, and the ranked, lazy `sideLoads` that RBAR-66's alternates will take
+from), replacing the greedy fill, its sleeve-band search and the RBAR-62 refill loop.
+
+Where greedy was already fewest-Plate its stack is also the heaviest-first one, so
+nothing else moved: every Competition load is identical (0 changes over 8,148 recorded
+primary/round-up/as-read cases), and on Training the only changes are those 14 Totals
+per rig, each exactly one Plate fewer (a 45 x m + 10 + 5 Side becomes
+45 x (m - 1) + 35 + 25, with a 2.5 riding along on the next Total). No Total, no
+round-up presence or Total, and no status pill changes anywhere. This knowingly
+diverges from the handoff prototype's greedy `engine.js` on iron; the old greedy stack
+returns as one of RBAR-66's "Another way" alternates. An exhaustive independent DP
+oracle (`lib/fewest.test.ts`) pins the Plates and their order on both sets, every
+Bar, both Collar settings, both display units, shorter Sleeves, and every single-size
+reduction.
+
+## 2026-10-17 -- scope: Decode and the Working set, not warm-ups (RBAR-65)
+
+This rule governs Decode and, through it, a Ramp's Working set, which is still the
+at-or-under solve. Warm-up sets are carved out: they round to the nearest loadable
+Total, ties down, between the previous row and the Working set. See ADR-0015.

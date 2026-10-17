@@ -9,6 +9,7 @@ import {
   sideWidthMm,
   atSleeveCapacity,
   barWithCollars,
+  withLimits,
 } from './plates.ts';
 import { lbToKg, toLbWhole } from './units.ts';
 
@@ -107,7 +108,7 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
     });
 
     it('degrades a non-finite Target to the bare Bar instead of looping forever', () => {
-      // Infinity (e.g. from a "1e999" entry) would spin the greedy loop forever;
+      // Infinity (e.g. from a "1e999" entry) would walk the fill's grid forever;
       // NaN would yield a NaN delta. Both degrade to the bare Bar, zero delta.
       for (const bad of [Infinity, -Infinity, NaN]) {
         const { primary } = decode(bad);
@@ -130,9 +131,9 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
       expect(over!.delta).toBe(0.5); // positive: the deliberate overshoot
     });
 
-    it('finds the fewest-Plate `over`, re-greedying the step (not primary + 0.5)', () => {
+    it('finds the fewest-Plate `over`, re-filling the step (not primary + 0.5)', () => {
       // 142.5 -> primary 142 (61 per Side: 25+25+10+1). The over step is 143
-      // (61.5 per Side): re-greedying collapses the +0.5 carry into a single 1.5
+      // (61.5 per Side): re-filling collapses the +0.5 carry into a single 1.5
       // yellow (25+25+10+1.5, four Plates) rather than tacking on a fifth 0.5.
       const { primary, over } = decode(142.5);
       expect(primary.total).toBe(142);
@@ -236,7 +237,7 @@ describe('decode (at-or-under loading core, ADR-0003)', () => {
 describe('decode against a collar baseline (ADR-0008)', () => {
   // A Standard 2.5 kg collar folds into the effective Bar (barWithCollars): the
   // solver loads from Bar + 2 x collar, so the grid and floor shift up by 5 kg on
-  // a 20 kg Bar, and the loader is otherwise unchanged (greedy, biggest-first).
+  // a 20 kg Bar, and the loader is otherwise unchanged (fewest Plates, biggest-first).
   const collared = barWithCollars(20, 2.5); // 25
 
   it('decodes an exact collared Target into the fewest Plates', () => {
@@ -291,10 +292,10 @@ describe('decode on the iron training set (RBAR-17, ADR-0010)', () => {
     expect(primary.side.filter((p) => p.label === '45').length).toBeLessThanOrEqual(8);
   });
 
-  it('is the GREATEST achievable Total at or under Target (greedy is optimal -- iron is canonical)', () => {
+  it('is the GREATEST achievable Total at or under Target on iron (ADR-0010 sum oracle)', () => {
     // Independent oracle: DP for the best coin sum <= budget, iron lb x2 to stay
-    // integer ([45,35,25,10,5,2.5] lb -> [90,70,50,20,10,5]). If greedy ever lost to
-    // a non-greedy combo this fails -- the regression guard ADR-0010 leans on.
+    // integer ([45,35,25,10,5,2.5] lb -> [90,70,50,20,10,5]). This guards the SUM only;
+    // the Plate count and order are pinned by lib/fewest.test.ts (RBAR-69).
     const coins = [90, 70, 50, 20, 10, 5];
     const N = 360; // budget = (totalLb - 45 Bar), up to 405 lb total
     const best = new Array(N + 1).fill(0);
@@ -344,7 +345,7 @@ describe('the sleeve caps decode (RBAR-31, ADR-0012)', () => {
   });
 
   it('lands exactly on a boundary Target that nearly fills the sleeve', () => {
-    // 365 = 20 Bar + 2 x 172.5; greedy: 6 x 25 (348 mm) + 20 (398) + 2.5 (413).
+    // 365 = 20 Bar + 2 x 172.5: 6 x 25 (348 mm) + 20 (398) + 2.5 (413).
     // Exact hit with 2 mm to spare -- the cap must not turn a fitting stack away.
     const { primary, over } = decode(365);
     expect(primary.side.map((p) => p.kg)).toEqual([25, 25, 25, 25, 25, 25, 20, 2.5]);
@@ -398,7 +399,7 @@ describe('the sleeve caps decode (RBAR-31, ADR-0012)', () => {
     // Independent oracle: minWidth[k] = the narrowest stack summing to k (kg x 2 so
     // the grid is integer). A Side sum is physically achievable iff its NARROWEST
     // realization fits the sleeve; the optimum for a Target is then the greatest
-    // achievable sum at or under the weight budget. Greedy must match it across the
+    // achievable sum at or under the weight budget. Decode must match it across the
     // region where the cap binds -- the regression guard ADR-0012 leans on, the same
     // shape as the iron oracle above.
     const kg2 = ELEIKO_KG.map((p) => Math.round(p.kg * 2));
@@ -476,5 +477,39 @@ describe('decodeWithin (RBAR-60)', () => {
       const { primary } = decodeWithin(read, ceiling, ironBar, IRON_LB);
       expect(primary.total, `${lb} lb read as ${read} kg`).toBeCloseTo(real, 9);
     }
+  });
+});
+
+describe('decode with Plate limits (RBAR-72, ADR-0016)', () => {
+  const kgs = (side: readonly { kg: number }[]) => side.map((p) => p.kg);
+  const every = (n: number) => Object.fromEntries(ELEIKO_KG.map((p) => [String(p.kg), n]));
+
+  it('only one pair of 25s: 140 kg is still exact, as 25 + 20 + 15 per Side', () => {
+    const { primary, over } = decode(140, 20, withLimits(ELEIKO_KG, { '25': 1 }));
+    expect(kgs(primary.side)).toEqual([25, 20, 15]);
+    expect(primary.total).toBe(140);
+    expect(over).toBeUndefined();
+  });
+
+  it('smallest Plate 2.5 kg: 142 kg falls back to 140, with 145 as the opt-in round-up (ADR-0003)', () => {
+    const inv = withLimits(ELEIKO_KG, { '2': 0, '1.5': 0, '1': 0, '0.5': 0 });
+    const { primary, over } = decode(142, 20, inv);
+    expect(kgs(primary.side)).toEqual([25, 25, 10]);
+    expect(primary.delta).toBe(-2);
+    expect(kgs(over!.side)).toEqual([25, 25, 10, 2.5]);
+    expect(over!.total).toBe(145);
+  });
+
+  it('past every pair on hand: the heaviest load the pairs make, and no round-up', () => {
+    const all = ELEIKO_KG.reduce((kg, p) => kg + p.kg, 0); // 82.5 kg per Side
+    const { primary, over } = decode(400, 20, withLimits(ELEIKO_KG, every(1)));
+    expect(primary.total).toBe(20 + 2 * all);
+    expect(over).toBeUndefined();
+  });
+
+  it('every size none: the bare Bar, with no round-up', () => {
+    const { primary, over } = decode(100, 20, withLimits(ELEIKO_KG, every(0)));
+    expect(primary).toEqual({ side: [], total: 20, delta: -80 });
+    expect(over).toBeUndefined();
   });
 });

@@ -56,6 +56,11 @@ describe('groupSide', () => {
     ]);
   });
 
+  it('keeps a warm-up stack in the order given, never re-sorted (ADR-0015 station rule)', () => {
+    const side = [eleiko(10), eleiko(15), eleiko(1)];
+    expect(groupSide(side).map((g) => g.face)).toEqual(['10', '15', '1']);
+  });
+
   it('uses the Plate stamp (label) for iron, its kg for Eleiko', () => {
     expect(groupSide([iron('45'), iron('45'), iron('25')])).toEqual([
       { face: '45', color: 'iron', emoji: IRON_SQ, count: 2 },
