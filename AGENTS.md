@@ -14,10 +14,10 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 
 ## Map
 
-- `lib/` — functional core: pure plate math (`plates.ts`); the solver core is
+- `lib/` -- functional core: pure plate math (`plates.ts`); the solver core is
   `decode`/`decodeWithin` (`decode.ts`), choosing its Plates through the exact search in
   `sideloads.ts`
-- `elements/` — imperative shell: Web Components. `app.ts` (`<rack-app>`) is the app shell
+- `elements/` -- imperative shell: Web Components. `app.ts` (`<rack-app>`) is the app shell
   and composition root (ADR-0007): header + Setup pill, `<rack-console>`, `<rack-setup>`,
   and the rig config it persists and feeds down
 - `tokens.css` — design tokens (`--rack-*`)

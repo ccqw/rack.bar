@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-// Importing every shell registers all ten custom elements.
+// Importing every shell registers all thirteen custom elements.
 import './app.ts';
 import './console.ts';
 import './entry.ts';
@@ -10,6 +10,9 @@ import './recents.ts';
 import './setup.ts';
 import './share.ts';
 import './sleeve.ts';
+import './update.ts';
+import './warmup.ts';
+import './ways.ts';
 
 // RBAR-33: the light-DOM `* { box-sizing: border-box }` reset in index.html does not
 // cross the Shadow DOM boundary, so every shadow root silently computed content-box.
@@ -36,6 +39,9 @@ const TAGS = [
   'rack-setup',
   'rack-share',
   'rack-sleeve',
+  'rack-update',
+  'rack-warmup',
+  'rack-ways',
 ] as const;
 
 // `*` never matches pseudo-elements, so the reset must name ::before/::after
