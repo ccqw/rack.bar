@@ -95,7 +95,7 @@ class RackWarmup extends HTMLElement {
         }
         /* Next: the thumb-sized forward action (mock option D), 44px -- the touch
            floor -- on the accent pill; the delta rides as a small mono line. */
-        /* A long delta (a swap) wraps under the label instead of being cut off: the
+        /* A long delta (Plates off then on) wraps under the label instead of being cut off: the
            two lines still fit the 44px pill. */
         .next {
           height: 44px; flex: none; display: flex; flex-wrap: wrap; align-content: center;

@@ -1,7 +1,6 @@
 // Example tests for the Warm up view logic (RBAR-65 slice 2): how a planned Ramp reads.
 import { describe, it, expect } from 'vitest';
 import {
-  sideDelta,
   rowDelta,
   deltaText,
   deltaSpoken,
@@ -14,6 +13,7 @@ import {
   parseWorking,
 } from './warmup.ts';
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
+import { planEasyRamp } from './moves.ts';
 import type { RampRig } from './plan.ts';
 import { ELEIKO_KG, IRON_LB } from './plates.ts';
 import { lbToKg } from './units.ts';
@@ -27,81 +27,86 @@ const kgs = (side: readonly { kg: number }[]) => side.map((p) => p.kg);
 // Caitlin's 140 kg ramp: 20 / 70 (25) / 98 (25+10+2.5+1.5) / 126 (25+25+2.5+0.5) / 140 (25+25+10).
 const RAMP140 = planRamp(140, DEFAULT_RAMP, COMP).rows;
 
-describe('sideDelta', () => {
-  it('lists only the Plates to add when the next Side keeps the previous one', () => {
-    const d = sideDelta([kg(25)], [kg(25), kg(15)]);
-    expect(kgs(d.added)).toEqual([15]);
-    expect(d.removed).toEqual([]);
+// The planner's rows as the console loads them: Caitlin's 75 kg Ramp by the station rule
+// (ADR-0015): 20 / 37 (5+2.5+1) / 52 (15+1) / 67 (15+5+2.5+1) / 75 (15+5+5+2.5).
+const RAMP75 = planEasyRamp(75, DEFAULT_RAMP, COMP).rows;
+
+describe('rowDelta: the stack moves, not a set difference (ADR-0015 as amended)', () => {
+  it("reads Caitlin's 75 kg Ramp move by move", () => {
+    expect(RAMP75.map((r) => kgs(r.side))).toEqual([[], [5, 2.5, 1], [15, 1], [15, 5, 2.5, 1], [15, 5, 5, 2.5]]);
+    const d = RAMP75.map((_, i) => rowDelta(RAMP75, i));
+    expect(d.map((x) => [kgs(x.off), kgs(x.on)])).toEqual([
+      [[], []],
+      [[], [5, 2.5, 1]],
+      [[1, 2.5, 5], [15, 1]],
+      // 15+1 -> 15+5+2.5+1: the 1 is outside where the 5 goes, so it comes off first.
+      [[1], [5, 2.5, 1]],
+      [[1, 2.5], [5, 2.5]],
+    ]);
+    expect(d.map((x) => deltaText(x, 'kg'))).toEqual([
+      null,
+      '+5 +2.5 +1 kg',
+      'off 1 + 2.5 + 5, on 15 + 1 kg',
+      'off 1, on 5 + 2.5 + 1 kg',
+      'off 1 + 2.5, on 5 + 2.5 kg',
+    ]);
+    expect(deltaSpoken(d[3], 'kg')).toBe('take off 1, then add 5 and 2.5 and 1 kilograms per side');
   });
 
-  it('lists Plates to take off and put on when the stack changes (a swap)', () => {
-    const d = sideDelta([kg(25), kg(10), kg(2.5), kg(1.5)], [kg(25), kg(25), kg(2.5), kg(0.5)]);
-    expect(kgs(d.added)).toEqual([25, 0.5]);
-    expect(kgs(d.removed)).toEqual([1.5, 10]); // outermost first
+  it('a swap deeper in the stack takes off everything outside it, outermost first', () => {
+    // Was pinned as "remove 10 and 1.5"; the 2.5 sits outside the 10, so it comes off too.
+    const rows = [
+      { ...RAMP140[2], side: [kg(25), kg(10), kg(2.5), kg(1.5)] },
+      { ...RAMP140[3], side: [kg(25), kg(25), kg(2.5), kg(0.5)] },
+    ];
+    const d = rowDelta(rows, 1);
+    expect(kgs(d.off)).toEqual([1.5, 2.5, 10]);
+    expect(kgs(d.on)).toEqual([25, 2.5, 0.5]);
   });
 
-  it('keeps a station-rule stack in its own order, never re-sorted (ADR-0015 slice 4b)', () => {
-    // 10+5+2.5 -> 10+15+1: the 15 goes outside the 10, then the 1.
-    const d = sideDelta([kg(10), kg(5), kg(2.5)], [kg(10), kg(15), kg(1)]);
-    expect(kgs(d.added)).toEqual([15, 1]);
-    expect(kgs(d.removed)).toEqual([2.5, 5]);
+  it('the first row loads from a bare Bar; an add-only row takes nothing off', () => {
+    expect(kgs(rowDelta(RAMP140, 0).on)).toEqual([]);
+    expect(kgs(rowDelta(RAMP140, 1).on)).toEqual([25]);
+    expect(kgs(rowDelta(RAMP140, 1).off)).toEqual([]);
   });
 
-  it('counts duplicates (a second 25 is an add)', () => {
-    expect(kgs(sideDelta([kg(25)], [kg(25), kg(25)]).added)).toEqual([25]);
-  });
-
-  it('is empty for identical Sides', () => {
-    expect(sideDelta([kg(25), kg(5)], [kg(25), kg(5)])).toEqual({ added: [], removed: [] });
-  });
-
-  it('never matches an iron Plate to an Eleiko one', () => {
-    const d = sideDelta([kg(20)], [lb('45')]);
-    expect(d.added).toEqual([lb('45')]);
-    expect(d.removed).toEqual([kg(20)]);
-  });
-});
-
-describe('rowDelta', () => {
-  it('diffs each row against the previous one (the first against a bare Bar)', () => {
-    expect(kgs(rowDelta(RAMP140, 0).added)).toEqual([]);
-    expect(kgs(rowDelta(RAMP140, 1).added)).toEqual([25]);
-    expect(kgs(rowDelta(RAMP140, 4).added)).toEqual([10]);
-    expect(kgs(rowDelta(RAMP140, 4).removed)).toEqual([0.5, 2.5]);
+  it('identical Sides are no moves', () => {
+    const rows = [RAMP140[1], { ...RAMP140[1] }];
+    expect(rowDelta(rows, 1)).toEqual({ off: [], on: [] });
   });
 });
 
 describe('deltaText / deltaSpoken (every number carries its unit)', () => {
   it('reads an add-only change as "+N unit", one unit at the end', () => {
-    expect(deltaText({ added: [kg(15)], removed: [] }, 'kg')).toBe('+15 kg');
-    expect(deltaText({ added: [kg(15), kg(2.5)], removed: [] }, 'kg')).toBe('+15 +2.5 kg');
-    expect(deltaSpoken({ added: [kg(15), kg(2.5)], removed: [] }, 'kg')).toBe(
+    expect(deltaText({ on: [kg(15)], off: [] }, 'kg')).toBe('+15 kg');
+    expect(deltaText({ on: [kg(15), kg(2.5)], off: [] }, 'kg')).toBe('+15 +2.5 kg');
+    expect(deltaSpoken({ on: [kg(15), kg(2.5)], off: [] }, 'kg')).toBe(
       'add 15 and 2.5 kilograms per side',
     );
   });
 
-  it('reads a change with pops as a swap', () => {
-    expect(deltaText({ added: [kg(5)], removed: [kg(2.5)] }, 'kg')).toBe('swap 2.5 -> 5 kg');
-    expect(deltaSpoken({ added: [kg(5)], removed: [kg(2.5)] }, 'kg')).toBe(
-      'swap 2.5 for 5 kilograms per side',
+  it('reads a change with Plates off as "off ..., on ...", in the order it is done', () => {
+    expect(deltaText({ on: [kg(5)], off: [kg(2.5)] }, 'kg')).toBe('off 2.5, on 5 kg');
+    expect(deltaSpoken({ on: [kg(5)], off: [kg(2.5)] }, 'kg')).toBe(
+      'take off 2.5, then add 5 kilograms per side',
     );
   });
 
   it('reads a take-off-only change with minus signs', () => {
-    expect(deltaText({ added: [], removed: [kg(2.5)] }, 'kg')).toBe('-2.5 kg');
-    expect(deltaSpoken({ added: [], removed: [kg(2.5)] }, 'kg')).toBe(
+    expect(deltaText({ on: [], off: [kg(2.5)] }, 'kg')).toBe('-2.5 kg');
+    expect(deltaSpoken({ on: [], off: [kg(2.5)] }, 'kg')).toBe(
       'take off 2.5 kilograms per side',
     );
   });
 
   it('uses the iron Plates\' stamped pound faces', () => {
-    expect(deltaText({ added: [lb('45')], removed: [] }, 'lb')).toBe('+45 lb');
-    expect(deltaSpoken({ added: [lb('45')], removed: [] }, 'lb')).toBe('add 45 pounds per side');
+    expect(deltaText({ on: [lb('45')], off: [] }, 'lb')).toBe('+45 lb');
+    expect(deltaSpoken({ on: [lb('45')], off: [] }, 'lb')).toBe('add 45 pounds per side');
   });
 
   it('is null when nothing changes', () => {
-    expect(deltaText({ added: [], removed: [] }, 'kg')).toBeNull();
-    expect(deltaSpoken({ added: [], removed: [] }, 'kg')).toBeNull();
+    expect(deltaText({ on: [], off: [] }, 'kg')).toBeNull();
+    expect(deltaSpoken({ on: [], off: [] }, 'kg')).toBeNull();
   });
 });
 
@@ -173,7 +178,7 @@ describe('warmupView', () => {
     expect(v.steps[0].label).toBe('Set 1 of 5, bare bar, 20 kilograms');
     expect(v.steps[1].label).toBe('Set 2 of 5, 50 percent, 70 kilograms, add 25 kilograms per side');
     expect(v.steps[4].label).toBe(
-      'Set 5 of 5, working set, 140 kilograms, swap 0.5 and 2.5 for 10 kilograms per side',
+      'Set 5 of 5, working set, 140 kilograms, take off 0.5 and 2.5, then add 10 kilograms per side',
     );
   });
 
@@ -184,7 +189,7 @@ describe('warmupView', () => {
       sub: '+10 +2.5 +1.5 kg per side',
       disabled: false,
     });
-    expect(warmupView(RAMP140, 3, 'kg', 'kg').next.sub).toBe('swap 0.5 + 2.5 -> 10 kg per side');
+    expect(warmupView(RAMP140, 3, 'kg', 'kg').next.sub).toBe('off 0.5 + 2.5, on 10 kg per side');
   });
 
   it('disables Next on the Working set', () => {

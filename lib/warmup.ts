@@ -6,88 +6,65 @@
 // its unit (Caitlin's "no loose numerals" rule): Totals in the display Unit, Plate faces
 // in the set's stamped Unit.
 //
-// What changed between two rows is diffed from their Sides here, so it stays right
-// whichever Side the station rule (ADR-0015, slice 4b) picks: the diff always describes
-// the Plates actually on the Bar, in the order the Sides stack them (a station-rule
-// Side is not always heaviest-first, so nothing here re-sorts).
+// What changed between two rows is the stack moves the planner charges for
+// (lib/moves.ts movesBetween, ADR-0015 as amended): everything outside the two Sides'
+// longest common inside run comes off, outermost first, then the rest of the new Side
+// goes on, inside to outside. Read literally, a caption rebuilds the next Side
+// exactly; a set difference of the two Sides would not (15+1 -> 15+5+2.5+1 is "off 1,
+// on 5 + 2.5 + 1", not "+5 +2.5", which would stack 15+1+5+2.5).
 import type { Plate } from './plates.ts';
 import type { RampRow } from './plan.ts';
+import { movesBetween } from './moves.ts';
 import { format, shownIn } from './units.ts';
 import type { Unit } from './units.ts';
 
-/** The Plates to put on and take off one Side to go from one row to the next. */
+/** The Plates to take off and put on one Side to go from one row to the next. */
 export interface SideDelta {
-  /** Plates to add, in the order the next Side stacks them (inside -> outside). */
-  readonly added: readonly Plate[];
   /** Plates to take off, outermost first (the order they come off). */
-  readonly removed: readonly Plate[];
+  readonly off: readonly Plate[];
+  /** Plates to put on, inside -> outside (the order they go on). */
+  readonly on: readonly Plate[];
 }
-
-// A Plate's identity for the diff: its stamped face and colour (an iron 45 and an
-// Eleiko 20 never compare equal, and two 25s always do, whatever object holds them).
-const plateKey = (p: Plate) => `${p.label ?? p.kg}|${p.color}`;
 
 /** A Plate's stamped face: its lb `label` (iron) or its kg (Eleiko). */
 const face = (p: Plate) => p.label ?? String(p.kg);
 
-/**
- * The multiset difference between two Sides: what to add to `prev` and take off it to
- * reach `next`. Plates both Sides share stay on the Bar and appear in neither list.
- */
-export function sideDelta(prev: readonly Plate[], next: readonly Plate[]): SideDelta {
-  const left = new Map<string, Plate[]>();
-  for (const p of prev) {
-    const k = plateKey(p);
-    left.set(k, [...(left.get(k) ?? []), p]);
-  }
-  const added: Plate[] = [];
-  for (const p of next) {
-    const pool = left.get(plateKey(p));
-    if (pool && pool.length > 0) pool.pop();
-    else added.push(p);
-  }
-  // What is left of `prev` comes off, outermost first.
-  const removed: Plate[] = [];
-  for (let i = prev.length - 1; i >= 0; i--) {
-    const pool = left.get(plateKey(prev[i]))!;
-    if (pool.includes(prev[i])) {
-      pool.splice(pool.indexOf(prev[i]), 1);
-      removed.push(prev[i]);
-    }
-  }
-  return { added, removed };
-}
-
-/** The delta from the previous row to row `i` (the first row loads from a bare Bar). */
+/** The moves from the previous row to row `i` (the first row loads from a bare Bar). */
 export function rowDelta(rows: readonly RampRow[], i: number): SideDelta {
-  return sideDelta(i > 0 ? rows[i - 1].side : [], rows[i].side);
+  const { off, on } = movesBetween(i > 0 ? rows[i - 1].side : [], rows[i].side);
+  return { off, on };
 }
 
 /**
- * The short visible delta, unit once at the end: "+15 kg", "+15 +2.5 kg", "-2.5 kg",
- * "swap 2.5 -> 5 kg". Null when nothing changes. `plateUnit` is the Unit the set's
- * Plates are stamped in (a kg Eleiko 15 reads "+15 kg" even with lb on display).
+ * The short visible delta, unit once at the end, in the order the lifter does it:
+ * "+15 kg", "+15 +2.5 kg", "-2.5 kg", "off 1, on 5 + 2.5 + 1 kg". Null when nothing
+ * changes. `plateUnit` is the Unit the set's Plates are stamped in (a kg Eleiko 15
+ * reads "+15 kg" even with lb on display).
  */
 export function deltaText(d: SideDelta, plateUnit: Unit): string | null {
-  const add = d.added.map(face);
-  const off = d.removed.map(face);
-  if (add.length === 0 && off.length === 0) return null;
-  if (off.length === 0) return `${add.map((f) => `+${f}`).join(' ')} ${plateUnit}`;
-  if (add.length === 0) return `${off.map((f) => `-${f}`).join(' ')} ${plateUnit}`;
-  return `swap ${off.join(' + ')} -> ${add.join(' + ')} ${plateUnit}`;
+  const on = d.on.map(face);
+  const off = d.off.map(face);
+  if (on.length === 0 && off.length === 0) return null;
+  if (off.length === 0) return `${on.map((f) => `+${f}`).join(' ')} ${plateUnit}`;
+  if (on.length === 0) return `${off.map((f) => `-${f}`).join(' ')} ${plateUnit}`;
+  return `off ${off.join(' + ')}, on ${on.join(' + ')} ${plateUnit}`;
 }
 
 const spokenUnit = (u: Unit) => (u === 'kg' ? 'kilograms' : 'pounds');
 
-/** The delta for speech: "add 15 and 2.5 kilograms per side", or null when nothing changes. */
+/**
+ * The delta for speech, in the order the lifter does it: "add 15 and 2.5 kilograms per
+ * side", "take off 1, then add 5 and 2.5 and 1 kilograms per side", or null when
+ * nothing changes.
+ */
 export function deltaSpoken(d: SideDelta, plateUnit: Unit): string | null {
-  const add = d.added.map(face).join(' and ');
-  const off = d.removed.map(face).join(' and ');
+  const add = d.on.map(face).join(' and ');
+  const off = d.off.map(face).join(' and ');
   const u = spokenUnit(plateUnit);
   if (add === '' && off === '') return null;
   if (off === '') return `add ${add} ${u} per side`;
   if (add === '') return `take off ${off} ${u} per side`;
-  return `swap ${off} for ${add} ${u} per side`;
+  return `take off ${off}, then add ${add} ${u} per side`;
 }
 
 /** A row's short step name under its stair: "Bar", "50%", "Work". */

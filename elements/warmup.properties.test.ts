@@ -118,6 +118,51 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
+  it('following the Next caption literally rebuilds the next Side exactly: off from the outside, then on (ADR-0015 as amended)', () => {
+    // The caption is what the lifter does at the Bar. Read it off the Next button,
+    // apply it to the Side on screen, and the result must be the Side Next loads.
+    const faces = (rig: Rig, el: HTMLElement) =>
+      sideOnScreen(el).map((d) => {
+        const p = rig.inventory.find((x) => Math.abs(x.kg - d.kg) < 1e-9)!;
+        return p.label ?? String(p.kg);
+      });
+    const apply = (side: string[], sub: string): string[] => {
+      const body = sub.replace(/ per side$/, '').replace(/ (kg|lb)$/, '');
+      const out = [...side];
+      let off: string[] = [];
+      let on: string[] = [];
+      const m = /^off (.+), on (.+)$/.exec(body);
+      if (m) {
+        off = m[1].split(' + ');
+        on = m[2].split(' + ');
+      } else {
+        for (const t of body.split(' ')) (t.startsWith('-') ? off : on).push(t.slice(1));
+      }
+      for (const f of off) {
+        // Only the outermost Plate can come off.
+        expect(out[out.length - 1]).toBe(f);
+        out.pop();
+      }
+      return [...out, ...on];
+    };
+    fc.assert(
+      fc.property(workCaseArb, ([rig, u, draft]) => {
+        const el = warmOn(rig, u, draft);
+        const n = stairs(el).length;
+        for (let i = 0; i < n - 1; i++) {
+          stairs(el)[i].click();
+          const before = faces(rig, el);
+          const sub = nextBtn(el).querySelector('[data-next-sub]')!.textContent ?? '';
+          nextBtn(el).click();
+          const after = faces(rig, el);
+          if (sub === 'same plates') expect(after).toEqual(before);
+          else expect(apply(before, sub)).toEqual(after);
+        }
+      }),
+      { seed: SEED, numRuns: 30 },
+    );
+  });
+
   it('Warm up never pushes a warm-up row onto Recents; only the working-weight commit does (ADR-0009)', () => {
     type Act = { kind: 'stair'; i: number } | { kind: 'next' } | { kind: 'share' } | { kind: 'unit' };
     const actArb: fc.Arbitrary<Act> = fc.oneof(
