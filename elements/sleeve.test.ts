@@ -32,6 +32,13 @@ describe('<rack-sleeve>', () => {
     expect(discs.map((d) => d.dataset.color)).toEqual(['red', 'yellow']);
   });
 
+  it('draws a warm-up stack in the order given, never re-sorted (ADR-0015 station rule)', () => {
+    // A heavier big Plate may sit outside a lighter one on a warm-up Side.
+    const el = mountSleeve();
+    el.sideLoad = side(10, 15, 1);
+    expect(discs(el).map((d) => d.dataset.kg)).toEqual(['10', '15', '1']);
+  });
+
   it('renders no discs for an empty Side Load (a bare Bar)', () => {
     const el = mountSleeve();
     el.sideLoad = [];

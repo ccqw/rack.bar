@@ -103,7 +103,9 @@ _Avoid_: top set, work set, working weight (as a glossary term).
 **Warm-up set**:
 A lighter set before the Working set, specified as a percentage of the Working
 set's Total (or as the bare Bar). Its Total is the nearest loadable Total to that
-percentage, ties down (ADR-0015) -- unlike Decode, it may land slightly over.
+percentage, ties down (ADR-0015) -- unlike Decode, it may land slightly over. In
+Warm up mode the station rule may move it within 5% of the Working Total of that
+percentage, so the Ramp is easy to load.
 _Avoid_: ramp-up set, light set, feeder set.
 
 **Ramp**:
@@ -116,9 +118,16 @@ _Avoid_: plan, pyramid, progression, warm-up ladder.
 **Plate move**:
 Taking one Plate off a Side or putting one on, between two sets of a Ramp. A Side is
 a stack, inside to outside, so changing an inside Plate costs every Plate outside it.
-A **change Plate** (Competition 2.5 kg and below, iron 5 lb and below) is a half
-move: it goes on last and is swapped bit by bit (ADR-0015).
+Taking off a **big Plate** (full diameter, 450 mm: Competition 25-10 kg, the iron
+45 lb) costs most. Big Plates may go on in any order; every other Plate goes outside
+them, heaviest-first (ADR-0015, the station rule).
 _Avoid_: swap, step, change (alone).
+
+**Station**:
+The Plates a lifter gathers beside the rack for one Ramp: for each size, the most of
+it any one set needs on a Side. The station rule plans a Ramp to need a small one
+(ADR-0015).
+_Avoid_: pile, stash, plate tree.
 
 ## Relationships
 
