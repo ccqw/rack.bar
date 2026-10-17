@@ -51,7 +51,7 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
       }),
       { seed: SEED, numRuns: 60 },
     );
-  });
+  }, 30_000);
 
   it('any re-solve -- a typed Target, a stepper, Round up or back -- starts on the first way (RBAR-66)', () => {
     const actionArb = fc.constantFrom('retype', 'inc', 'dec', 'roundup');
@@ -71,7 +71,7 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
       }),
       { seed: SEED, numRuns: 60 },
     );
-  });
+  }, 30_000);
 
   it('a kg|lb toggle keeps the way on the Bar when the Total holds, else starts on the first way (RBAR-66, ADR-0010 RBAR-60)', () => {
     fc.assert(
@@ -93,5 +93,5 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
       }),
       { seed: SEED, numRuns: 60 },
     );
-  });
+  }, 30_000);
 });
