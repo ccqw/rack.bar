@@ -11,9 +11,11 @@ plates back into a total. A future game mode will quiz this same skill.
 **Bar**:
 The barbell being loaded; contributes its own weight to the Total. The lifter
 selects the Bar from the Plate set's offer -- Competition 20 / 15 / 5 kg (default
-20 kg), Training 45 lb or 20 kg (default 45 lb). A Bar is named in the unit it is
-stamped in.
-_Avoid_: barbell, rod.
+20 kg), Training 45 lb or 20 kg (default 45 lb) -- or one of the **custom Bars** the
+lifter adds, offered on every Plate set, at most three per set (ADR-0017). A Bar is named in the
+unit it is stamped in; a custom Bar is stored and named by its **stamp**, the number
+and unit written on it, exactly as typed ("35 lb").
+_Avoid_: barbell, rod; "user bar", "my bar" (it is a custom Bar).
 
 **Collar**:
 A clamp on the Side that secures the Plates. Competition collars weigh 2.5 kg each

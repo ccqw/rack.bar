@@ -11,6 +11,11 @@
 //   sheet `platesetchange`  -> adopt the plate set: persist it, swap the Bar to the set's
 //                              default, push set + Bar to the console and sheet (RBAR-17,
 //                              ADR-0010)
+//   sheet `baradd`          -> add a custom Bar (RBAR-76, ADR-0017): persist the list,
+//                              select it (or the set Bar / custom Bar of that weight)
+//   sheet `barremove`       -> drop a custom Bar; the chosen one falls back to the set's
+//                              default Bar
+//   sheet `barrestore`      -> Undo a removal, re-selecting the Bar if it was chosen
 //   sheet `close`           -> drop the pill's open state
 //   a share link (#v=1&...) -> on boot or `hashchange`: apply its rig and load for this
 //                              view only, persisting nothing (RBAR-50, ADR-0014)
@@ -26,9 +31,21 @@ import { readPersisted, writePersisted } from './persist.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
-import { plateSetFor, isOfferedPlateSet, offeredBarKgs, barUnit } from '../lib/platesets.ts';
+import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
-import { format } from '../lib/units.ts';
+import {
+  addCustomBar,
+  barLabel,
+  barsFor,
+  isValidStamp,
+  parseCustomBars,
+  removeCustomBar,
+  restoreCustomBar,
+  serializeCustomBars,
+  stampKg,
+} from '../lib/custombars.ts';
+import type { BarStamp } from '../lib/custombars.ts';
+import { format, isUnit } from '../lib/units.ts';
 import { parseLink } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
 
@@ -40,6 +57,7 @@ type Console = HTMLElement & {
 };
 type Setup = HTMLElement & {
   barKg: number;
+  customBars: readonly BarStamp[];
   collarKg: number;
   plateSet: string;
   open(): void;
@@ -52,6 +70,17 @@ type Setup = HTMLElement & {
 const STORAGE_KEY = 'rackbar.barKg';
 const COLLAR_STORAGE_KEY = 'rackbar.collarKg';
 const PLATESET_STORAGE_KEY = 'rackbar.plateSet';
+const CUSTOM_BARS_STORAGE_KEY = 'rackbar.customBars';
+
+// A stamp from an event payload, or null: the sheet is trusted to send one, but the
+// list only ever takes a valid stamp (the ADR-0007 validate-at-the-boundary rule).
+function stampOf(detail: unknown): BarStamp | null {
+  if (typeof detail !== 'object' || detail === null) return null;
+  const { value, unit } = detail as { value?: unknown; unit?: unknown };
+  if (typeof value !== 'number' || typeof unit !== 'string' || !isUnit(unit)) return null;
+  const s = { value, unit };
+  return isValidStamp(s) ? s : null;
+}
 
 class RackApp extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -65,6 +94,8 @@ class RackApp extends HTMLElement {
   private plateSetKey: PlateSetKey = 'comp';
   private barKg = plateSetFor('comp').defaultBarKg;
   private collarKg = DEFAULT_COLLAR_KG;
+  // The lifter's custom Bars (RBAR-76, ADR-0017), offered on every set after its own.
+  private customBars: readonly BarStamp[] = [];
 
   connectedCallback(): void {
     // A share link in the URL (RBAR-50, ADR-0014) is read FIRST and the fragment cleared,
@@ -72,6 +103,7 @@ class RackApp extends HTMLElement {
     // as usual; the link then overrides it for this view (applyLink), writing nothing.
     const link = this.takeLink();
     this.plateSetKey = this.loadPlateSet();
+    this.customBars = parseCustomBars(readPersisted(CUSTOM_BARS_STORAGE_KEY));
     this.barKg = this.loadBar();
     this.collarKg = this.loadCollar();
     // Children are defined before this runs (imports at top + rack-app's own define is
@@ -182,6 +214,7 @@ class RackApp extends HTMLElement {
     this.console.barKg = this.barKg;
     this.console.collarKg = this.collarKg;
     this.console.plateSet = this.plateSetKey;
+    this.setup.customBars = this.customBars;
     this.setup.barKg = this.barKg;
     this.setup.collarKg = this.collarKg;
     this.setup.plateSet = this.plateSetKey;
@@ -200,6 +233,11 @@ class RackApp extends HTMLElement {
     this.setup.addEventListener('platesetchange', (e) =>
       this.adoptPlateSet((e as CustomEvent<{ plateSet: string }>).detail.plateSet),
     );
+    this.setup.addEventListener('baradd', (e) => this.addBar((e as CustomEvent).detail));
+    this.setup.addEventListener('barremove', (e) =>
+      this.removeBar((e as CustomEvent<{ index?: unknown }>).detail?.index),
+    );
+    this.setup.addEventListener('barrestore', (e) => this.restoreBar((e as CustomEvent).detail));
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
     );
@@ -254,9 +292,56 @@ class RackApp extends HTMLElement {
   }
 
   // The Bars the active plate set offers -- the set the persisted/chosen Bar validates
-  // against (ADR-0010). Each set carries its own Bars; comp is kg, training 45 lb + 20 kg.
+  // against (ADR-0010): the set's own (comp 20/15/5 kg, training 45 lb + 20 kg), then the
+  // lifter's custom Bars (RBAR-76, ADR-0017).
   private offeredBars(): readonly number[] {
-    return offeredBarKgs(plateSetFor(this.plateSetKey));
+    return barsFor(plateSetFor(this.plateSetKey), this.customBars).map((b) => b.kg);
+  }
+
+  // Add a custom Bar typed in Setup (RBAR-76) and select it. A weight the set already
+  // offers selects that Bar; one a custom Bar already has selects it; neither is stored
+  // twice. An invalid payload, or a full list, changes nothing.
+  private addBar(detail: unknown): void {
+    const s = stampOf(detail);
+    if (!s) return;
+    const kg = stampKg(s);
+    if (!this.offeredBars().includes(kg)) {
+      const next = addCustomBar(this.customBars, s);
+      if (next === this.customBars) return; // full
+      this.setCustomBars(next);
+    }
+    this.adopt(kg);
+  }
+
+  // Drop custom Bar `index`. If it was the chosen Bar, fall back to the set's default --
+  // a removed Bar must never stay on the rig.
+  private removeBar(index: unknown): void {
+    if (typeof index !== 'number') return;
+    const next = removeCustomBar(this.customBars, index);
+    if (next === this.customBars) return;
+    this.setCustomBars(next);
+    if (!this.offeredBars().includes(this.barKg)) {
+      this.adopt(plateSetFor(this.plateSetKey).defaultBarKg);
+    }
+  }
+
+  // Undo a removal: the Bar goes back at its index, and is chosen again if it was.
+  private restoreBar(detail: unknown): void {
+    const s = stampOf(detail);
+    if (!s) return;
+    const { index, select } = detail as { index?: unknown; select?: unknown };
+    if (typeof index !== 'number') return;
+    const next = restoreCustomBar(this.customBars, s, index);
+    if (next === this.customBars) return;
+    this.setCustomBars(next);
+    if (select === true) this.adopt(stampKg(s));
+  }
+
+  // Persist the custom list and feed it to the sheet (which re-renders its Bar row).
+  private setCustomBars(list: readonly BarStamp[]): void {
+    this.customBars = list;
+    writePersisted(CUSTOM_BARS_STORAGE_KEY, serializeCustomBars(list));
+    this.setup.customBars = list;
   }
 
   // Adopt a Bar chosen in Setup: persist it, thread it into the calculator, relabel the
@@ -310,10 +395,12 @@ class RackApp extends HTMLElement {
   // The middot is emitted as an escape so the source stays ASCII. Both facts follow a
   // set or Bar change, so adopt()/adoptPlateSet() call relabel() and the pill stays in
   // sync.
+  // A custom Bar reads by its stamp as typed (RBAR-76: "35 lb bar", never "15.88 kg").
   private relabel(): void {
     const set = plateSetFor(this.plateSetKey);
-    const unit = barUnit(set, this.barKg);
-    this.pillLabel.textContent = `${format(this.barKg, unit)} bar \u00B7 ${set.shortLabel}`;
+    const bar = barsFor(set, this.customBars).find((b) => b.kg === this.barKg);
+    const name = bar ? barLabel(bar) : format(this.barKg, set.unit);
+    this.pillLabel.textContent = `${name} bar \u00B7 ${set.shortLabel}`;
   }
 
   // Read the persisted plate set, validated against the offered keys (ADR-0007 pattern):

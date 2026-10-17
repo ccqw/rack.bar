@@ -24,6 +24,9 @@ export type PlateSetKey = 'comp' | 'training';
 export interface Bar {
   readonly kg: number;
   readonly unit: Unit;
+  /** A custom Bar's stamp as typed, in `unit` (RBAR-76, lib/custombars.ts): its label,
+   * so it never reads as a rounded conversion. Absent on a set's own Bars. */
+  readonly stamp?: number;
 }
 
 /** A family of Plates the lifter loads: its Inventory, native Unit, and Bars. */

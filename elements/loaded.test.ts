@@ -205,6 +205,37 @@ describe('<rack-loaded> (stable-geometry slot, RBAR-52)', () => {
   });
 });
 
+// RBAR-75 (RBAR-48b): the On the bar block is the handoff's fixed 60px box (prototype
+// L180: height:60px; margin-bottom:9px; a centered column) in BOTH states, so the Add
+// palette sits 69px under its top whatever is loaded. The content (head, 7px, the chip
+// rail, 9px) is taller than the box and centers over its edges, as in the prototype.
+describe('<rack-loaded> 60px block (RBAR-75)', () => {
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('is a 60px centered column, 9px over the palette net of the 12px stack gap', () => {
+    const { root } = mountLoaded();
+    const host = rule(root, ':host {');
+    expect(host).toContain('height: 60px');
+    expect(host).toContain('display: flex');
+    expect(host).toContain('flex-direction: column');
+    expect(host).toContain('justify-content: center');
+    expect(host).toContain('margin-bottom: -3px');
+    // hidden still wins (By Weight mode).
+    expect(rule(root, ':host([hidden])')).toContain('display: none');
+  });
+
+  it('spaces the head 7px over the rail and the rail 9px over the box (prototype L182/L186)', () => {
+    const { root } = mountLoaded();
+    expect(rule(root, '.head {')).toContain('margin-bottom: 7px');
+    expect(rule(root, '.viewport {')).toContain('margin-bottom: 9px');
+  });
+});
+
 // RBAR-74 (the RBAR-48a metrics sweep): the Clear pill's hover ring and the nudge
 // arrow ink (the shared NUDGE_STYLE), matched to the handoff prototype.
 describe('<rack-loaded> metrics sweep (RBAR-74)', () => {

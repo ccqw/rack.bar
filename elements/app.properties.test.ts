@@ -9,12 +9,17 @@
 // Deterministic: a fixed seed and modest run counts. A failure prints the shrunk
 // script; change SEED locally to explore further. Add a property per new on-screen rule.
 // This file: persistence across a reload, through <rack-app>.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fc from 'fast-check';
 import { PLATE_SETS } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { MAX_RECENTS } from '../lib/recents.ts';
-import { COLLARS_KG } from '../lib/properties.oracle.ts';
+import { COLLARS_KG, greatestAtOrUnder } from '../lib/properties.oracle.ts';
+import type { Rig } from '../lib/properties.oracle.ts';
+import { PLATE_SET_KEYS } from '../lib/platesets.ts';
+import { displayCeilingKg, draftToKg, format } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
+import { sideOnScreen } from './properties.drivers.ts';
 import {
   SEED, type Console, resetPool, q, sr, entryRoot, unitBtn, type, totalText, rigArb,
   unitArb, draftArb,
@@ -182,6 +187,253 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
         }
       }),
       APP_RUNS(12),
+    );
+  });
+});
+
+// Custom Bars (RBAR-76, ADR-0017), through the real Setup "+" entry and the keypad. The
+// oracle is the ADR arithmetic on the stamp's own kg (lb by the exact factor, ADR-0006).
+describe('<rack-app> custom Bar properties (ADR-0017)', () => {
+  const mountApp = (): HTMLElement => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    document.body.innerHTML = '';
+    const el = document.createElement('rack-app');
+    document.body.append(el);
+    return el;
+  };
+  const appConsole = (app: HTMLElement) => q<Console>(sr(app), 'rack-console');
+  const setupRoot = (app: HTMLElement) => sr(q(sr(app), 'rack-setup'));
+  const stampArb = fc.constantFrom<Unit>('kg', 'lb').chain((unit) =>
+    fc
+      .integer({ min: 1, max: (unit === 'kg' ? 50 : 110) * 100 })
+      .map((c) => ({ value: c / 100, unit })),
+  );
+  const oracleKg = (s: { value: number; unit: Unit }) =>
+    s.unit === 'lb' ? s.value * 0.45359237 : s.value;
+
+  it('a custom Bar added in Setup is the rig: Total = its kg + 2 x Side Load + 2 x Collar, the greatest at or under the reading, and it survives a reload labelled as typed (ADR-0017, ADR-0002, ADR-0003, ADR-0008)', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...PLATE_SET_KEYS),
+        stampArb,
+        fc.constantFrom(...COLLARS_KG),
+        fc.constantFrom<Unit>('kg', 'lb'),
+        draftArb,
+        (set, stamp, collarKg, u, draft) => {
+          localStorage.clear();
+          const app = mountApp();
+          const s = setupRoot(app);
+          q<HTMLButtonElement>(s, `[data-plateset="${set}"]`).click();
+          q<HTMLButtonElement>(s, `[data-collar="${collarKg}"]`).click();
+          q<HTMLButtonElement>(s, '[data-bar-add]').click();
+          q<HTMLButtonElement>(s, `[data-bar-unit="${stamp.unit}"]`).click();
+          q<HTMLInputElement>(s, '[data-bar-input]').value = String(stamp.value);
+          q<HTMLButtonElement>(s, '[data-bar-save]').click();
+          const c = appConsole(app);
+          expect(c.barKg).toBe(oracleKg(stamp));
+          unitBtn(c, u).click();
+          const valueBtn = q<HTMLButtonElement>(entryRoot(c), '[data-value]');
+          valueBtn.click();
+          type(c, draft);
+          valueBtn.click();
+          const rig: Rig = {
+            set,
+            barKg: oracleKg(stamp),
+            collarKg,
+            inventory: PLATE_SETS[set].inventory,
+            baselineKg: oracleKg(stamp) + 2 * collarKg,
+            name: `custom ${stamp.value} ${stamp.unit}`,
+          };
+          const drawn = rig.baselineKg + 2 * sideOnScreen(c).reduce((a, p) => a + p.kg, 0);
+          const t = draftToKg(draft, u);
+          const want = t === null ? rig.baselineKg : greatestAtOrUnder(rig, displayCeilingKg(t, u));
+          expect(drawn).toBeCloseTo(want, 9);
+          expect(totalText(c)).toBe(format(drawn, u));
+          // The reload: the stamp and the choice come back, the tile reads as typed.
+          const again = mountApp();
+          expect(appConsole(again).barKg).toBe(oracleKg(stamp));
+          const on = setupRoot(again).querySelector('[data-bar][aria-pressed="true"] .word');
+          const built = PLATE_SETS[set].bars.some((b) => b.kg === oracleKg(stamp));
+          if (!built) expect(on?.textContent).toBe(`${stamp.value} ${stamp.unit}`);
+        },
+      ),
+      APP_RUNS(12),
+    );
+  });
+
+  it('any stored custom Bar list loads as at most 3 valid, distinct tiles, and the stored Bar is always one of the tiles (ADR-0017, ADR-0007 validate-at-boundary)', () => {
+    const junk = fc.oneof(
+      fc.string(),
+      fc.json(),
+      fc
+        .array(
+          fc.oneof(
+            stampArb,
+            fc.record({ value: fc.double(), unit: fc.constantFrom('kg', 'lb', 'st') }),
+            fc.anything(),
+          ),
+          { maxLength: 6 },
+        )
+        .map((xs) => JSON.stringify(xs)),
+    );
+    const barJunk = fc.oneof(
+      fc.string(),
+      fc.constantFrom('20', '15', '35', String(35 * 0.45359237), '7', '15.9'),
+    );
+    fc.assert(
+      fc.property(junk, barJunk, fc.constantFrom(...PLATE_SET_KEYS), (raw, bar, set) => {
+        localStorage.clear();
+        localStorage.setItem('rackbar.customBars', raw);
+        localStorage.setItem('rackbar.barKg', bar);
+        localStorage.setItem('rackbar.plateSet', set);
+        const app = mountApp();
+        const tiles = [...setupRoot(app).querySelectorAll<HTMLElement>('[data-custom]')];
+        expect(tiles.length).toBeLessThanOrEqual(3);
+        const kgs = [...setupRoot(app).querySelectorAll<HTMLElement>('[data-bar]')].map((t) =>
+          Number(t.dataset.bar),
+        );
+        expect(new Set(kgs).size).toBe(kgs.length);
+        for (const t of tiles) {
+          expect(t.querySelector('.word')!.textContent).toMatch(/^\d+(\.\d{1,2})? (kg|lb)$/);
+        }
+        expect(kgs).toContain(appConsole(app).barKg);
+        expect(totalText(appConsole(app))).toMatch(/^\d+(\.\d{1,2})? (kg|lb)$/);
+      }),
+      APP_RUNS(12),
+    );
+  });
+
+  // RBAR-76 review (pr-test-analyzer gap 1). The rule from ADR-0017 rule 5, driven by
+  // the real long-press under fake timers: removing the chosen custom Bar falls back to
+  // the set's default Bar; any other removal keeps the Bar; Undo restores the list in
+  // order and the chosen Bar.
+  it('removing the chosen custom Bar falls back to the set\'s default; Undo puts it back in place and re-selects it only if it was chosen (ADR-0017, ADR-0007)', () => {
+    const DEFAULT_NAME: Record<PlateSetKey, string> = { comp: '20 kg', training: '45 lb' };
+    const listArb = fc.uniqueArray(stampArb, { minLength: 1, maxLength: 3, selector: oracleKg });
+    vi.useFakeTimers();
+    try {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(...PLATE_SET_KEYS),
+          listArb,
+          fc.nat(),
+          fc.nat(),
+          (set, list, pick, gone) => {
+            localStorage.clear();
+            localStorage.setItem('rackbar.plateSet', set);
+            localStorage.setItem('rackbar.customBars', JSON.stringify(list));
+            const app = mountApp();
+            const s = setupRoot(app);
+            const c = appConsole(app);
+            const tiles = [...s.querySelectorAll<HTMLButtonElement>('[data-bar]')];
+            tiles[pick % tiles.length]!.click();
+            const chosen = c.barKg;
+            const customs = [...s.querySelectorAll<HTMLButtonElement>('[data-custom]')];
+            fc.pre(customs.length > 0);
+            const tile = customs[gone % customs.length]!;
+            const index = Number(tile.dataset.custom);
+            const removedKg = oracleKg(list[index]!);
+            // The long-press: hold past LONG_PRESS_MS, release, tap Remove.
+            tile.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+            vi.advanceTimersByTime(600);
+            tile.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+            q<HTMLButtonElement>(s, '[data-bar-menu-remove]').click();
+            const stored = () => JSON.parse(localStorage.getItem('rackbar.customBars')!);
+            expect(stored()).toEqual(list.filter((_, i) => i !== index));
+            const pillText = q(sr(app), '[data-pill-label]').textContent!;
+            if (removedKg === chosen) {
+              expect(c.barKg).toBe(PLATE_SETS[set].defaultBarKg);
+              expect(localStorage.getItem('rackbar.barKg')).toBe(
+                String(PLATE_SETS[set].defaultBarKg),
+              );
+              expect(pillText.startsWith(`${DEFAULT_NAME[set]} bar`)).toBe(true);
+            } else {
+              expect(c.barKg).toBe(chosen);
+            }
+            q<HTMLButtonElement>(s, '[data-bar-undo]').click();
+            expect(stored()).toEqual(list);
+            expect(c.barKg).toBe(chosen);
+          },
+        ),
+        APP_RUNS(15),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // RBAR-76 review (pr-test-analyzer gap 3): adds through the real "+" entry, biased
+  // toward the weights the sets offer and toward repeats. The oracle is ADR-0017 as
+  // written (rules 2-3), not addCustomBar: a weight the set offers or a custom Bar
+  // already has is only selected; a new one is stored when no set would then show more
+  // than 3 custom tiles (else refused with a hint); "+" shows while the set shows fewer
+  // than 3.
+  it('Bars added in Setup are stored at most once by weight, never a weight the set offers, no set ever shows more than 3, and an accepted add is the chosen Bar (ADR-0017)', () => {
+    const addArb = fc.record({
+      stamp: fc.oneof(
+        stampArb,
+        fc.constantFrom<{ value: number; unit: Unit }>(
+          { value: 20, unit: 'kg' },
+          { value: 15, unit: 'kg' },
+          { value: 5, unit: 'kg' },
+          { value: 45, unit: 'lb' },
+          { value: 35, unit: 'lb' },
+          { value: 25, unit: 'kg' },
+          { value: 7, unit: 'kg' },
+          { value: 15, unit: 'lb' },
+        ),
+      ),
+      padded: fc.boolean(), // "35" vs "35.00": the same stamp typed two ways
+    });
+    const shownOn = (list: readonly { value: number; unit: Unit }[], key: PlateSetKey) =>
+      list.filter((x) => !PLATE_SETS[key].bars.some((b) => b.kg === oracleKg(x)));
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...PLATE_SET_KEYS),
+        fc.array(addArb, { minLength: 1, maxLength: 5 }),
+        (set, adds) => {
+          localStorage.clear();
+          localStorage.setItem('rackbar.plateSet', set);
+          const app = mountApp();
+          const s = setupRoot(app);
+          const c = appConsole(app);
+          let model: { value: number; unit: Unit }[] = [];
+          for (const { stamp, padded } of adds) {
+            const before = c.barKg;
+            const kg = oracleKg(stamp);
+            const known =
+              PLATE_SETS[set].bars.some((b) => b.kg === kg) ||
+              model.some((m) => oracleKg(m) === kg);
+            const fits = PLATE_SET_KEYS.every((k) => shownOn([...model, stamp], k).length <= 3);
+            const plus = s.querySelector<HTMLButtonElement>('[data-bar-add]');
+            expect(plus !== null).toBe(shownOn(model, set).length < 3);
+            if (!plus) continue;
+            plus.click();
+            q<HTMLButtonElement>(s, `[data-bar-unit="${stamp.unit}"]`).click();
+            q<HTMLInputElement>(s, '[data-bar-input]').value = padded
+              ? stamp.value.toFixed(2)
+              : String(stamp.value);
+            q<HTMLButtonElement>(s, '[data-bar-save]').click();
+            if (known || fits) {
+              if (!known) model = [...model, stamp];
+              expect(c.barKg).toBe(kg);
+            } else {
+              expect(c.barKg).toBe(before);
+              expect(q(s, '[data-bar-hint]').textContent).toMatch(/has 3 custom Bars/);
+              q<HTMLButtonElement>(s, '[data-bar-cancel]').click();
+            }
+            const stored = JSON.parse(localStorage.getItem('rackbar.customBars') ?? '[]');
+            expect(stored).toEqual(model);
+            const kgs = stored.map(oracleKg);
+            expect(new Set(kgs).size).toBe(kgs.length);
+            for (const x of kgs) {
+              expect(PLATE_SETS[set].bars.some((b) => b.kg === x)).toBe(false);
+            }
+            for (const k of PLATE_SET_KEYS) expect(shownOn(stored, k).length).toBeLessThanOrEqual(3);
+          }
+        },
+      ),
+      APP_RUNS(25),
     );
   });
 });
