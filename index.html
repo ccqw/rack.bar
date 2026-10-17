@@ -3,7 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Installable web app (RBAR-71). theme-color and the manifest's colours are the
+       --rack-surface token (#0d0e10), so the browser chrome and the launch screen
+       match the app instead of flashing white. Icons come from assets/icons/ via
+       scripts/icons.mjs (npm run icons). -->
   <meta name="theme-color" content="#0d0e10">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <!-- Home Screen launch on iOS: standalone (no Safari toolbars), titled rack.bar.
+       black-translucent draws the page under the status bar with white status text;
+       body already pads by env(safe-area-inset-top), so the header clears it and the
+       dark surface fills the strip behind the clock. -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="rack.bar">
   <title>rack.bar — load the bar</title>
   <meta name="description" content="Load a barbell to a target weight. Tells you exactly which plates to put on each side.">
   <!-- Preload the self-hosted handoff typefaces (RBAR-23) so the woff2 fetch starts
