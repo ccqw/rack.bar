@@ -3,6 +3,8 @@
 // <rack-app> mount -- and judged from what is on screen and in storage. The pure-core
 // counterparts (round trip, canonical form, parser fuzzing) are in lib/properties.test.ts.
 // Deterministic: the shared SEED; app mounts are heavy, so runs stop at the first failure.
+// RBAR-90: each run boots a whole app, so the run counts are kept small and the cases
+// the random draw might miss are pinned as fixed `examples` (run first, every time).
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fc from 'fast-check';
 import { linkUrl } from '../lib/link.ts';
@@ -11,9 +13,10 @@ import { PLATE_SETS } from '../lib/platesets.ts';
 import { draftToKg } from '../lib/units.ts';
 import {
   SEED, type Console, resetPool, q, sr, modeBtn, unitBtn, sideOnScreen, linkStateArb,
-  fresh, rigArb, unitArb, draftArb, type, roundUp, statusKind, totalText, entryDraft,
-  tapAdd,
+  fresh, on, rigArb, unitArb, draftArb, type, roundUp, statusKind, totalText, entryDraft,
+  tapAdd, nextRun,
 } from './properties.drivers.ts';
+import { RIGS } from '../lib/properties.oracle.ts';
 import './app.ts';
 
 beforeEach(resetPool);
@@ -29,11 +32,12 @@ const APP_RUNS = (numRuns: number) => ({ seed: SEED, numRuns, endOnFailure: true
 const RIG_KEYS = ['rackbar.plateSet', 'rackbar.barKg', 'rackbar.collarKg', 'rackbar.unit'];
 
 // Open `state`'s share URL the way a tapped link arrives: fragment in the URL, then boot.
+// Only the previous app is removed, so a pooled sender console (on()) stays mounted.
 function open(state: LinkState): HTMLElement {
   const url = linkUrl(state);
   if (url === null) throw new Error('generator produced an unserializable load');
   history.replaceState(null, '', `/${url.slice(url.indexOf('#'))}`);
-  document.body.innerHTML = '';
+  for (const old of document.querySelectorAll('rack-app')) old.remove();
   const app = document.createElement('rack-app');
   document.body.append(app);
   return app;
@@ -45,9 +49,10 @@ const pressedIn = (el: HTMLElement, sel: string) =>
     .map((b) => b.dataset.mode ?? b.dataset.unit);
 
 describe('opening a share link, properties (ADR-0014)', () => {
-  it('opening any link over any persisted rig shows exactly its Side, Bar, Collar, unit and mode and changes no rig key (ADR-0014)', () => {
-    fc.assert(
-      fc.property(linkStateArb, rigArb, unitArb, (s, own, ownUnit) => {
+  it('opening any link over any persisted rig shows exactly its Side, Bar, Collar, unit and mode and changes no rig key (ADR-0014)', async () => {
+    await fc.assert(
+      fc.asyncProperty(linkStateArb, rigArb, unitArb, async (s, own, ownUnit) => {
+        await nextRun();
         localStorage.clear();
         localStorage.setItem('rackbar.plateSet', own.set);
         localStorage.setItem('rackbar.barKg', String(own.barKg));
@@ -79,19 +84,22 @@ describe('opening a share link, properties (ADR-0014)', () => {
           t === undefined ? null : JSON.stringify([t]),
         );
       }),
-      APP_RUNS(60),
+      APP_RUNS(30),
     );
   });
 
-  it('a By Weight link made from a sender\'s screen opens to the same Total, Target and status (ADR-0014, ADR-0003)', () => {
-    fc.assert(
-      fc.property(rigArb, unitArb, linkDraftArb, fc.boolean(), (rig, u, draft, takeRoundUp) => {
+  it('a By Weight link made from a sender\'s screen opens to the same Total, Target and status (ADR-0014, ADR-0003)', async () => {
+    await fc.assert(
+      fc.asyncProperty(rigArb, unitArb, linkDraftArb, fc.boolean(), async (rig, u, draft, takeRoundUp) => {
+        await nextRun();
         const targetKg = draftToKg(draft, u);
         fc.pre(targetKg !== null && Number(targetKg.toFixed(2)) > 0);
         // The Target travels as kg at 2 dp with the sender's reading `d` (ADR-0014, slice
         // 3), so every <= 2 dp Target in either unit reads and re-solves as typed.
         // The sender types the Target (and maybe takes the round-up) on the real console.
-        const sender = fresh(rig, u);
+        // The sender is a pooled console (one per rig x unit, reset by Clear): typing and
+        // the round-up are all it does, so it need not be a fresh mount every run.
+        const sender = on(rig, u);
         type(sender, draft);
         if (takeRoundUp && !roundUp(sender).hidden) roundUp(sender).click();
         const inventory = PLATE_SETS[rig.set].inventory;
@@ -117,22 +125,32 @@ describe('opening a share link, properties (ADR-0014)', () => {
           draft: entryDraft(c),
         }).toEqual(seen);
       }),
-      APP_RUNS(60),
+      {
+        ...APP_RUNS(25),
+        // Pinned: the x.5 lb reading that reads a different whole lb than its 2 dp kg
+        // (on the lb Bar and the 20 kg Bar), a kg Target with the round-up taken, and
+        // a Target under the bare rig.
+        examples: [
+          [RIGS[6]!, 'lb', '52.5', false],
+          [RIGS[9]!, 'lb', '200.5', true],
+          [RIGS[1]!, 'kg', '142.3', true],
+          [RIGS[2]!, 'kg', '7.5', false],
+        ],
+      },
     );
-    // ~1.1 s locally, but it hit Vitest's 5 s default on a loaded CI runner (RBAR-72
-    // added test files to the run), so it gets the same room as the Copy link trip.
-  }, 30_000);
+  });
   // RBAR-50 slice 3: the whole trip through the real paths -- the sender builds a load
   // on the console (a typed Target -- x.5 readings included -- maybe the round-up, maybe
   // a unit switch after typing, or Plates tapped on; maybe carried across a mode
   // switch), opens the share card and taps Copy link; that exact URL then boots a fresh
   // app. Whatever the sender saw, rig included, the recipient sees.
-  it('Copy link from any sender screen opens to the same rig, mode, Plates, Total, Target and status (ADR-0014, ADR-0011)', () => {
-    fc.assert(
-      fc.property(
+  it('Copy link from any sender screen opens to the same rig, mode, Plates, Total, Target and status (ADR-0014, ADR-0011)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
         rigArb, unitArb, fc.constantFrom<'decode' | 'encode'>('decode', 'encode'), linkDraftArb,
         fc.boolean(), fc.boolean(), fc.array(fc.nat(), { maxLength: 12 }), fc.boolean(),
-        (rig, u, mode, draft, takeRoundUp, switchUnit, picks, switchMode) => {
+        async (rig, u, mode, draft, takeRoundUp, switchUnit, picks, switchMode) => {
+          await nextRun();
           const sender = fresh(rig, u);
           if (mode === 'decode') {
             type(sender, draft);
@@ -195,9 +213,20 @@ describe('opening a share link, properties (ADR-0014)', () => {
           }).toEqual(seen);
         },
       ),
-      APP_RUNS(60),
+      {
+        // Two full mounts per run (a sender console and a fresh app).
+        ...APP_RUNS(25),
+        // Pinned, one per branch: an x.5 lb Target with the round-up taken; a kg Target
+        // then read in lb; Plates tapped in By Plates then carried to By Weight; Plates
+        // tapped and kept in By Plates; a 0 Target ("No link").
+        examples: [
+          [RIGS[6]!, 'lb', 'decode', '52.5', true, false, [], false],
+          [RIGS[1]!, 'kg', 'decode', '142.3', false, true, [], false],
+          [RIGS[8]!, 'kg', 'encode', '0', false, false, [0, 3, 3, 5], true],
+          [RIGS[3]!, 'lb', 'encode', '0', false, false, [1, 2, 7], false],
+          [RIGS[0]!, 'kg', 'decode', '0', false, false, [], false],
+        ],
+      },
     );
-    // Two full mounts per run (a sender console and a fresh app): ~1.5 s locally, past
-    // Vitest's 5 s default on a loaded CI runner, so this one test gets more room.
-  }, 30_000);
+  });
 });

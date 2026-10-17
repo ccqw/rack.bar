@@ -354,6 +354,28 @@ describe('Decode as read: decodeWithin + displayCeilingKg (ADR-0010 RBAR-60, ADR
     );
   });
 
+  // RBAR-90: the exhaustive form of the rule above for the Targets a lifter types most,
+  // every whole number. It replaces the ~600-Target DOM sweep the RBAR-63 Training 20 kg
+  // Bar slice typed through the console (elements/console.test.ts keeps spot checks),
+  // and widens it from that one rig to every rig. The pill reads "over" exactly when
+  // the shown Total exceeds the shown Target (statusPill), so this is that check on the
+  // console's own solve.
+  it('never reads over for any whole-number Target from the bare rig to past the Sleeve, every rig and unit (ADR-0003 as read; exhaustive)', () => {
+    const overs: string[] = [];
+    for (const rig of RIGS) {
+      for (const u of UNITS) {
+        const lo = Math.ceil(shownIn(rig.baselineKg, u));
+        const hi = Math.ceil(shownIn(maxTotal(rig) + 20, u));
+        for (let n = lo; n <= hi; n++) {
+          const t = draftToKg(String(n), u)!;
+          const shown = shownIn(solveAsRead(rig, t, u).primary.total, u);
+          if (shown > shownIn(t, u)) overs.push(`${rig.name} ${u}: ${n} -> ${shown}`);
+        }
+      }
+    }
+    expect(overs).toEqual([]);
+  });
+
   it('lands on the greatest achievable Total within the reading, and offers the least one past it (ADR-0010 RBAR-60, ADR-0003)', () => {
     fc.assert(
       fc.property(rigTargetArb, unitArb, ({ rig, t }, u) => {

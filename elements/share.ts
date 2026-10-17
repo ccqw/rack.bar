@@ -134,6 +134,14 @@ class RackShare extends HTMLElement {
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
+  // Leaving the DOM cancels a pending "Copied" / Copy link revert (RBAR-90). The timer's
+  // closure holds this card -- and through it the whole app tree it sat in -- for
+  // COPIED_MS after removal; resetCopy also bumps `opening`, so a clipboard write that
+  // settles after removal confirms nothing.
+  disconnectedCallback(): void {
+    this.resetCopy();
+  }
+
   connectedCallback(): void {
     this.hidden = true; // a modal is closed until opened
 

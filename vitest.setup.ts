@@ -5,7 +5,7 @@
 // own plain in-memory Storage and own it outright -- the persistence behaviour is then
 // genuinely exercised, not mocked away, on an object we fully control. Browsers provide
 // the real thing; this never loads outside the test run.
-import { beforeEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 
 class MemoryStorage {
   private store = new Map<string, string>();
@@ -59,3 +59,14 @@ function installFreshStorage(): void {
 
 installFreshStorage();
 beforeEach(installFreshStorage);
+
+// End the task after every test (RBAR-90). happy-dom caches query results behind
+// WeakRefs, and V8 keeps every WeakRef target alive until the current task ends. Vitest
+// chains tests with promises (microtasks), so a file of synchronous DOM tests is one long
+// task: every element any test rendered stayed reachable to the end of the file (~6 MB
+// per app mount; elements/console.test.ts climbed past 500 MB). One macrotask per test
+// lets each test's trees be collected. The real setImmediate is captured here, so a test
+// that leaves fake timers on cannot stall it. (Within one test, a property that renders
+// many times yields per run itself: nextRun in elements/properties.drivers.ts.)
+const realSetImmediate = globalThis.setImmediate;
+afterEach(() => new Promise<void>((resolve) => realSetImmediate(resolve)));

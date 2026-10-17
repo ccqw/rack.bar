@@ -286,3 +286,18 @@ export function commitWorking(el: HTMLElement, value: string): void {
 // The Recent Targets as persisted (canonical kg).
 export const storedRecents = (): number[] =>
   JSON.parse(localStorage.getItem('rackbar.recents') ?? '[]') as number[];
+
+// ---- Between runs (RBAR-90) --------------------------------------------------------
+
+/**
+ * Yield one macrotask. Await it at the top of each run of a DOM-heavy property
+ * (`fc.asyncProperty`). happy-dom caches query results behind WeakRefs, and V8 keeps
+ * every WeakRef target alive until the current task ends -- so inside one synchronous
+ * `fc.assert`, every tree a run rendered (~6.6 MB per app mount, and every replaced
+ * render) stays reachable until the test finishes, and GC churns on memory it cannot
+ * free. A microtask (`await Promise.resolve()`) is not enough: the task must end.
+ * The real setImmediate is captured at load, so a property under vi.useFakeTimers still
+ * yields (a faked one would never fire).
+ */
+const realSetImmediate = globalThis.setImmediate;
+export const nextRun = (): Promise<void> => new Promise((resolve) => realSetImmediate(resolve));

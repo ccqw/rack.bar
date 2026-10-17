@@ -11,7 +11,7 @@ Backend-free static site, deployed to GitHub Pages at **rack.bar**.
 ```sh
 npm install
 npm run dev        # Vite dev server
-npm test           # Vitest (happy-dom), single run
+npm test           # Vitest, single run (lib/ in Node, elements/ in happy-dom)
 npm run typecheck  # tsc --noEmit
 npm run build      # production build to dist/
 ```

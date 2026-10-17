@@ -7,7 +7,7 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 ## Commands
 
 - `npm run dev` — Vite dev server
-- `npm test` — Vitest (happy-dom), single run; `npm run test:watch` to watch
+- `npm test` — Vitest, single run: `lib/` in Node, `elements/` in happy-dom (two projects; `--project core|dom` runs one); `npm run test:watch` to watch
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — production build to `dist/`
 - `npm run icons` -- re-render the app icons and favicon into `public/` after a redraw

@@ -242,6 +242,21 @@ describe('<rack-share> Copy link (RBAR-50, ADR-0011)', () => {
       el.open();
       expect(linkBtn(root).textContent).toBe('Copy link');
     });
+
+    // RBAR-90: a pending revert's closure holds the card (and the app tree around it)
+    // for 1.6 s after removal -- the per-mount "retention" the link properties hit.
+    it('leaving the DOM mid-confirmation cancels the pending revert', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      const { el, root } = openCard(URL_100);
+      root.querySelector<HTMLButtonElement>('[data-copy]')!.click();
+      linkBtn(root).click();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(linkBtn(root).textContent).toBe('Copied');
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      el.remove();
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
 

@@ -31,23 +31,42 @@ export default defineConfig({
     },
   },
   test: {
-    // Web Component shells get real DOM tests; the pure core in lib/ needs no
-    // DOM but happy-dom is harmless there.
+    // Web Component shells get real DOM tests (the 'dom' project below); the pure
+    // core's 'core' project overrides this with plain Node.
     environment: 'happy-dom',
     // happy-dom under Node does not provide localStorage; this installs a small
     // in-memory Storage so shell-side persistence (ADR-0007) is testable.
     setupFiles: ['./vitest.setup.ts'],
-    // Each app mount keeps ~6 MB in happy-dom after it is removed (measured on main at
-    // v0.39.0: rack-app 6.6 MB/mount, every element's shadow styles included), and the
-    // link properties mount the app ~180 times in one file -- past Node's ~2 GB default
-    // heap once RBAR-72 and RBAR-66 both land. Give the test workers room; RBAR-90
-    // (faster, steadier tests) owns cutting the mounts.
-    execArgv: ['--max-old-space-size=4096'],
+    // No heap override (RBAR-90): the "~6 MB kept per app mount" that once needed a 4 GB
+    // heap was happy-dom's WeakRef query caches pinning every rendered tree until the
+    // task ended. The setup file now ends the task after each test, and the heavy
+    // properties after each run (nextRun, elements/properties.drivers.ts); the suite
+    // passes in a 512 MB heap.
     // docs/design-handoff/ is the authoritative Claude Design reference package
     // (RBAR-10 output), not part of the app -- its bundled engine.test.js is the
     // prototype's own contract file and must not run in our suite.
     // .claude/worktrees/ holds agent git worktrees (full repo copies); without
     // the deep glob their suites -- and their docs/engine.test.js -- run too.
     exclude: [...configDefaults.exclude, 'docs/**', '**/.claude/**'],
+    // RBAR-90: two projects. The pure core (lib/, ADR-0001) and the build scripts need
+    // no DOM, so they run in plain Node and skip happy-dom's per-file window setup;
+    // the Web Component shells (elements/) and the root page checks keep happy-dom.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'core',
+          environment: 'node',
+          include: ['lib/**/*.test.ts', 'scripts/**/*.test.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          include: ['elements/**/*.test.ts', '*.test.ts'],
+        },
+      },
+    ],
   },
 });
