@@ -23,6 +23,9 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `assets/icons/` -- the icon masters (RBAR-71): `rack-bar-icon-dark.svg` feeds the
   Home Screen / manifest PNGs, `rack-bar-favicon.svg` is the favicon (one file, switches
   light/dark). `scripts/icons.mjs` renders them into `public/`; the PNGs are committed
+- `scripts/sw.js` + `scripts/offline.ts` + `scripts/precache.ts` -- the offline service
+  worker (ADR-0018): a Vite build plugin fills the hand-written worker with the build's
+  precache list; `elements/update.ts` registers it (production only) and offers Update
 - `docs/adr/` — accepted decisions; read before changing anything architectural
 - `docs/design-handoff/` -- authoritative Claude Design reference (RBAR-10 output):
   README spec, `--rb-*` design tokens, screenshots, prototype. Spec source for the

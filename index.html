@@ -62,5 +62,8 @@
   <rack-app></rack-app>
 
   <script type="module" src="./elements/app.ts"></script>
+  <!-- Works offline (RBAR-81, ADR-0018): registers /sw.js in production builds and
+       shows a quiet Update button when a new version is waiting. -->
+  <script type="module" src="./elements/update.ts"></script>
 </body>
 </html>
