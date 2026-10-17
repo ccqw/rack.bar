@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import './console.ts';
 import { statusPill, onBarLine, belowBarNote, announceLine } from './console.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
+import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
 import { lbToKg } from '../lib/units.ts';
 
 type Console = HTMLElement & {
@@ -1817,17 +1818,31 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
     expect(row).toContain('min-height: 36px');
   });
 
-  it('reserves the below-Bar note row the same way (RBAR-55 meets RBAR-52)', () => {
+  it('seats the below-Bar note in the reserved round-up row (RBAR-67 folds RBAR-55\'s row)', () => {
     // The note toggles on stepper taps -- the one place a moving target hurts most --
-    // so its row uses the same reservation mechanism as the round-up offer.
+    // so it never moves the column. It used to reserve a line of its own under the
+    // status line; RBAR-67 seats it in the round-up row instead, whose 36px min-height
+    // already pins the column. The three occupants are mutually exclusive (a sub-Bar
+    // Target has no round-up and is never short -- see the property test below), so
+    // a hidden note simply leaves the row, like the hidden offer.
+    const el = mountConsole();
+    expect(barnote(el).parentElement).toBe(roundupRow(el));
     const css = consoleCss();
-    const hiddenRule = ruleBody(css, '.barnote[hidden]');
-    expect(hiddenRule).toContain('visibility: hidden');
-    expect(hiddenRule).toContain('display: block');
-    expect(hiddenRule).not.toContain('display: none');
-    expect(ruleBody(css, '.barnote[hidden]::before')).toContain('content: "\\200b"');
-    expect(ruleBody(css, '.barnote.collapsed')).toContain('display: none');
-    expect(css.indexOf('.barnote.collapsed')).toBeGreaterThan(css.indexOf('.barnote[hidden]'));
+    expect(ruleBody(css, '.barnote[hidden]')).toContain('display: none');
+    expect(css).not.toContain('.barnote.collapsed');
+  });
+
+  it('never shows the note together with the offer or the capacity caption', () => {
+    const el = mountConsole();
+    const atcap = el.shadowRoot!.querySelector<HTMLElement>('[data-atcap]')!;
+    for (const unit of ['kg', 'lb'] as const) {
+      unitBtn(el, unit).click();
+      for (const t of ['1', '10', '19.5', '20', '43', '44', '45', '100.5', '101.3', '999', '2000']) {
+        type(el, t);
+        const shown = [!barnote(el).hidden, !over(el).hidden, !atcap.hidden].filter(Boolean);
+        expect(shown.length, `${t} ${unit}`).toBeLessThanOrEqual(1);
+      }
+    }
   });
 
   it('drops the round-up row only outside By Weight', () => {
@@ -1857,10 +1872,8 @@ describe('<rack-console> (round-up row reservation, RBAR-52)', () => {
     modeBtn(el, 'encode').click();
     expect(over(el).hidden).toBe(true);
     expect(roundupRow(el).hidden).toBe(true);
-    expect(barnote(el).classList.contains('collapsed')).toBe(true);
     modeBtn(el, 'decode').click();
     expect(roundupRow(el).hidden).toBe(false);
-    expect(barnote(el).classList.contains('collapsed')).toBe(false);
   });
 });
 
@@ -2331,4 +2344,75 @@ describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
     expect(over(el).hidden).toBe(true);
   });
 
+});
+
+// RBAR-67: fit one phone screen. The console is a full-height column; the bar block
+// (.viz) is the ONE piece that flexes -- it takes whatever height the fixed blocks leave,
+// between a readable minimum and the handoff's 204px sleeve block -- and the column's
+// spacing comes back to the handoff's 12px gap. CSS text locks the contract (happy-dom
+// cannot lay out); scripts/fit-check.js measures the real fit in a browser.
+describe('<rack-console> phone fit (RBAR-67)', () => {
+  const css = () => mountConsole().shadowRoot!.querySelector('style')!.textContent!;
+  const rule = (text: string, selector: string) => {
+    const start = text.indexOf(selector + ' {');
+    expect(start).toBeGreaterThanOrEqual(0);
+    return text.slice(start, text.indexOf('}', start));
+  };
+  // The head row is one icon button tall; the sleeve sits 10px under it.
+  const HEAD = 30;
+  const GAP = 10;
+
+  it('is a full-height column that may shrink below its content', () => {
+    const host = rule(css(), ':host');
+    expect(host).toContain('display: flex');
+    expect(host).toContain('flex-direction: column');
+    expect(host).toContain('min-height: 0');
+    const stack = rule(css(), '.stack');
+    expect(stack).toContain('flex: 1');
+    expect(stack).toContain('min-height: 0');
+  });
+
+  it('spaces the column at the handoff\'s 12px gap (prototype L77), not 24px', () => {
+    const stack = rule(css(), '.stack');
+    expect(stack).toContain('gap: 12px');
+    expect(stack).not.toContain('gap: 24px');
+  });
+
+  it('flexes the bar block between the readable minimum and the handoff block', () => {
+    const viz = rule(css(), '.viz');
+    expect(viz).toContain('flex: 1 1 0');
+    expect(viz).toContain(`min-height: ${HEAD + GAP + SLEEVE_MIN_PX}px`);
+    expect(viz).toContain(`max-height: ${HEAD + GAP + SLEEVE_BLOCK_PX}px`);
+    expect(viz).toContain(`gap: ${GAP}px`);
+    const sleeve = rule(css(), '.viz rack-sleeve');
+    expect(sleeve).toContain('flex: 1 1 0');
+    expect(sleeve).toContain('min-height: 0');
+  });
+
+  it('keeps every other block at its natural height (only the bar flexes)', () => {
+    expect(rule(css(), '.stack > :not(.viz)')).toContain('flex: none');
+  });
+
+  it('sizes the head icon buttons at the handoff\'s 30px (prototype L98)', () => {
+    const btn = rule(css(), '.iconbtn');
+    expect(btn).toContain(`width: ${HEAD}px`);
+    expect(btn).toContain(`height: ${HEAD}px`);
+    expect(btn).toContain('position: relative');
+  });
+
+  it('keeps a 44px-tall hit area around each 30px icon button', () => {
+    // The drawn box is 30px; an invisible ::after grows the tap target 7px past the
+    // border above and below (30 + 14 = 44) and 4px each side -- exactly half the 8px
+    // gap, so the two neighbours' hit areas meet without overlapping. inset counts from
+    // the padding box, inside the 1px border, hence 8px / 5px.
+    const hit = rule(css(), '.iconbtn::after');
+    expect(hit).toContain('content: ""');
+    expect(hit).toContain('position: absolute');
+    expect(hit).toContain('inset: -8px -5px');
+    expect(rule(css(), '.icons')).toContain('gap: 8px');
+  });
+
+  it('sets the big Total at line-height 1 (prototype L135), not the UA normal', () => {
+    expect(rule(css(), '.readout output')).toContain('line-height: 1;');
+  });
 });

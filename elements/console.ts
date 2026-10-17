@@ -17,7 +17,7 @@
 import './entry.ts';
 import './palette.ts';
 import './loaded.ts';
-import './sleeve.ts';
+import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
 import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
@@ -29,6 +29,7 @@ import { readPersisted, writePersisted } from './persist.ts';
 import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SHORT_SCREEN } from './fit.ts';
 import { SECTION_LABEL, VISUALLY_HIDDEN } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
@@ -70,6 +71,12 @@ const RECENTS_KEY = 'rackbar.recents';
 // the Secondary readout shows.
 const UNIT_KEY = 'rackbar.unit';
 const SECONDARY_KEY = 'rackbar.secondary';
+
+// The bar block's fixed parts (RBAR-67): the head row is one icon button tall (the
+// handoff's 30px box), and the sleeve sits VIZ_GAP_PX under it. The flex range of the
+// block is these plus the sleeve's own range (SLEEVE_MIN_PX..SLEEVE_BLOCK_PX).
+const ICON_PX = 30;
+const VIZ_GAP_PX = 10;
 
 class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -221,10 +228,21 @@ class RackConsole extends HTMLElement {
     this.root.innerHTML = `
       <style>
         ${BOX_SIZING}${BUTTON_FX}${ROLL_CSS}
-        :host { display: block; width: 100%; max-width: 520px; }
-        .stack {
-          display: flex; flex-direction: column; gap: 24px; align-items: stretch;
+        /* RBAR-67: one phone screen, no scroll. The console is a full-height column
+           (main stretches it) and every level may shrink below its content
+           (min-height: 0), so the height left over after the fixed blocks is what the
+           bar block (.viz, below) gets -- not a taller page. The column spacing is the
+           handoff's 12px (prototype L77; it was 24px). */
+        :host {
+          display: flex; flex-direction: column; width: 100%; max-width: 520px;
+          min-height: 0;
         }
+        .stack {
+          display: flex; flex-direction: column; gap: 12px; align-items: stretch;
+          flex: 1; min-height: 0;
+        }
+        /* Only the bar flexes: every other block keeps its natural height. */
+        .stack > :not(.viz) { flex: none; }
         /* The Decode/Encode toggle: a segmented control, the obvious mode switch.
            A full-width raised track (prototype L92) -- the .stack's stretch spreads
            it; the segments split the track as equal halves (sModeBtn, L404). */
@@ -249,7 +267,19 @@ class RackConsole extends HTMLElement {
         /* The bar visualizer block (handoff section 3, prototype L98): a head row --
            the contextual label top-left, the Share and fullscreen controls top-right
            (RBAR-18/35/61) -- then the sleeve, 10px apart (the prototype column's gap). */
-        .viz { display: flex; flex-direction: column; gap: 10px; }
+        /* RBAR-67: the bar block is the column's one flexible piece. It takes the
+           leftover height between a floor (head row + gap + SLEEVE_MIN_PX, so the Plates
+           stay readable) and a cap (head row + gap + the handoff's SLEEVE_BLOCK_PX), and
+           the sleeve fills it under the head row; the sleeve fits its discs to that
+           height. A short phone gets a shorter Bar picture; a tall one gets the full
+           handoff block, never more -- spare height falls below the column. */
+        .viz {
+          display: flex; flex-direction: column; gap: ${VIZ_GAP_PX}px;
+          flex: 1 1 0;
+          min-height: ${ICON_PX + VIZ_GAP_PX + SLEEVE_MIN_PX}px;
+          max-height: ${ICON_PX + VIZ_GAP_PX + SLEEVE_BLOCK_PX}px;
+        }
+        .viz rack-sleeve { flex: 1 1 0; min-height: 0; }
         .vizhead {
           display: flex; align-items: center; justify-content: space-between;
         }
@@ -259,14 +289,23 @@ class RackConsole extends HTMLElement {
            plain-cased in the DOM exactly like the prototype's vm. */
         .vizlabel { ${SECTION_LABEL} }
         /* The head's icon buttons: Share then fullscreen (RBAR-61). One shared box rule
-           so the two can never drift apart -- a metric respec (RBAR-48) is one edit. */
+           so the two can never drift apart. 30px is the handoff's box (prototype L98;
+           RBAR-48's respec, landed here by RBAR-67 because the head row's height is part
+           of the bar block's flex budget). */
         .icons { display: flex; gap: 8px; flex: none; }
         .iconbtn {
-          width: 36px; height: 36px; display: flex; align-items: center;
+          position: relative;
+          width: ${ICON_PX}px; height: ${ICON_PX}px; display: flex; align-items: center;
           justify-content: center; padding: 0; flex: none;
           color: var(--rack-muted); background: transparent;
           border: 1px solid var(--rack-line); border-radius: 10px; cursor: pointer;
         }
+        /* The 30px drawn box keeps a 44px-tall tap target (RBAR-67): an invisible
+           layer that reaches 7px past the border above and below, and 4px each side --
+           half the .icons gap, so the two neighbours' hit areas meet without
+           overlapping. (inset is measured from the padding box, inside the 1px border,
+           hence 8px / 5px.) */
+        .iconbtn::after { content: ""; position: absolute; inset: -8px -5px; }
         .iconbtn:hover { color: var(--rack-fg); }
         .iconbtn:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .readout { text-align: center; }
@@ -313,7 +352,7 @@ class RackConsole extends HTMLElement {
         .readout output {
           display: block; font-family: var(--rack-font); font-weight: 800;
           font-size: clamp(40px, 14.0625vw, 54px); letter-spacing: -.025em;
-          font-variant-numeric: tabular-nums;
+          line-height: 1; font-variant-numeric: tabular-nums;
           color: var(--rack-fg);
         }
         /* The unit rides the Total as a small dim suffix (prototype L135: 21px/600
@@ -376,24 +415,21 @@ class RackConsole extends HTMLElement {
         .status.over .dot { display: none; }
         /* The below-Bar explanation (RBAR-55): when the Target sits under the empty
            bar's own weight, the OVER pill alone reads as "is it broken?" -- this quiet
-           line under the status row names the plain fact. Decode-only. */
+           line under the status row names the plain fact. Decode-only. RBAR-67 seats it
+           in the round-up row below instead of a reserved line of its own (~20px back
+           for the Bar): the row's fixed height already keeps the Target steppers still
+           when the note toggles on a stepper tap, and the row's other occupants never
+           show alongside it (a sub-Bar Target has no round-up and is never short). */
         .barnote {
-          display: block; margin-top: 4px;
+          display: block;
           font-family: var(--rack-font-num); font-size: 12px; color: var(--rack-muted);
         }
-        /* The note's row is reserved exactly like the round-up row below (RBAR-52's
-           mechanism): visibility swap + a zero-width-space line-box holder, so the
-           round-up row and Target steppers never move when the note appears -- the
-           note toggles on stepper taps, the one place a moving target hurts most. */
-        .barnote[hidden] { display: block; visibility: hidden; }
-        .barnote[hidden]::before { content: "\\200b"; }
-        /* By Plates never shows the note; collapse fully (after [hidden], same
-           specificity -- source order lets display:none win). */
-        .barnote.collapsed { display: none; }
+        .barnote[hidden] { display: none; }
         /* The round-up row (RBAR-47, prototype L140): one fixed 36px flex row shared
            by the round-up opt-in and the at-capacity caption (they are mutually
            exclusive -- the core carries no over exactly when the sleeve is full,
-           ADR-0012). The explicit min-height pins the row in EVERY state, on top of
+           ADR-0012), and since RBAR-67 the below-Bar note (exclusive with both).
+           The explicit min-height pins the row in EVERY state, on top of
            RBAR-52's in-flow reservation below. The row collapses out of the column
            in By Plates (no round-up row there). NOTE: the button's own class is
            "roundup", NOT "over" -- the status pill carries "status over" as its
@@ -439,6 +475,14 @@ class RackConsole extends HTMLElement {
         .atcap .dot {
           width: 5px; height: 5px; border-radius: 999px; flex: none;
           background: var(--rack-accent);
+        }
+        /* The short-screen tier (RBAR-67, fit.ts): a tighter column gap, a thinner
+           inset around the mode segments (the track's padding only -- the tappable
+           segments keep their size), and a closer Total head. */
+        @media ${SHORT_SCREEN} {
+          .stack { gap: 8px; }
+          .modes { padding: 1px; }
+          .readhead { margin-bottom: 4px; }
         }
       </style>
       <div class="stack">
@@ -501,14 +545,14 @@ class RackConsole extends HTMLElement {
               ><span class="dot" aria-hidden="true"></span
               ><span data-status-label></span></span>
           </div>
-          <span class="barnote" data-barnote hidden></span>
           <!-- The decode outcome for screen readers (RBAR-53): a polite status region
                that speaks the Total + status once per user action. Visually hidden --
                the sighted readout above IS this information. -->
           <div class="sr" data-announce role="status"></div>
         </div>
         <!-- The round-up row sits under the Total (handoff 4a), above the Target block:
-             the round-up opt-in OR the at-capacity caption (never both -- ADR-0012).
+             the round-up opt-in OR the at-capacity caption (never both -- ADR-0012)
+             OR the below-Bar note (RBAR-67; exclusive with both).
              The wrapper's "over" class is the block-order token only (blockToken in
              console.test.ts); every style rule is scoped to .rounduprow/.roundup/.atcap
              so the "status over" pill can never match a round-up rule (RBAR-56). -->
@@ -516,6 +560,9 @@ class RackConsole extends HTMLElement {
           <button type="button" class="roundup" data-over hidden></button>
           <span class="atcap" data-atcap hidden
             ><span class="dot" aria-hidden="true"></span>Bar at capacity</span>
+          <!-- The below-Bar note (RBAR-55), seated here by RBAR-67: never shown with
+               the offer or the caption, so the row's fixed height holds all three. -->
+          <span class="barnote" data-barnote hidden></span>
         </div>
         <rack-entry></rack-entry>
         <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
@@ -848,7 +895,6 @@ class RackConsole extends HTMLElement {
     // which has no such row. Since RBAR-47 the whole row goes (it also hosts the
     // at-capacity caption), via its own plain [hidden].
     this.overRow.hidden = this.mode !== 'decode';
-    this.barnote.classList.toggle('collapsed', this.mode !== 'decode');
     this.modeButtons.forEach((b) =>
       b.setAttribute('aria-pressed', String(b.dataset.mode === this.mode)),
     );
