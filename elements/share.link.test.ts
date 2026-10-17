@@ -257,6 +257,34 @@ describe('<rack-share> Copy link (RBAR-50, ADR-0011)', () => {
       el.remove();
       expect(vi.getTimerCount()).toBe(0);
     });
+
+    // ...and the card still works when it comes back: a write that settles while it was
+    // out confirms nothing, and the rebuilt card copies and reverts as before.
+    it('a card removed with a write in flight and reconnected stays honest and works', async () => {
+      let settle!: () => void;
+      const writeText = vi
+        .fn()
+        .mockReturnValueOnce(new Promise<void>((r) => (settle = r)))
+        .mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', { clipboard: { writeText } });
+      const { el, root } = openCard(URL_100);
+      linkBtn(root).click(); // the write is in flight
+      el.remove();
+      const parent = document.createElement('div');
+      document.body.append(parent);
+      parent.append(el); // reconnected under a new parent
+      expect(el.hidden).toBe(true);
+      settle();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(linkBtn(root).textContent).toBe('Copy link'); // the stale write says nothing
+      el.open();
+      linkBtn(root).click();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(linkBtn(root).textContent).toBe('Copied');
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(linkBtn(root).textContent).toBe('Copy link');
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 });
 

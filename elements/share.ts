@@ -137,9 +137,11 @@ class RackShare extends HTMLElement {
   // Leaving the DOM cancels a pending "Copied" / Copy link revert (RBAR-90). The timer's
   // closure holds this card -- and through it the whole app tree it sat in -- for
   // COPIED_MS after removal; resetCopy also bumps `opening`, so a clipboard write that
-  // settles after removal confirms nothing.
+  // settles after removal confirms nothing, and the imageGen bump drops a picture draw
+  // still in flight (as close() does).
   disconnectedCallback(): void {
     this.resetCopy();
+    this.imageGen++;
   }
 
   connectedCallback(): void {

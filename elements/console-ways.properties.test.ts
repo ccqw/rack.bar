@@ -121,8 +121,9 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
   // The whole trip (ADR-0014): the sender types a Target, maybe takes the round-up, taps
   // the bar 0-4 times, then Copy link; that exact URL boots a fresh app. The recipient
   // must see the way the sender loaded -- the same Plates and the same n/m -- not the
-  // canonical stack. The sender is the pooled console (on() resets it with Clear); only
-  // the recipient app is mounted fresh each run, and only the previous one is removed.
+  // canonical stack. The sender is the pooled console (on() closes its share card and
+  // presses Clear); only the recipient app is mounted fresh each run, and only the
+  // previous one is removed.
   it('Copy link carries the way actually loaded: the recipient shows the same Plates and n/m (RBAR-66, ADR-0014)', async () => {
     await fc.assert(
       fc.asyncProperty(rigDraftCaseArb, fc.boolean(), fc.integer({ min: 0, max: 4 }), async ([rig, u, draft], takeRoundUp, taps) => {
@@ -149,8 +150,6 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
           vi.unstubAllGlobals();
         }
         const url = writeText.mock.calls[0]![0] as string;
-        // Close the card so the pooled sender is back to a bare console for the next run.
-        q<HTMLButtonElement>(sr(q(sr(sender), 'rack-share')), '[data-close]').click();
         localStorage.clear();
         history.replaceState(null, '', `/${url.slice(url.indexOf('#'))}`);
         for (const old of document.querySelectorAll('rack-app')) old.remove();

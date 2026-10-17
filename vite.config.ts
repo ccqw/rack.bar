@@ -9,6 +9,9 @@ import { offline } from './scripts/offline.ts';
 // Listing entries from the start makes adding the game page additive, not a
 // restructure.
 const root = import.meta.dirname;
+// Vitest's default test-file pattern, and the folders whose tests run without a DOM.
+export const TEST_FILES = configDefaults.include[0]!;
+export const CORE_DIRS = ['lib', 'scripts'];
 const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 
 export default defineConfig({
@@ -49,22 +52,26 @@ export default defineConfig({
     // the deep glob their suites -- and their docs/engine.test.js -- run too.
     exclude: [...configDefaults.exclude, 'docs/**', '**/.claude/**'],
     // RBAR-90: two projects. The pure core (lib/, ADR-0001) and the build scripts need
-    // no DOM, so they run in plain Node and skip happy-dom's per-file window setup;
-    // the Web Component shells (elements/) and the root page checks keep happy-dom.
+    // no DOM, so they run in plain Node and skip happy-dom's per-file window setup.
+    // 'dom' is the catch-all on Vitest's default test pattern, minus the core's folders,
+    // so a test file anywhere else (a new folder, a .js or .spec file) still runs.
+    // Both inherit the root `exclude` (extends: true); scripts/projects.test.ts guards
+    // the split.
     projects: [
       {
         extends: true,
         test: {
           name: 'core',
           environment: 'node',
-          include: ['lib/**/*.test.ts', 'scripts/**/*.test.ts'],
+          include: CORE_DIRS.map((dir) => `${dir}/${TEST_FILES}`),
         },
       },
       {
         extends: true,
         test: {
           name: 'dom',
-          include: ['elements/**/*.test.ts', '*.test.ts'],
+          include: [TEST_FILES],
+          exclude: CORE_DIRS.map((dir) => `${dir}/**`),
         },
       },
     ],

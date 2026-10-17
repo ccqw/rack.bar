@@ -19,6 +19,7 @@ import type { Plate } from '../lib/plates.ts';
 import { PLATE_SETS, PLATE_SET_KEYS } from '../lib/platesets.ts';
 import { MAX_TARGET_KG } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
+import { nextMacrotask } from '../vitest.timers.ts';
 
 export const SEED = 62;
 export const EPS = 1e-9;
@@ -58,14 +59,18 @@ export function on(rig: Rig, unit: Unit): Console {
     el = mount(rig, unit);
     pool.set(key, el);
   }
+  // A share card left open by the last run (e.g. one that bailed at an fc.pre) is closed,
+  // as the lifter would, so it never carries into the next.
+  const card = q<HTMLElement>(sr(el), 'rack-share');
+  if (!card.hidden) q<HTMLButtonElement>(sr(card), '[data-close]').click();
   modeBtn(el, 'decode').click();
   unitBtn(el, unit).click();
   press(el, 'clear');
   // The reset contract every pooled run relies on: a cleared entry means no Target and
   // a bare rig. If a future change breaks it, fail loudly here rather than let state
   // leak between runs (and make counterexamples non-replayable).
-  if (entryDraft(el) !== '' || sideOnScreen(el).length !== 0) {
-    throw new Error(`pool reset failed for ${key}: Clear left a Target or Plates`);
+  if (entryDraft(el) !== '' || sideOnScreen(el).length !== 0 || !card.hidden) {
+    throw new Error(`pool reset failed for ${key}: Clear left a Target, Plates or an open share card`);
   }
   return el;
 }
@@ -296,8 +301,6 @@ export const storedRecents = (): number[] =>
  * `fc.assert`, every tree a run rendered (~6.6 MB per app mount, and every replaced
  * render) stays reachable until the test finishes, and GC churns on memory it cannot
  * free. A microtask (`await Promise.resolve()`) is not enough: the task must end.
- * The real setImmediate is captured at load, so a property under vi.useFakeTimers still
- * yields (a faked one would never fire).
+ * It uses the real setImmediate (vitest.timers.ts), so it still yields under fake timers.
  */
-const realSetImmediate = globalThis.setImmediate;
-export const nextRun = (): Promise<void> => new Promise((resolve) => realSetImmediate(resolve));
+export const nextRun = nextMacrotask;

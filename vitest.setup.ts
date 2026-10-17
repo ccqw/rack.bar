@@ -6,6 +6,7 @@
 // genuinely exercised, not mocked away, on an object we fully control. Browsers provide
 // the real thing; this never loads outside the test run.
 import { afterEach, beforeEach } from 'vitest';
+import { nextMacrotask } from './vitest.timers.ts';
 
 class MemoryStorage {
   private store = new Map<string, string>();
@@ -68,5 +69,4 @@ beforeEach(installFreshStorage);
 // lets each test's trees be collected. The real setImmediate is captured here, so a test
 // that leaves fake timers on cannot stall it. (Within one test, a property that renders
 // many times yields per run itself: nextRun in elements/properties.drivers.ts.)
-const realSetImmediate = globalThis.setImmediate;
-afterEach(() => new Promise<void>((resolve) => realSetImmediate(resolve)));
+afterEach(nextMacrotask);
