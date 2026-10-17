@@ -81,3 +81,58 @@ carve-out for Warm-up sets only; an amendment note is added to ADR-0003.
 - Tests: example tests in `lib/plan.test.ts`; rule-wide properties in
   `lib/properties.test.ts` against `rampTotalsOracle` in `lib/properties.oracle.ts`,
   which brute-forces every achievable Total and never calls the planner.
+
+## 2026-10-17 -- fewest Plate moves (RBAR-65 slice 4)
+
+Caitlin wanted the Ramp easy to load before using it at the gym, so slice 4 lands
+right after slice 1. Strict add-only (each Side a prefix of the next) was too strict.
+What costs time at the rack is Plate moves: swapping off one outside Plate is fine,
+but swapping a 10 for a 15 when adding a 5 would do is a pain, and stripping the Bar
+to change an inside Plate is the worst. `lib/moves.ts` `planEasyRamp` (same
+arguments as `planRamp`) re-picks the Ramp for the fewest weighted Plate moves.
+
+1. **The stack model.** A Side is a stack, inside to outside, heaviest inside (the
+   sideloads.ts order). Going from one set to the next takes off every Plate outside
+   the longest common inside run, then puts on the rest of the new Side. Strict
+   add-only is the case with nothing taken off. Each row carries its `moves`
+   (`off`, outermost first; `on`, innermost first; and a weighted `cost`) so the UI
+   can caption "+10 per Side" or "swap 2.5 -> 5".
+2. **Change Plates are cheap.** A change Plate (at most `CHANGE_PLATE_MAX_KG` =
+   2.5 kg: Competition 2.5 / 2 / 1.5 / 1 / 0.5 kg, iron 5 / 2.5 lb) goes on last and
+   gets swapped bit by bit (Caitlin's bench and press habit). Each of its moves
+   costs `CHANGE_PLATE_MOVE_COST` = 0.5; every other Plate costs 1.
+3. **Tolerance.** A Warm-up set may sit within `RAMP_TOLERANCE` (2.5%) of the
+   Working Total from its raw target. The tolerance is never less than one
+   Plate-grid step, which is half the Total grid, so the 5 lb iron grid can always
+   meet it. The floor, non-decreasing and ceiling rules above still hold. The
+   nearest Total from decision 3 is always a candidate, so a row that the floor
+   pushes out of tolerance (50% of a 30 kg Working set) keeps a legal answer.
+4. **The Working set** (decided by default, flagged for Caitlin): its Total is
+   exactly the at-or-under Total of decision 1, never over and never lighter, but
+   its Side may be any equal-Total stack if that saves moves. For 140 kg that means
+   25+15+10+10 after a 25+15+10+2.5 warm-up, instead of Decode's 25+25+10.
+   `working` still returns Decode's own result, so the round-up offer is unchanged.
+   If Caitlin prefers the Working set to always show Decode's canonical stack, the
+   change is to give that row a single candidate.
+5. **The search.** This is an exact dynamic programme over the rows. A candidate is
+   one (Total, Side) pair: every Total within tolerance (plus the nearest Total),
+   times each sideloads.ts stack for it with at most `EXTRA_PLATES` (2) Plates past
+   the fewest. Candidates are ranked lexicographically by:
+   - how far rows sit outside the tolerance;
+   - then weighted moves from the bare Bar through the Working set;
+   - then the summed distance from each percentage;
+   - then the Plates loaded.
+
+   Moves between a bare-Bar row and a collared row ignore the Collars, which is a
+   constant cost. A typical Ramp solves in under 10 ms. A Sleeve-capped 7-step Ramp
+   is the worst case, at about 80 ms. `EXTRA_PLATES` = 1 would be about 8x faster
+   but loses the optimum on some Ramps.
+
+Caitlin's 140 kg Ramp becomes 20 / 70 (25) / 100 (25+15) / 125 (25+15+10+2.5) /
+140 (25+15+10+10): 5 weighted moves, with nothing taken off until the last set. The
+nearest-Total Ramp takes 98 kg to 126 kg by stripping its 10 and change Plates.
+
+Tests: `lib/moves.test.ts`, plus the "Fewest Plate moves" properties in
+`lib/properties.test.ts`. They check against `easyRampOracle`, which brute-forces
+every Ramp over every Side of small Inventories without calling sideloads.ts or the
+planner.

@@ -44,9 +44,10 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 - **Help** -- a how-it-works popover explaining the two modes (RBAR-21).
 - **Warm up** -- enter the Working set's Target and get a Ramp of percentage-based
   Warm-up sets building to it, each rounded to the nearest loadable Total and
-  tappable to load (RBAR-65, ADR-0015). Promoted from Later ("Math on entry") on
-  2026-10-16. Slices: the core planner (`lib/plan.ts`), the default-Ramp UI, then
-  fewest-moves loading; template editing and persistence follow real use.
+  re-picked for the fewest Plate moves across the Ramp, tappable to load (RBAR-65,
+  ADR-0015). Promoted from Later ("Math on entry") on 2026-10-16. The core
+  (`lib/plan.ts`, `lib/moves.ts` for fewest Plate moves) lands before the
+  default-Ramp UI; template editing and persistence follow real use.
 
 ## Later (parked, in rough priority order)
 

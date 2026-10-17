@@ -113,6 +113,13 @@ deadlift ramp: Bar x7, 50% x7, 70%, 90%, then the Working set. The mode that sho
 it is labelled **"Warm up"** in the UI.
 _Avoid_: plan, pyramid, progression, warm-up ladder.
 
+**Plate move**:
+Taking one Plate off a Side or putting one on, between two sets of a Ramp. A Side is
+a stack, inside to outside, so changing an inside Plate costs every Plate outside it.
+A **change Plate** (Competition 2.5 kg and below, iron 5 lb and below) is a half
+move: it goes on last and is swapped bit by bit (ADR-0015).
+_Avoid_: swap, step, change (alone).
+
 ## Relationships
 
 - A **Bar** plus a symmetric **Side Load** on each **Side** produces a **Total**.

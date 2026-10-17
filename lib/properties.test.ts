@@ -51,7 +51,18 @@ import {
   fewestPlatesFor,
   maxTotal,
   rampTotalsOracle,
+  easyRampOracle,
+  oracleRampCost,
+  oracleMoves,
 } from './properties.oracle.ts';
+import type { MovesRule } from './properties.oracle.ts';
+import {
+  planEasyRamp,
+  RAMP_TOLERANCE,
+  EXTRA_PLATES,
+  CHANGE_PLATE_MAX_KG,
+  CHANGE_PLATE_MOVE_COST,
+} from './moves.ts';
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import type { RampStep } from './plan.ts';
 import type { Rig } from './properties.oracle.ts';
@@ -473,6 +484,177 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
         });
       }),
       opts,
+    );
+  });
+});
+
+describe('Fewest Plate moves properties (ADR-0015 as amended 2026-10-17)', () => {
+  // Each full-rig run solves a whole-Ramp DP, so these take fewer runs than the rest.
+  const movesOpts = { seed: SEED, numRuns: 100 };
+  const RULE: MovesRule = {
+    toleranceShare: RAMP_TOLERANCE,
+    extraPlates: EXTRA_PLATES,
+    changeMaxKg: CHANGE_PLATE_MAX_KG,
+    changeCost: CHANGE_PLATE_MOVE_COST,
+  };
+  const pctStepsArb: fc.Arbitrary<RampStep[]> = fc
+    .tuple(fc.integer({ min: 0, max: 1 }), fc.array(fc.integer({ min: 1, max: 100 }), { maxLength: 4 }))
+    .map(([bars, pcts]) => [
+      ...Array.from({ length: bars }, (): RampStep => ({ kind: 'bar' })),
+      ...pcts.map((pct): RampStep => ({ kind: 'pct', pct })),
+    ]);
+  const fullCaseArb = fc.record({
+    rt: rigTargetArb,
+    u: unitArb,
+    steps: fc.oneof(pctStepsArb, fc.constant([...DEFAULT_RAMP])),
+  });
+  const rigOf = (rig: Rig) => ({ barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory });
+  const nearest = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
+    planRamp(t, steps, rigOf(rig), { ceilingKg: displayCeilingKg(t, u) });
+  const easy = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
+    planEasyRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
+      ceilingKg: displayCeilingKg(t, u),
+    });
+
+  // Small rigs the brute force can exhaust: a few Plates of each set (the Inventory's
+  // own Plate objects, so Plate identity -- what a move compares -- is shared).
+  const pick = (set: 'comp' | 'training', keep: (p: Plate) => boolean) =>
+    PLATE_SETS[set].inventory.filter(keep);
+  const SMALL_RIGS: readonly Rig[] = [
+    { set: 'comp' as const, barKg: 20, collarKg: 0, inventory: pick('comp', (p) => [20, 10, 5, 2.5].includes(p.kg)) },
+    { set: 'comp' as const, barKg: 20, collarKg: 2.5, inventory: pick('comp', (p) => [15, 5, 2.5].includes(p.kg)) },
+    { set: 'comp' as const, barKg: 15, collarKg: 0, inventory: pick('comp', (p) => [25, 10, 5].includes(p.kg)) },
+    { set: 'comp' as const, barKg: 20, collarKg: 0, inventory: pick('comp', (p) => [20, 5, 1, 0.5].includes(p.kg)) },
+    { set: 'training' as const, barKg: lbToKg(45), collarKg: 0, inventory: pick('training', (p) => ['45', '25', '10', '5'].includes(p.label!)) },
+  ].map((r) => ({ ...r, baselineKg: r.barKg + 2 * r.collarKg, name: `small ${r.set} ${r.inventory.map((p) => p.label ?? p.kg).join('/')} collar ${r.collarKg}` }));
+  const smallCaseArb = fc
+    .constantFrom(...SMALL_RIGS)
+    .chain((rig) =>
+      fc.record({
+        rig: fc.constant(rig),
+        t: fc.oneof(
+          fc.integer({ min: 0, max: 14000 }).map((c) => c / 100),
+          fc.constantFrom(...achievableTotals(rig).filter((x) => x <= 140)),
+        ),
+        u: unitArb,
+        steps: fc.oneof(
+          fc.constant([...DEFAULT_RAMP]),
+          pctStepsArb.map((s) => s.slice(0, 4)),
+        ),
+      }),
+    );
+  const raws = (rows: readonly { kind: string; targetKg: number }[]) =>
+    rows.map((r) => (r.kind === 'warmup' ? r.targetKg : null));
+
+  it('the Ramp\'s weighted Plate moves are the fewest any Ramp within the rules reaches, ties to closeness then fewer Plates (ADR-0015 as amended; brute force)', () => {
+    fc.assert(
+      fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const { best, tol } = easyRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+        const cost = oracleRampCost(
+          got.rows.map((r) => r.side),
+          got.rows.map((r) => r.total),
+          raws(got.rows),
+          tol,
+          RULE,
+        );
+        cost.forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
+      }),
+      { seed: SEED, numRuns: 150 },
+    );
+  });
+
+  it('each row\'s moves are the stack moves from the row before, and they add up (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        let prev: readonly Plate[] = [];
+        let sum = 0;
+        for (const row of got.rows) {
+          expect(row.moves.cost).toBeCloseTo(oracleMoves(prev, row.side, RULE), 9);
+          // Off then on turns the previous Side into this one.
+          const kept = prev.slice(0, prev.length - row.moves.off.length);
+          expect([...kept, ...row.moves.on]).toEqual(row.side);
+          sum += row.moves.cost;
+          prev = row.side;
+        }
+        expect(got.totalMoves).toBeCloseTo(sum, 9);
+      }),
+      movesOpts,
+    );
+  });
+
+  it('every Warm-up set is within the tolerance of its percentage, or on planRamp\'s nearest Total when the floor forces it (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const near = nearest(rig, t, u, steps).rows;
+        const work = got.rows[got.rows.length - 1].total;
+        const grid = Math.min(...rig.inventory.map((p) => p.kg));
+        const tol = Math.max(RAMP_TOLERANCE * work, grid);
+        got.rows.forEach((row, i) => {
+          if (row.kind !== 'warmup') return;
+          const inside = Math.abs(row.total - row.targetKg) <= tol + 1e-9;
+          expect(inside || Math.abs(row.total - near[i].total) <= 1e-9).toBe(true);
+        });
+      }),
+      movesOpts,
+    );
+  });
+
+  it('Totals never decrease, bare-Bar rows stay bare, and every Side is loadable within the Sleeve (ADR-0015 as amended, ADR-0012)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        got.rows.forEach((row, i) => {
+          if (i > 0) expect(row.total).toBeGreaterThanOrEqual(got.rows[i - 1].total - EPS);
+          const baseline = row.collars ? rig.baselineKg : rig.barKg;
+          expect(row.total).toBeCloseTo(totalKg(row.side, baseline), 9);
+          expect(sideWidthMm(row.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+          expect(fromInventory(row.side, rig)).toBe(true);
+          expect(isHeaviestFirst(row.side)).toBe(true);
+          if (row.kind === 'bar') {
+            expect(row.side).toEqual([]);
+            expect(row.total).toBe(rig.barKg);
+          }
+          if (i > 0) expect(row.sameAsPrevious).toBe(Math.abs(row.total - got.rows[i - 1].total) <= EPS);
+        });
+      }),
+      movesOpts,
+    );
+  });
+
+  it('the Working set\'s Total is exactly the at-or-under solve as read; only its Side may differ (ADR-0015 as amended, ADR-0003)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const solved = decodeWithin(t, displayCeilingKg(t, u), rig.baselineKg, rig.inventory);
+        const last = got.rows[got.rows.length - 1];
+        expect(last.kind).toBe('working');
+        expect(last.total).toBeCloseTo(solved.primary.total, 9);
+        expect(got.working).toEqual(solved);
+      }),
+      movesOpts,
+    );
+  });
+
+  it('never needs more moves than the nearest-Total Ramp when that Ramp is within tolerance (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const near = nearest(rig, t, u, steps).rows;
+        let prev: readonly Plate[] = [];
+        let nearMoves = 0;
+        for (const r of near) {
+          nearMoves += oracleMoves(prev, r.side, RULE);
+          prev = r.side;
+        }
+        const work = near[near.length - 1].total;
+        const tol = Math.max(RAMP_TOLERANCE * work, Math.min(...rig.inventory.map((p) => p.kg)));
+        const nearInside = near.every((r) => r.kind !== 'warmup' || Math.abs(r.total - r.targetKg) <= tol + 1e-9);
+        if (nearInside) expect(got.totalMoves).toBeLessThanOrEqual(nearMoves + 1e-9);
+      }),
+      movesOpts,
     );
   });
 });
