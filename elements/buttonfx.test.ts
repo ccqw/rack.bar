@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-// Importing every shell registers all eleven custom elements.
+// Importing every shell registers all ten custom elements.
 import './app.ts';
 import './console.ts';
 import './entry.ts';
 import './fullscreen.ts';
-import './help.ts';
 import './loaded.ts';
 import './palette.ts';
 import './recents.ts';
@@ -44,7 +43,6 @@ const TAGS = [
   'rack-console',
   'rack-entry',
   'rack-fullscreen',
-  'rack-help',
   'rack-loaded',
   'rack-palette',
   'rack-recents',

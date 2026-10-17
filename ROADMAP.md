@@ -43,7 +43,9 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
   RBAR-64) goes to the native share sheet, or the clipboard where there is none (RBAR-19).
 - **Recent targets** -- recent Targets persisted (deduped, most-recent-first, max 6)
   and re-applied from chips (RBAR-20).
-- **Help** -- a how-it-works popover explaining the two modes (RBAR-21).
+- ~~**Help**~~ -- a how-it-works popover explaining the modes (RBAR-21). Cut
+  2026-10-17 (RBAR-86): it explained two modes after Warm up made three, and the
+  screen reads without it.
 - **Warm up** -- enter the Working set's Target and get a Ramp of percentage-based
   Warm-up sets building to it, each rounded to the nearest loadable Total and
   re-picked for the fewest Plate moves across the Ramp, tappable to load (RBAR-65,

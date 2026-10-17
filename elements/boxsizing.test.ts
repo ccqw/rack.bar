@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
-// Importing every shell registers all eleven custom elements.
+// Importing every shell registers all ten custom elements.
 import './app.ts';
 import './console.ts';
 import './entry.ts';
 import './fullscreen.ts';
-import './help.ts';
 import './loaded.ts';
 import './palette.ts';
 import './recents.ts';
@@ -23,7 +22,7 @@ import './sleeve.ts';
 // is pinned at the level it broke: every shadow root must carry the shared reset.
 // The rendered ACs -- sheet <= viewport at 320/384/430px, plus an eyeball sweep of
 // the other roots whose min-height + padding controls shrink to their authored
-// touch-target sizes under border-box (setup, share, recents, help, header pill)
+// touch-target sizes under border-box (setup, share, recents, header pill)
 // -- are covered by the real-browser pass in the PR test plan.
 
 const TAGS = [
@@ -31,7 +30,6 @@ const TAGS = [
   'rack-console',
   'rack-entry',
   'rack-fullscreen',
-  'rack-help',
   'rack-loaded',
   'rack-palette',
   'rack-recents',

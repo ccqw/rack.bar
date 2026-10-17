@@ -220,7 +220,7 @@ color (dark on white/yellow, white otherwise).
 
 A single phone column, 384px design-frame content width, safe-area-inset
 padding, no horizontal page scroll ever. The screen is one fixed composition:
-header (wordmark + help + Setup pill), the always-visible bar visualizer
+header (wordmark + Setup pill), the always-visible bar visualizer
 (204px block), then the mode-dependent lower half that the segmented toggle
 swaps (Enter weight: readout + target + recents; Add plates: loaded chips +
 palette grid). Overflow happens only inside horizontally-scrolling chip rows,
