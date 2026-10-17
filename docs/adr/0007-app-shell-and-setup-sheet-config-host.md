@@ -44,3 +44,11 @@ the shell. ADR-0006's "only persisted state in the app" was written before any c
 UI existed; read it as the principle (config persistence is shell-side, never the
 core), not a literal count -- `rackbar.barKg` is the first such key to actually ship,
 and the unit preference and recents will join it as the matching slices land.
+
+## 2026-10-17 -- `BAR_OPTIONS` / `isOfferedBar` are gone (RBAR-86)
+
+The Competition-only `BAR_OPTIONS` set and its `isOfferedBar` guard were removed as
+unreferenced. The persisted Bar read is validated by `<rack-app>`'s `offeredBars()`,
+which is the active plate set's `offeredBarKgs` (`lib/platesets.ts`, ADR-0010) plus
+that set's custom Bars (ADR-0017); a corrupt or unoffered key still falls back to the
+set's default Bar.
