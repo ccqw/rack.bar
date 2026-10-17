@@ -1,0 +1,239 @@
+// Example tests for the Warm up view logic (RBAR-65 slice 2): how a planned Ramp reads.
+import { describe, it, expect } from 'vitest';
+import {
+  rowDelta,
+  deltaText,
+  deltaSpoken,
+  stepName,
+  stepFractions,
+  walkIndex,
+  warmStatus,
+  warmupView,
+  nextLabel,
+  parseWorking,
+} from './warmup.ts';
+import { planRamp, DEFAULT_RAMP } from './plan.ts';
+import { planEasyRamp } from './moves.ts';
+import type { RampRig } from './plan.ts';
+import { ELEIKO_KG, IRON_LB } from './plates.ts';
+import { lbToKg } from './units.ts';
+
+const COMP: RampRig = { barKg: 20, collarKg: 0, inventory: ELEIKO_KG };
+const IRON: RampRig = { barKg: lbToKg(45), collarKg: 0, inventory: IRON_LB };
+const kg = (n: number) => ELEIKO_KG.find((p) => p.kg === n)!;
+const lb = (s: string) => IRON_LB.find((p) => p.label === s)!;
+const kgs = (side: readonly { kg: number }[]) => side.map((p) => p.kg);
+
+// Caitlin's 140 kg ramp: 20 / 70 (25) / 98 (25+10+2.5+1.5) / 126 (25+25+2.5+0.5) / 140 (25+25+10).
+const RAMP140 = planRamp(140, DEFAULT_RAMP, COMP).rows;
+
+// The planner's rows as the console loads them: Caitlin's 75 kg Ramp by the station rule
+// (ADR-0015): 20 / 37 (5+2.5+1) / 52 (15+1) / 67 (15+5+2.5+1) / 75 (15+5+5+2.5).
+const RAMP75 = planEasyRamp(75, DEFAULT_RAMP, COMP).rows;
+
+describe('rowDelta: the stack moves, not a set difference (ADR-0015 as amended)', () => {
+  it("reads Caitlin's 75 kg Ramp move by move", () => {
+    expect(RAMP75.map((r) => kgs(r.side))).toEqual([[], [5, 2.5, 1], [15, 1], [15, 5, 2.5, 1], [15, 5, 5, 2.5]]);
+    const d = RAMP75.map((_, i) => rowDelta(RAMP75, i));
+    expect(d.map((x) => [kgs(x.off), kgs(x.on)])).toEqual([
+      [[], []],
+      [[], [5, 2.5, 1]],
+      [[1, 2.5, 5], [15, 1]],
+      // 15+1 -> 15+5+2.5+1: the 1 is outside where the 5 goes, so it comes off first.
+      [[1], [5, 2.5, 1]],
+      [[1, 2.5], [5, 2.5]],
+    ]);
+    expect(d.map((x) => deltaText(x, 'kg'))).toEqual([
+      null,
+      '+5 +2.5 +1 kg',
+      'off 1 + 2.5 + 5, on 15 + 1 kg',
+      'off 1, on 5 + 2.5 + 1 kg',
+      'off 1 + 2.5, on 5 + 2.5 kg',
+    ]);
+    expect(deltaSpoken(d[3], 'kg')).toBe('take off 1, then add 5 and 2.5 and 1 kilograms per side');
+  });
+
+  it('a swap deeper in the stack takes off everything outside it, outermost first', () => {
+    // Was pinned as "remove 10 and 1.5"; the 2.5 sits outside the 10, so it comes off too.
+    const rows = [
+      { ...RAMP140[2], side: [kg(25), kg(10), kg(2.5), kg(1.5)] },
+      { ...RAMP140[3], side: [kg(25), kg(25), kg(2.5), kg(0.5)] },
+    ];
+    const d = rowDelta(rows, 1);
+    expect(kgs(d.off)).toEqual([1.5, 2.5, 10]);
+    expect(kgs(d.on)).toEqual([25, 2.5, 0.5]);
+  });
+
+  it('the first row loads from a bare Bar; an add-only row takes nothing off', () => {
+    expect(kgs(rowDelta(RAMP140, 0).on)).toEqual([]);
+    expect(kgs(rowDelta(RAMP140, 1).on)).toEqual([25]);
+    expect(kgs(rowDelta(RAMP140, 1).off)).toEqual([]);
+  });
+
+  it('identical Sides are no moves', () => {
+    const rows = [RAMP140[1], { ...RAMP140[1] }];
+    expect(rowDelta(rows, 1)).toEqual({ off: [], on: [] });
+  });
+});
+
+describe('deltaText / deltaSpoken (every number carries its unit)', () => {
+  it('reads an add-only change as "+N unit", one unit at the end', () => {
+    expect(deltaText({ on: [kg(15)], off: [] }, 'kg')).toBe('+15 kg');
+    expect(deltaText({ on: [kg(15), kg(2.5)], off: [] }, 'kg')).toBe('+15 +2.5 kg');
+    expect(deltaSpoken({ on: [kg(15), kg(2.5)], off: [] }, 'kg')).toBe(
+      'add 15 and 2.5 kilograms per side',
+    );
+  });
+
+  it('reads a change with Plates off as "off ..., on ...", in the order it is done', () => {
+    expect(deltaText({ on: [kg(5)], off: [kg(2.5)] }, 'kg')).toBe('off 2.5, on 5 kg');
+    expect(deltaSpoken({ on: [kg(5)], off: [kg(2.5)] }, 'kg')).toBe(
+      'take off 2.5, then add 5 kilograms per side',
+    );
+  });
+
+  it('reads a take-off-only change with minus signs', () => {
+    expect(deltaText({ on: [], off: [kg(2.5)] }, 'kg')).toBe('-2.5 kg');
+    expect(deltaSpoken({ on: [], off: [kg(2.5)] }, 'kg')).toBe(
+      'take off 2.5 kilograms per side',
+    );
+  });
+
+  it('uses the iron Plates\' stamped pound faces', () => {
+    expect(deltaText({ on: [lb('45')], off: [] }, 'lb')).toBe('+45 lb');
+    expect(deltaSpoken({ on: [lb('45')], off: [] }, 'lb')).toBe('add 45 pounds per side');
+  });
+
+  it('is null when nothing changes', () => {
+    expect(deltaText({ on: [], off: [] }, 'kg')).toBeNull();
+    expect(deltaSpoken({ on: [], off: [] }, 'kg')).toBeNull();
+  });
+});
+
+describe('stepName', () => {
+  it('names the stairs Bar, N%, Work -- the percent sign on every percentage', () => {
+    expect(RAMP140.map(stepName)).toEqual(['Bar', '50%', '70%', '90%', 'Work']);
+  });
+});
+
+describe('stepFractions', () => {
+  it('scales each stair to its Total over the Working Total', () => {
+    expect(stepFractions(RAMP140)).toEqual([20 / 140, 0.5, 0.7, 0.9, 1]);
+  });
+});
+
+describe('walkIndex', () => {
+  it('walks one step with Left/Right and stops at the ends', () => {
+    expect(walkIndex(2, 'ArrowRight', 5)).toBe(3);
+    expect(walkIndex(2, 'ArrowLeft', 5)).toBe(1);
+    expect(walkIndex(4, 'ArrowRight', 5)).toBe(4);
+    expect(walkIndex(0, 'ArrowLeft', 5)).toBe(0);
+  });
+
+  it('jumps with Home/End and ignores other keys', () => {
+    expect(walkIndex(2, 'Home', 5)).toBe(0);
+    expect(walkIndex(2, 'End', 5)).toBe(4);
+    expect(walkIndex(2, 'ArrowUp', 5)).toBeNull();
+    expect(walkIndex(0, 'ArrowRight', 0)).toBeNull();
+  });
+});
+
+describe('warmStatus', () => {
+  it('reads Bare bar on the bare-Bar row', () => {
+    expect(warmStatus(RAMP140[0], 140, 'kg')).toEqual({ kind: 'bare', label: 'Bare bar' });
+  });
+
+  it('reads "N% - exact" when the Total lands on the percentage', () => {
+    expect(warmStatus(RAMP140[2], 140, 'kg')).toEqual({ kind: 'exact', label: '70% - exact' });
+    expect(warmStatus(RAMP140[4], 140, 'kg')).toEqual({ kind: 'exact', label: '100% - exact' });
+  });
+
+  it('reads the real percentage of the Working Total, with its unit, when rounding moved it', () => {
+    // 225 lb on iron: 50% = 112.5 lb ties down to 110 lb (48.9%).
+    const rows = planRamp(lbToKg(225), DEFAULT_RAMP, IRON).rows;
+    expect(warmStatus(rows[1], rows[4].total, 'lb')).toEqual({ kind: 'pct', label: '49% of 225 lb' });
+  });
+
+  it('hands a short Working set back to the By Weight pill (null)', () => {
+    const rows = planRamp(140.3, DEFAULT_RAMP, COMP).rows;
+    expect(warmStatus(rows[4], rows[4].total, 'kg')).toBeNull();
+  });
+});
+
+describe('nextLabel', () => {
+  it('names the next step and its Total with the unit', () => {
+    expect(nextLabel(RAMP140[3], 'kg')).toBe('Next: 90% - 126 kg');
+    expect(nextLabel(RAMP140[4], 'lb')).toBe('Next: Work - 309 lb');
+  });
+});
+
+describe('warmupView', () => {
+  it('builds one stair per row with its unit-carrying Total, name, height and accessible name', () => {
+    const v = warmupView(RAMP140, 2, 'kg', 'kg');
+    expect(v.steps.map((s) => s.name)).toEqual(['Bar', '50%', '70%', '90%', 'Work']);
+    expect(v.steps.map((s) => `${s.totalNum} ${s.totalUnit}`)).toEqual([
+      '20 kg', '70 kg', '98 kg', '126 kg', '140 kg',
+    ]);
+    expect(v.steps.map((s) => s.working)).toEqual([false, false, false, false, true]);
+    expect(v.steps[0].label).toBe('Set 1 of 5, bare bar, 20 kilograms');
+    expect(v.steps[1].label).toBe('Set 2 of 5, 50 percent, 70 kilograms, add 25 kilograms per side');
+    expect(v.steps[4].label).toBe(
+      'Set 5 of 5, working set, 140 kilograms, take off 0.5 and 2.5, then add 10 kilograms per side',
+    );
+  });
+
+  it('points Next at the following row with what to change', () => {
+    const v = warmupView(RAMP140, 1, 'kg', 'kg');
+    expect(v.next).toEqual({
+      label: 'Next: 70% - 98 kg',
+      sub: '+10 +2.5 +1.5 kg per side',
+      disabled: false,
+    });
+    expect(warmupView(RAMP140, 3, 'kg', 'kg').next.sub).toBe('off 0.5 + 2.5, on 10 kg per side');
+  });
+
+  it('disables Next on the Working set', () => {
+    expect(warmupView(RAMP140, 4, 'kg', 'kg').next).toEqual({
+      label: 'Working set loaded',
+      sub: '',
+      disabled: true,
+    });
+  });
+
+  it('captions the selected row\'s add beside "per side" (none on the bare Bar)', () => {
+    expect(warmupView(RAMP140, 0, 'kg', 'kg').addCaption).toBeNull();
+    expect(warmupView(RAMP140, 1, 'kg', 'kg').addCaption).toBe('+25 kg');
+  });
+
+  it('says "same plates" when the next row repeats the Side', () => {
+    // 30 kg Working set: the 50% row lands on the bare Bar again (sameAsPrevious).
+    const rows = planRamp(30, DEFAULT_RAMP, COMP).rows;
+    expect(rows[1].sameAsPrevious).toBe(true);
+    expect(warmupView(rows, 0, 'kg', 'kg').next.sub).toBe('same plates');
+  });
+
+  it('clamps the selection into the rows', () => {
+    expect(warmupView(RAMP140, 9, 'kg', 'kg').selected).toBe(4);
+    expect(warmupView(RAMP140, -1, 'kg', 'kg').selected).toBe(0);
+  });
+
+  it('reads Totals in the display unit and Plates in their stamped unit', () => {
+    const v = warmupView(RAMP140, 0, 'lb', 'kg');
+    expect(v.steps[4].totalNum).toBe('309');
+    expect(v.steps[4].totalUnit).toBe('lb');
+    expect(v.next.sub).toBe('+25 kg per side');
+  });
+});
+
+describe('parseWorking (rackbar.working read validation, ADR-0007)', () => {
+  it('reads a positive finite kg weight', () => {
+    expect(parseWorking('140')).toBe(140);
+    expect(parseWorking('142.88')).toBe(142.88);
+  });
+
+  it('reads missing, blank, garbage, zero, negative and non-finite values as no Working set', () => {
+    for (const raw of [null, '', '  ', 'abc', '0', '-5', 'Infinity', 'NaN', '1e999']) {
+      expect(parseWorking(raw)).toBeNull();
+    }
+  });
+});

@@ -50,7 +50,7 @@ import { SLEEVE_MM, barWithCollars, totalKg } from './plates.ts';
 import type { Plate } from './plates.ts';
 import { planRamp } from './plan.ts';
 import type { PlanOptions, Ramp, RampRig, RampRow, RampStep } from './plan.ts';
-import { plateGridKg } from './sideloads.ts';
+import { hasUsablePlates, plateGridKg } from './sideloads.ts';
 
 const EPS = 1e-9;
 
@@ -299,10 +299,10 @@ export function planEasyRamp(
   const baselineKg = barWithCollars(barKg, collarKg);
   const workingTotal = nearest.working.primary.total;
 
-  // No Plates to load (an empty Inventory, or one with nothing usable, or a Working
-  // Total on the bare rig): every row is planRamp's bare-rig row. Checked from planRamp's
-  // own answer, so plateGridKg never sees a set with nothing to load.
-  if (inventory.length === 0 || nearest.rows.every((r) => r.side.length === 0)) {
+  // No Plates to load (an empty Inventory, one whose every size is none -- ADR-0016's
+  // hasUsablePlates -- or a Working Total on the bare rig): every row is planRamp's
+  // bare-rig row, so plateGridKg never sees a set with nothing to load.
+  if (!hasUsablePlates(inventory) || nearest.rows.every((r) => r.side.length === 0)) {
     return finish(nearest, nearest.rows.map((r) => r.side));
   }
 

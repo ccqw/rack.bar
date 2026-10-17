@@ -98,6 +98,11 @@ class RackEntry extends HTMLElement {
   // big live value, its secondary unit, and the live "on the bar" load line (fed down by
   // the console, which owns decode).
   private sheet!: HTMLElement;
+  // What this field enters (RBAR-65 slice 2): the By Weight Target (the default), or --
+  // with variant="working" -- the Warm up mode's Working set Target, labelled "Working
+  // weight" in plain language (CONTEXT.md). One element, one keypad sheet, one keyboard
+  // path: the variant only changes the labels and lays the row out compactly.
+  private noun = 'Target';
   private liveEl!: HTMLElement;
   private liveUEl!: HTMLElement;
   private liveSecEl!: HTMLElement;
@@ -256,6 +261,8 @@ class RackEntry extends HTMLElement {
   }
 
   connectedCallback(): void {
+    this.noun = this.getAttribute('variant') === 'working' ? 'Working weight' : 'Target';
+    const enter = `Enter ${this.noun === 'Target' ? 'Target' : 'working weight'}`;
     const keys = KEYPAD_ROWS.flat()
       .map(
         (k) => `<button type="button" class="key" data-key="${k}"
@@ -421,11 +428,28 @@ class RackEntry extends HTMLElement {
           :host { padding-top: 10px; }
           .caption { margin-bottom: 6px; }
         }
+        /* The Warm up working-weight row (RBAR-65 slice 2): one compact line -- the
+           label at the left edge, the steppers and value at the right -- so the stairs
+           below keep the room the Target block + Recents had. The steppers drop to the
+           44px touch floor and the value to the mock's 20px underlined reading; the
+           sheet is fixed-position, so it never takes part in this row's layout. */
+        :host([variant="working"]) {
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        }
+        :host([variant="working"]) .caption { margin: 0; flex: 0 1 auto; min-width: 0; }
+        :host([variant="working"]) .row { flex: none; gap: 8px; }
+        :host([variant="working"]) .step { width: 44px; height: 44px; font-size: 22px; }
+        :host([variant="working"]) .value {
+          flex: none; min-width: 84px; font-size: 20px; padding: 2px 2px 3px;
+          border-bottom-width: 1px;
+        }
+        :host([variant="working"]) .value .vu { font-size: 12px; }
       </style>
       <!-- The Target section heading (RBAR-53): an h2 under the app's h1, styled by the
-           section-label recipe. Static "Target" -- the unit rides the value's suffix
+           section-label recipe. Static "Target" ("Working weight" in the Warm up variant,
+           RBAR-65) -- the unit rides the value's suffix
            span (RBAR-39); the value button still carries its own live aria-label. -->
-      <h2 class="caption" data-caption>Target</h2>
+      <h2 class="caption" data-caption>${this.noun}</h2>
       <div class="row">
         <button type="button" class="step" data-step="dec" aria-label="Decrease">-</button>
         <button type="button" class="value" data-value
@@ -434,7 +458,7 @@ class RackEntry extends HTMLElement {
             class="vu" data-value-unit> kg</span></button>
         <button type="button" class="step" data-step="inc" aria-label="Increase">+</button>
       </div>
-      <div class="sheet" data-sheet role="dialog" aria-modal="false" aria-label="Enter Target" hidden>
+      <div class="sheet" data-sheet role="dialog" aria-modal="false" aria-label="${enter}" hidden>
         <div class="live">
           <span class="live-num" data-live>${DEFAULT_BAR_KG}</span><span
             class="live-u" data-live-u>kg</span>
@@ -447,7 +471,7 @@ class RackEntry extends HTMLElement {
                single active source back to the console's status region. -->
           <span class="load" data-live-load role="status" hidden></span>
         </div>
-        <div class="keypad" data-keypad role="group" aria-label="Enter Target">
+        <div class="keypad" data-keypad role="group" aria-label="${enter}">
           ${keys}
         </div>
         <div class="foot">
@@ -704,7 +728,7 @@ class RackEntry extends HTMLElement {
     this.decBtn.setAttribute('aria-label', `Decrease by ${step} ${this._unit}`);
     this.incBtn.setAttribute('aria-label', `Increase by ${step} ${this._unit}`);
     // Announce the live value (aria-labelledby would override the text and hide it).
-    this.valueEl.setAttribute('aria-label', `Target ${shown} ${this._unit}`);
+    this.valueEl.setAttribute('aria-label', `${this.noun} ${shown} ${this._unit}`);
   }
 
   private emit(): void {
