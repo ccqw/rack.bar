@@ -137,6 +137,8 @@ function blockToken(child: Element): string {
   for (const cls of ['modes', 'viz', 'readout', 'over']) {
     if (child.classList.contains(cls)) return cls;
   }
+  // Warm up's working-weight field is a second <rack-entry> (RBAR-65 slice 2).
+  if (child.matches('rack-entry[data-working]')) return 'working';
   return child.tagName.toLowerCase();
 }
 
@@ -168,10 +170,19 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
       'readout',
       'over',
       'rack-entry',
+      'working',
+      'rack-warmup',
       'rack-recents',
       'rack-loaded',
       'rack-palette',
     ]);
+  });
+
+  it('Warm up reads mode -> bar -> Total -> working weight -> stairs + Next (RBAR-65)', () => {
+    const el = mountConsole();
+    commit(el, '100.5'); // a Recent and a round-up exist in By Weight; neither shows here
+    (el.shadowRoot!.querySelector('[data-mode="warmup"]') as HTMLButtonElement).click();
+    expect(visibleBlockOrder(el)).toEqual(['modes', 'viz', 'readout', 'working', 'rack-warmup']);
   });
 
   it('By Weight reads mode -> bar -> Total -> round-up -> Target -> Recent (4a)', () => {
@@ -257,7 +268,10 @@ describe('<rack-console> (bar visualizer contextual label, RBAR-35)', () => {
     // space-between): Share immediately LEFT of fullscreen (RBAR-61). The row sits
     // before the sleeve in the viz block.
     const icons = head.querySelector('.icons')!;
-    expect([...head.children]).toEqual([vizLabel(el), icons]);
+    // The label sits in a left group with Warm up's add caption after it (RBAR-65).
+    const left = head.querySelector('.vizhl')!;
+    expect([...head.children]).toEqual([left, icons]);
+    expect([...left.children]).toEqual([vizLabel(el), el.shadowRoot!.querySelector('[data-viz-add]')]);
     expect([...icons.children]).toEqual([
       el.shadowRoot!.querySelector('[data-share]'),
       el.shadowRoot!.querySelector('[data-fullscreen]'),

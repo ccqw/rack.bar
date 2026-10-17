@@ -81,7 +81,7 @@ export const sr = (el: HTMLElement) => el.shadowRoot!;
 export const entryRoot = (el: HTMLElement) => sr(q(sr(el), 'rack-entry'));
 export const unitBtn = (el: HTMLElement, u: Unit) =>
   q<HTMLButtonElement>(sr(el), `[data-unit="${u}"]`);
-export const modeBtn = (el: HTMLElement, m: 'decode' | 'encode') =>
+export const modeBtn = (el: HTMLElement, m: 'decode' | 'encode' | 'warmup') =>
   q<HTMLButtonElement>(sr(el), `[data-mode="${m}"]`);
 export const press = (el: HTMLElement, k: string) =>
   q<HTMLButtonElement>(entryRoot(el), `[data-key="${CSS.escape(k)}"]`).click();
@@ -202,3 +202,31 @@ export function expectedFor(rig: Rig, u: Unit, draft: string) {
   return { totalKg, short, roundUpKg, atCapacity: short && roundUpKg === null };
 }
 
+
+// ---- Warm up (RBAR-65 slice 2) -----------------------------------------------------
+
+// The working-weight field (the second <rack-entry>, variant="working") and the stairs.
+export const workRoot = (el: HTMLElement) => sr(q(sr(el), 'rack-entry[data-working]'));
+export const warmupRoot = (el: HTMLElement) => sr(q(sr(el), 'rack-warmup'));
+export const stairs = (el: HTMLElement) =>
+  [...warmupRoot(el).querySelectorAll<HTMLButtonElement>('.st')];
+export const nextBtn = (el: HTMLElement) => q<HTMLButtonElement>(warmupRoot(el), '[data-next]');
+export const workValue = (el: HTMLElement) => q<HTMLButtonElement>(workRoot(el), '[data-value]');
+// The working weight as the field shows it ('' when it shows the muted Bar anchor).
+export function workDraft(el: HTMLElement): string {
+  const v = workValue(el);
+  return v.classList.contains('empty') ? '' : (q(v, '[data-value-num]').textContent ?? '');
+}
+// Enter a working weight the way a lifter does: open its keypad, Clear, type, Done (the
+// commit). The same keypad sheet as the By Weight Target.
+export function commitWorking(el: HTMLElement, value: string): void {
+  workValue(el).click(); // open
+  const pressW = (k: string) =>
+    q<HTMLButtonElement>(workRoot(el), `[data-key="${CSS.escape(k)}"]`).click();
+  pressW('clear');
+  for (const ch of value) pressW(ch);
+  q<HTMLButtonElement>(workRoot(el), '[data-done]').click(); // close -> keypadclose
+}
+// The Recent Targets as persisted (canonical kg).
+export const storedRecents = (): number[] =>
+  JSON.parse(localStorage.getItem('rackbar.recents') ?? '[]') as number[];

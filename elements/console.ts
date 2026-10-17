@@ -21,6 +21,7 @@ import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
 import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
+import './warmup.ts';
 import { decodeWithin } from '../lib/decode.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, DEFAULT_COLLAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
@@ -44,6 +45,10 @@ import { format, shownIn, displayCeilingKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
+import { planRamp, DEFAULT_RAMP } from '../lib/plan.ts';
+import type { Ramp, RampRow } from '../lib/plan.ts';
+import { parseWorking, warmStatus, warmupView } from '../lib/warmup.ts';
+import type { WarmupView } from '../lib/warmup.ts';
 
 type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
@@ -67,7 +72,11 @@ type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
 type Share = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
 type Fullscreen = HTMLElement & { load: LoadSummary; plateSet: string; open(): void };
-type Mode = 'decode' | 'encode';
+type Warmup = HTMLElement & { view: WarmupView | null };
+// 'warmup' is the Warm up mode (RBAR-65 slice 2): the Ramp's stairs drive the Side.
+type Mode = 'decode' | 'encode' | 'warmup';
+const isMode = (m: string | undefined): m is Mode =>
+  m === 'decode' || m === 'encode' || m === 'warmup';
 
 // The Recent Targets history persists shell-side under its own key (ADR-0007/0009),
 // canonically in kg (ADR-0006); the row renders it in the active unit (RBAR-17).
@@ -77,6 +86,10 @@ const RECENTS_KEY = 'rackbar.recents';
 // the Secondary readout shows.
 const UNIT_KEY = 'rackbar.unit';
 const SECONDARY_KEY = 'rackbar.secondary';
+// The Warm up mode's Working set Target, canonical kg (RBAR-65 slice 2, ADR-0007/0009):
+// console-owned like the By Weight display state. Absent = never set (Warm up seeds it
+// from the By Weight Target on first open); '' = the lifter cleared it.
+const WORKING_KEY = 'rackbar.working';
 
 // The bar block's fixed parts (RBAR-67): the head row is one icon button tall (the
 // handoff's 30px box), and the sleeve sits VIZ_GAP_PX under it. The flex range of the
@@ -87,6 +100,11 @@ const VIZ_GAP_PX = 10;
 class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private entry!: Entry;
+  // The Warm up mode's working-weight field: a second <rack-entry> (variant="working")
+  // with its own draft and the same keypad sheet + keyboard path (RBAR-65 slice 2).
+  private workEntry!: Entry;
+  private warmup!: Warmup;
+  private vizAdd!: HTMLElement;
   private recentsRow!: Recents;
   private loadedRow!: Loaded;
   private palette!: Palette;
@@ -136,11 +154,20 @@ class RackConsole extends HTMLElement {
   // never auto-puts the lifter over Target (ADR-0003). Both reset on a mode switch.
   private decoded: Decoded | null = null;
   private showingOver = false;
-  // Whether the entry's keypad sheet is open (RBAR-53). While it is -- and Decode is the
-  // active mode, so the sheet actually shows -- the sheet's own "On the bar" load line is
-  // the live announcement source and the console's status region stays quiet (exactly one
-  // source at a time). Tracked off the entry's keypadopen/keypadclose events.
-  private keypadOpen = false;
+  // Which mode's keypad sheet is open, if any (RBAR-53): By Weight's Target field or, since
+  // RBAR-65, Warm up's working-weight field. While that mode is active -- so the sheet
+  // actually shows -- the sheet's own "On the bar" load line is the live announcement
+  // source and the console's status region stays quiet (exactly one source at a time).
+  // Tracked off each entry's keypadopen/keypadclose events.
+  private keypadOwner: Mode | null = null;
+  // Warm up (RBAR-65 slice 2). `working` is the Working set's Target (kg, null = none
+  // yet); `ramp` is its plan on the current rig (null without a Working set); `warmIdx`
+  // is the selected row, whose Side is the shared Side Load while Warm up is active.
+  // `byWeightTarget` is the last By Weight Target, the seed for a first Warm up open.
+  private working: number | null = null;
+  private ramp: Ramp | null = null;
+  private warmIdx = 0;
+  private byWeightTarget: number | null = null;
 
   /**
    * The Bar the solver loads up from (RBAR-15). Setting it threads the new Bar into the
@@ -223,8 +250,15 @@ class RackConsole extends HTMLElement {
   private reconfigure(): void {
     if (!this.entry) return; // pre-connect; connectedCallback renders from the fields
     this.entry.barKg = this.baselineKg();
+    this.workEntry.barKg = this.baselineKg();
     if (this.mode === 'decode' && this.decoded) {
       this.decodeTo(this.decoded.primary.total - this.decoded.primary.delta);
+    } else if (this.mode === 'warmup') {
+      // The entry's Bar setter re-seeds an untouched field that reads the Bar; a
+      // Working set equal to the old Bar must keep reading itself, not the new Bar.
+      if (this.working !== null) this.workEntry.display(this.working);
+      this.planWarmup();
+      this.render();
     } else {
       this.render();
     }
@@ -269,7 +303,7 @@ class RackConsole extends HTMLElement {
           color: var(--rack-accent-ink); background: var(--rack-accent);
         }
         .modes button:focus-visible { outline: 2px solid var(--rack-accent); }
-        rack-entry[hidden], rack-palette[hidden] { display: none; }
+        rack-entry[hidden], rack-palette[hidden], rack-warmup[hidden] { display: none; }
         /* The bar visualizer block (handoff section 3, prototype L98): a head row --
            the contextual label top-left, the Share and fullscreen controls top-right
            (RBAR-18/35/61) -- then the sleeve, 10px apart (the prototype column's gap). */
@@ -294,6 +328,14 @@ class RackConsole extends HTMLElement {
            The shared section-label recipe; uppercase comes from it, so the copy stays
            plain-cased in the DOM exactly like the prototype's vm. */
         .vizlabel { ${SECTION_LABEL} }
+        /* Warm up's add caption beside "per side" (RBAR-65 slice 2, mock option D):
+           what the selected set adds, in accent mono, unit included ("+15 kg"). */
+        .vizhl { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+        .vizadd {
+          font-family: var(--rack-font-num); font-size: 11px; font-weight: 700;
+          letter-spacing: .06em; color: var(--rack-accent); white-space: nowrap;
+        }
+        .vizadd[hidden] { display: none; }
         /* The head's icon buttons: Share then fullscreen (RBAR-61). One shared box rule
            so the two can never drift apart. 30px is the handoff's box (prototype L98;
            RBAR-48's respec, landed here by RBAR-67 because the head row's height is part
@@ -414,6 +456,7 @@ class RackConsole extends HTMLElement {
           background: var(--rack-accent);
         }
         .status.exact .dot { background: var(--rack-success); }
+        .status.bare .dot { background: var(--rack-text-dim); }
         .status.over {
           color: var(--rack-accent-ink);
           background: var(--rack-accent); border-color: var(--rack-accent);
@@ -499,6 +542,7 @@ class RackConsole extends HTMLElement {
         <div class="modes" role="group" aria-label="Mode">
           <button type="button" data-mode="decode" aria-pressed="true">By Weight</button>
           <button type="button" data-mode="encode" aria-pressed="false">By Plates</button>
+          <button type="button" data-mode="warmup" aria-pressed="false">Warm up</button>
         </div>
         <!-- The bar is the hero (RBAR-25, handoff section 3 + 4a/4b): the sleeve sits
              directly under the mode toggle, with the Total readout and the round-up
@@ -513,7 +557,10 @@ class RackConsole extends HTMLElement {
                bottom Share row, which cost a phone screen its vertical room. Always
                available: the card reflects whatever is on the Bar, bare or loaded. -->
           <div class="vizhead">
-            <span class="vizlabel" data-viz-label></span>
+            <span class="vizhl"
+              ><span class="vizlabel" data-viz-label></span
+              ><span class="vizadd" data-viz-add hidden></span
+            ></span>
             <div class="icons">
               <button type="button" class="iconbtn" data-share aria-label="Share">
                 <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -571,6 +618,10 @@ class RackConsole extends HTMLElement {
           <span class="barnote" data-barnote hidden></span>
         </div>
         <rack-entry></rack-entry>
+        <!-- Warm up (RBAR-65 slice 2): the working-weight row, then the Ramp's stairs +
+             Next -- in the editor slot the Target block and Recents hold in By Weight. -->
+        <rack-entry variant="working" data-working hidden></rack-entry>
+        <rack-warmup hidden></rack-warmup>
         <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
              (RBAR-20). Hidden until the lifter has committed a Target. -->
         <rack-recents hidden></rack-recents>
@@ -583,7 +634,10 @@ class RackConsole extends HTMLElement {
       <rack-share></rack-share>
       <rack-fullscreen></rack-fullscreen>
     `;
-    this.entry = this.root.querySelector('rack-entry') as Entry;
+    this.entry = this.root.querySelector('rack-entry:not([data-working])') as Entry;
+    this.workEntry = this.root.querySelector('rack-entry[data-working]') as Entry;
+    this.warmup = this.root.querySelector('rack-warmup') as Warmup;
+    this.vizAdd = this.root.querySelector('[data-viz-add]')!;
     this.recentsRow = this.root.querySelector('rack-recents') as Recents;
     this.loadedRow = this.root.querySelector('rack-loaded') as Loaded;
     this.palette = this.root.querySelector('rack-palette') as Palette;
@@ -614,7 +668,7 @@ class RackConsole extends HTMLElement {
     // forth (RBAR-53): open -> the sheet's load line speaks, the console region mutes;
     // close -> re-render so the console region settles on the final decoded value.
     this.entry.addEventListener('keypadopen', () => {
-      this.keypadOpen = true;
+      this.keypadOwner = 'decode';
     });
     // A Target commit (the keypad closing) is remembered in the Recent row (RBAR-20).
     // Distinct from `target`, which fires on every keystroke -- only the commit is kept,
@@ -622,8 +676,34 @@ class RackConsole extends HTMLElement {
     // no-op (rememberTarget guards it). The trailing render() unmutes the announcement
     // region even on a null commit (rememberTarget only renders on a real Target).
     this.entry.addEventListener('keypadclose', (e) => {
-      this.keypadOpen = false;
+      this.keypadOwner = null;
       this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
+      this.render();
+    });
+    // Warm up's working-weight field (RBAR-65 slice 2): every edit re-plans the Ramp
+    // live (the stairs and the sleeve follow the keypad, as By Weight's Target does) and
+    // persists it; the keypad commit -- and only that -- pushes the Working set's Target
+    // onto Recents, like a By Weight Target commit (ADR-0009). Warm-up rows never do.
+    this.workEntry.addEventListener('target', (e) => {
+      if (this.mode !== 'warmup') return;
+      this.setWorking((e as CustomEvent<{ target: number | null }>).detail.target);
+    });
+    this.workEntry.addEventListener('keypadopen', () => {
+      this.keypadOwner = 'warmup';
+    });
+    this.workEntry.addEventListener('keypadclose', (e) => {
+      this.keypadOwner = null;
+      this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
+      this.render();
+    });
+    // A stair tap, Next, or an arrow key picks a Ramp row: its Side becomes the shared
+    // Side Load (ADR-0005), so the sleeve, Total and pill all read that row.
+    this.warmup.addEventListener('warmupselect', (e) => {
+      if (this.mode !== 'warmup' || !this.ramp) return;
+      const { index } = (e as CustomEvent<{ index: number }>).detail;
+      const rows = this.ramp.rows;
+      this.warmIdx = Math.min(Math.max(0, Math.trunc(index) || 0), rows.length - 1);
+      this.side = rows[this.warmIdx].side;
       this.render();
     });
     // The big Total opens the keypad too (RBAR-57): it reads as tappable, so it is.
@@ -706,7 +786,7 @@ class RackConsole extends HTMLElement {
     this.modeButtons.forEach((b) =>
       b.addEventListener('click', () => {
         const mode = b.dataset.mode;
-        if (mode === 'decode' || mode === 'encode') this.setMode(mode);
+        if (isMode(mode)) this.setMode(mode);
       }),
     );
 
@@ -718,6 +798,11 @@ class RackConsole extends HTMLElement {
     this.recentsRow.unit = this.activeUnit();
     this.recentsRow.targets = this.recents;
     this.entry.barKg = this.baselineKg(); // anchor the entry to the bare-rig baseline
+    // The Working set's Target survives a reload (rackbar.working, read-validated).
+    this.working = parseWorking(readPersisted(WORKING_KEY));
+    this.workEntry.unit = this.activeUnit();
+    this.workEntry.barKg = this.baselineKg();
+    this.workEntry.display(this.working);
     this.render(); // initial state: Decode, a bare rig, no Target typed yet
   }
 
@@ -740,6 +825,27 @@ class RackConsole extends HTMLElement {
     const was = this.unitPref;
     this.unitPref = unit;
     writePersisted(UNIT_KEY, unit);
+    if (this.mode === 'warmup') {
+      // The working weight is kept as read, by By Weight's RBAR-60 rule: when the Working
+      // set read Exact in the old unit, that load IS the working weight, so it becomes
+      // the weight itself (586 lb on Comp loads 266 kg; re-solving the typed 265.8 kg
+      // would drop to 265). Otherwise the field re-reads the SAME canonical kg in the
+      // new unit (the entry's RBAR-38 reformat). Either way the Ramp re-plans against
+      // the new reading's ceiling (ADR-0015 Q7).
+      const workKg = this.ramp?.working.primary.total;
+      if (
+        this.working !== null &&
+        workKg !== undefined &&
+        shownIn(workKg, was) === shownIn(this.working, was)
+      ) {
+        this.working = workKg;
+        writePersisted(WORKING_KEY, String(workKg));
+        this.workEntry.retarget(workKg);
+      }
+      this.planWarmup();
+      this.render();
+      return;
+    }
     if (this.mode !== 'decode' || !this.decoded) {
       this.render();
       return;
@@ -801,13 +907,15 @@ class RackConsole extends HTMLElement {
   // the weight worth a chip. On a bare Bar this records the bare rig Total, exactly as
   // the prototype does.
   private openShare(): void {
-    this.rememberTarget(encode(this.side, this.baselineKg()));
+    // Warm up never pushes a warm-up row onto Recents (RBAR-65): only the Working set's
+    // Target, on its keypad commit, is worth a chip there.
+    if (this.mode !== 'warmup') this.rememberTarget(encode(this.side, this.baselineKg()));
     // The card derives the Total from these (loadTotalKg), so no separate Total is
     // passed -- nothing to drift from the Plates.
     this.share.load = {
       side: this.side,
       barKg: this._barKg,
-      collarKg: this._collarKg,
+      collarKg: this.loadCollarKg(),
       unit: this.activeUnit(),
     };
     // The set names the card caption (RBAR-44); the load snapshot stays
@@ -824,7 +932,7 @@ class RackConsole extends HTMLElement {
     this.fullscreen.load = {
       side: this.side,
       barKg: this._barKg,
-      collarKg: this._collarKg,
+      collarKg: this.loadCollarKg(),
       unit: this.activeUnit(),
     };
     // The set names the caption's config line (RBAR-30/44); the load snapshot
@@ -840,6 +948,7 @@ class RackConsole extends HTMLElement {
   // typed-back displayed Total must land on itself, not a Plate step below it.
   private decodeTo(target: number | null): void {
     this.showingOver = false;
+    this.byWeightTarget = target;
     this.decoded =
       target === null
         ? null
@@ -865,8 +974,72 @@ class RackConsole extends HTMLElement {
     this.showingOver = false;
     if (mode === 'decode') {
       this.entry.display(this.side.length > 0 ? encode(this.side, this.baselineKg()) : null);
+    } else if (mode === 'warmup') {
+      this.enterWarmup();
     }
     this.render();
+  }
+
+  // Enter Warm up (RBAR-65 slice 2). The first time, with no Working set ever saved
+  // (the key is absent, not merely cleared), the By Weight Target seeds it (Q12). The
+  // field shows it silently, and the Ramp is planned from it; the selected row's Side
+  // becomes the shared Side Load.
+  private enterWarmup(): void {
+    const seed = this.byWeightTarget;
+    if (this.working === null && readPersisted(WORKING_KEY) === null && seed !== null && seed > 0) {
+      this.working = seed;
+      writePersisted(WORKING_KEY, String(seed));
+    }
+    this.workEntry.display(this.working);
+    this.planWarmup();
+  }
+
+  // Adopt a working-weight edit: a positive weight is the Working set's Target, anything
+  // else (an emptied field, a typed 0) is "none yet". Persisted either way ('' = cleared,
+  // so the next open does not re-seed), then re-planned.
+  private setWorking(target: number | null): void {
+    this.working = target !== null && target > 0 ? target : null;
+    writePersisted(WORKING_KEY, this.working === null ? '' : String(this.working));
+    this.planWarmup();
+    this.render();
+  }
+
+  // Plan the Ramp for the Working set on the current rig (lib/plan.ts, ADR-0015) and
+  // load the selected row. The Working set solves at or under its reading in the
+  // display unit (displayCeilingKg, RBAR-60), exactly as By Weight would. The template
+  // is DEFAULT_RAMP (editing it is slice 3). The selection is kept across re-plans,
+  // clamped into the rows.
+  private planWarmup(): void {
+    if (this.working === null) {
+      this.ramp = null;
+      this.side = [];
+      return;
+    }
+    this.ramp = planRamp(
+      this.working,
+      DEFAULT_RAMP,
+      { barKg: this._barKg, collarKg: this._collarKg, inventory: this.inventory() },
+      { ceilingKg: displayCeilingKg(this.working, this.activeUnit()) },
+    );
+    this.warmIdx = Math.min(this.warmIdx, this.ramp.rows.length - 1);
+    this.side = this.ramp.rows[this.warmIdx].side;
+  }
+
+  // The selected Ramp row while Warm up shows one, else null.
+  private warmRow(): RampRow | null {
+    return this.mode === 'warmup' && this.ramp ? this.ramp.rows[this.warmIdx] : null;
+  }
+
+  // The Total on the Bar right now. A Ramp row carries its own (the bare-Bar row has no
+  // Collars, ADR-0015 Q5); otherwise it is the Side on the effective Bar.
+  private loadTotalKg(): number {
+    return this.warmRow()?.total ?? encode(this.side, this.baselineKg());
+  }
+
+  // The Collar the share/fullscreen cards should draw: none on a bare-Bar Ramp row.
+  private loadCollarKg(): number {
+    const row = this.warmRow();
+    return row && !row.collars ? 0 : this._collarKg;
   }
 
   private render(): void {
@@ -876,13 +1049,23 @@ class RackConsole extends HTMLElement {
     // The bar block's contextual label (RBAR-35, prototype L924): "per side" whenever
     // anything is loaded (either mode -- the shared Side Load is the fact it names),
     // else the active mode's empty-state prompt. Uppercasing is the CSS's job.
+    // In Warm up a planned Ramp always reads "per side" (the bare-Bar row included),
+    // with the selected set's add caption beside it (RBAR-65 slice 2).
     this.vizLabel.textContent =
-      this.side.length > 0
+      this.side.length > 0 || this.warmRow() !== null
         ? 'per side'
         : this.mode === 'encode'
           ? 'Tap a plate to load'
           : 'Enter a weight';
+    const view =
+      this.mode === 'warmup' && this.ramp
+        ? warmupView(this.ramp.rows, this.warmIdx, unit, plateSetFor(this._plateSetKey).unit)
+        : null;
+    this.warmup.view = view;
+    this.vizAdd.hidden = view?.addCaption == null;
+    this.vizAdd.textContent = view?.addCaption ?? '';
     this.entry.unit = unit;
+    this.workEntry.unit = unit;
     this.recentsRow.unit = unit;
     // The Recent rail highlights the chip matching the live Target (RBAR-37): fed in
     // canonical kg, so a chip applied in lb still matches its own echo. Fed HERE, before
@@ -894,11 +1077,13 @@ class RackConsole extends HTMLElement {
         : null;
     // Value and suffix split (RBAR-39): only the value rolls; the suffix just tracks
     // the active unit. Together they still read "142 kg" (format's shape).
-    rollText(this.totalNum, String(shownIn(encode(this.side, this.baselineKg()), unit)));
+    rollText(this.totalNum, String(shownIn(this.loadTotalKg(), unit)));
     this.totalUnit.textContent = ` ${unit}`;
     this.renderUnitToggle(unit);
     this.renderSecondary(unit);
     this.entry.hidden = this.mode !== 'decode';
+    this.workEntry.hidden = this.mode !== 'warmup';
+    this.warmup.hidden = this.mode !== 'warmup';
     // The Total-tap affordance is By-Weight only (RBAR-57): By Plates has no keypad,
     // so the wrapper goes inert there (its look never changes -- see .totaltap).
     this.totalTap.disabled = this.mode !== 'decode';
@@ -971,6 +1156,8 @@ class RackConsole extends HTMLElement {
         pill.kind === 'capacity' ? `${pill.label}, bar at capacity` : pill.label,
       );
       this.announce(note === null ? line : `${line}. ${note}`);
+    } else if (this.mode === 'warmup' && this.ramp && this.working !== null) {
+      this.renderWarmStatus(this.ramp, this.ramp.rows[this.warmIdx], this.working, unit);
     } else {
       this.status.hidden = true;
       this.status.className = 'status'; // drop any prior state class/label while hidden
@@ -979,6 +1166,7 @@ class RackConsole extends HTMLElement {
       this.over.textContent = '';
       this.atcap.hidden = true; // capacity is a decode-outcome caption (RBAR-47)
       this.entry.loadLine = null; // nothing decoded -> the keypad sheet hides the line
+      this.workEntry.loadLine = null;
       this.barnote.hidden = true;
       this.barnote.textContent = '';
       // No decode outcome to qualify the Total (Encode, or no Target yet): the spoken
@@ -989,7 +1177,7 @@ class RackConsole extends HTMLElement {
       const full = this.mode === 'encode' && atSleeveCapacity(this.side, this.inventory());
       this.announce(
         announceLine(
-          shownIn(encode(this.side, this.baselineKg()), unit),
+          shownIn(this.loadTotalKg(), unit),
           unit,
           full ? 'Sleeve full' : undefined,
         ),
@@ -1004,7 +1192,7 @@ class RackConsole extends HTMLElement {
   // re-remembers) still settles to exactly one announcement -- and the numRoll transition
   // never drives it, because only render() writes here, once, with the final value.
   private announce(text: string): void {
-    if (this.keypadOpen && this.mode === 'decode') return;
+    if (this.keypadOwner !== null && this.keypadOwner === this.mode) return;
     if (this.announcer.textContent === text) return;
     this.announcer.textContent = text;
   }
@@ -1020,7 +1208,7 @@ class RackConsole extends HTMLElement {
   // when hidden (still tappable to bring it back). The lifter's choice persists.
   private renderSecondary(unit: Unit): void {
     const other: Unit = unit === 'kg' ? 'lb' : 'kg';
-    const totalKgVal = encode(this.side, this.baselineKg());
+    const totalKgVal = this.loadTotalKg();
     this.secondary.classList.toggle('off', !this.showSecondary);
     this.secondary.textContent = this.showSecondary
       ? format(totalKgVal, other)
@@ -1029,6 +1217,31 @@ class RackConsole extends HTMLElement {
       'aria-label',
       this.showSecondary ? `Hide ${other} readout` : `Show ${other} readout`,
     );
+  }
+
+  // Warm up's status (RBAR-65 slice 2): the pill reads the selected row off the
+  // DISPLAYED numbers (warmStatus: "Bare bar", "70% - exact", "71% of 140 kg"); a Working
+  // set that is not exact reads Decode's own pill (short / at capacity, ADR-0003). The
+  // By Weight round-up row is not part of Warm up, so its occupants stay hidden. The
+  // working-weight keypad's "On the bar" line reads the Working set, and the spoken line
+  // is the selected row's Total + its pill.
+  private renderWarmStatus(ramp: Ramp, row: RampRow, working: number, unit: Unit): void {
+    const workingTotal = ramp.working.primary.total;
+    const atCap = ramp.working.over === undefined;
+    const pill =
+      warmStatus(row, workingTotal, unit) ??
+      statusPill(shownIn(row.total, unit), shownIn(row.targetKg, unit), unit, atCap);
+    this.status.hidden = false;
+    this.status.className = `status ${pill.kind}`;
+    this.statusLabel.textContent = pill.label;
+    this.over.hidden = true;
+    this.over.textContent = '';
+    this.atcap.hidden = true;
+    this.barnote.hidden = true;
+    this.barnote.textContent = '';
+    this.entry.loadLine = null;
+    this.workEntry.loadLine = onBarLine(workingTotal, working, unit, atCap);
+    this.announce(announceLine(shownIn(row.total, unit), unit, pill.label));
   }
 
   // The Total status pill (RBAR-28, handoff 4a), keyed off the DISPLAYED numbers
