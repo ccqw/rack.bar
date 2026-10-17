@@ -2693,6 +2693,15 @@ describe('<rack-console> split-when-different readout (RBAR-58)', () => {
     expect(entryValue(el)).toBe('142');
   });
 
+  it('quotes the Target exactly as typed in the active unit, not the readout\'s rounding (Caitlin, 2026-10-17)', () => {
+    const el = mountConsole();
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    type(el, '142.3');
+    expect(asked(el).hidden).toBe(false);
+    expect(asked(el).textContent).toBe('You asked 142.3 lb');
+    expect(entryValue(el)).toBe('142.3');
+  });
+
   it('swaps the Secondary readout for the chip only while they differ', () => {
     const el = mountConsole();
     type(el, '140');

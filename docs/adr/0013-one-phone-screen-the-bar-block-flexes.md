@@ -95,7 +95,9 @@ geometry, the 14.5px Target line and the 67px On the bar block together.
 Caitlin's pick of option C, "split when different" (2026-10-17). The Total is By Weight's
 one hero number and also the Target's editor: the steppers flank it, and a tap opens the
 keypad on the Target. The Target splits off under it as a dashed "You asked" chip only
-when the load misses it as read (ADR-0010). The bottom Target block (divider, label,
+when the load misses it as read (ADR-0010); the chip quotes the Target exactly as typed
+in the active unit ("You asked 142.3 lb"), while the pill reads the rounded miss (Caitlin,
+2026-10-17). The bottom Target block (divider, label,
 stepper row) is gone. The By Weight `<rack-entry>` is headless: it adds only its keypad
 sheet and sits outside the column. In By Weight the status line under the hero reserves
 the chip's 24px (it was 18px), and the hero carries a 6px underline box, so the chip

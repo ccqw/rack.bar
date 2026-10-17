@@ -21,7 +21,7 @@ import {
 const fmt = (n: number) => String(Number(n.toFixed(2)));
 
 describe('<rack-console> By Weight readout properties (RBAR-58)', () => {
-  it('split when different: the hero is always the Total on the bar; the "You asked" chip shows exactly when that Total misses the Target as read, names the reading, and sits the pill\'s magnitude from the hero (RBAR-58, ADR-0010, ADR-0003)', () => {
+  it('split when different: the hero is always the Total on the bar; the "You asked" chip shows exactly when that Total misses the Target as read and quotes the Target as typed; the pill reads the rounded miss (RBAR-58, ADR-0010, ADR-0003)', () => {
     fc.assert(
       fc.property(rigDraftCaseArb, fc.boolean(), ([rig, u, draft], takeRoundUp) => {
         const el = on(rig, u);
@@ -40,9 +40,12 @@ describe('<rack-console> By Weight readout properties (RBAR-58)', () => {
           expect(secondaryShown(el)).toBe(true);
         } else {
           expect(statusKind(el)).not.toBe('exact');
-          expect(askedText(el)).toBe(`You asked ${fmt(target)} ${u}`);
+          // The chip quotes the Target exactly as the keypad holds it in the active unit
+          // (Caitlin, 2026-10-17): "You asked 142.3 lb", not the readout's rounding.
+          expect(askedText(el)).toBe(`You asked ${fmt(Number(entryDraft(el)))} ${u}`);
+          expect(askedText(el)).toBe(`You asked ${fmt(Number(draft))} ${u}`);
           expect(secondaryShown(el)).toBe(false);
-          // "You asked" minus the hero is exactly the miss the pill reads.
+          // The pill keeps its own rule: the miss between the readings, rounded as shown.
           expect(statusLabel(el)).toBe(
             `${fmt(Math.abs(target - total))} ${u} ${total < target ? 'short' : 'over'}`,
           );

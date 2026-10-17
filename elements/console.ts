@@ -1625,9 +1625,9 @@ class RackConsole extends HTMLElement {
       this.atcap.hidden = pill.kind !== 'capacity';
       // Split when different (RBAR-58): the Target splits off the hero only when the
       // load misses it AS READ (ADR-0010) -- the pill's own test, so the chip and the
-      // pill always come and go together, and "You asked" minus the hero is the pill's
-      // magnitude. Exact: the Target is the hero, not shown twice, and the Secondary
-      // readout keeps its place.
+      // pill always come and go together; the chip quotes the Target as typed, the pill
+      // reads the rounded miss. Exact: the Target is the hero, not shown twice, and the
+      // Secondary readout keeps its place.
       this.renderAsked(pill.kind === 'exact' ? null : targetKg, unit);
       // After a step to another way, or while off the first (RBAR-66), the line says
       // which way and names its Plates -- a bar tap keeps the Total, so the Plates are
@@ -1752,12 +1752,18 @@ class RackConsole extends HTMLElement {
     else this.totalTap.removeAttribute('aria-expanded');
   }
 
-  // The "You asked" chip (RBAR-58): the Target as read, in place of the Secondary
-  // readout, or (null) hidden with the Secondary back.
+  // The "You asked" chip (RBAR-58): the Target, in place of the Secondary readout, or
+  // (null) hidden with the Secondary back. The chip quotes the Target exactly as the keypad holds it in the active unit
+  // (Caitlin, 2026-10-17): "You asked 142.3 lb", never rounded to the readout's
+  // precision -- the pill keeps its own rounded miss. A draft mid-entry ("142.")
+  // reads as its number; an empty draft falls back to the Target as shown.
   private renderAsked(targetKg: number | null, unit: Unit): void {
     this.asked.hidden = targetKg === null;
     this.secondary.hidden = targetKg !== null;
-    this.askedNum.textContent = targetKg === null ? '' : fmtNum(shownIn(targetKg, unit));
+    const typed = Number(this.entry.reading);
+    const asRead = this.entry.reading !== '' && Number.isFinite(typed) ? typed : null;
+    this.askedNum.textContent =
+      targetKg === null ? '' : fmtNum(asRead ?? shownIn(targetKg, unit));
     this.askedUnit.textContent = targetKg === null ? '' : ` ${unit}`;
   }
 
