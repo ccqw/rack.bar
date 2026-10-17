@@ -37,6 +37,7 @@ import {
   maxTotal,
 } from './properties.oracle.ts';
 import type { Rig } from './properties.oracle.ts';
+import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -132,6 +133,22 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
   // exact Plates and order against an independent DP.
   it('loads the fewest Plates for every Training Total (ADR-0003 as amended by RBAR-69; exhaustive)', () => {
     expect(fewestPlateMisses(RIGS.filter((r) => r.set === 'training'))).toEqual([]);
+  });
+
+  // The full rule, not just the count: for ANY Target (on the grid, between it, past the
+  // Sleeve), primary and round-up are the exact stack an independent DP picks -- fewest
+  // Plates, then heaviest-first (lib/fewest.oracle.ts).
+  it('loads the canonical stack for any Target: fewest Plates, then heaviest-first, round-up included (ADR-0003 as amended by RBAR-69)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, ({ rig, t }) => {
+        const o = fewestOracle(rig.inventory, GRID_KG[rig.set]);
+        const { primary, over } = decode(t, rig.baselineKg, rig.inventory);
+        const unitsOf = (total: number) => Math.round((total - rig.baselineKg) / 2 / o.gridKg);
+        expect(primary.side).toEqual(o.pick(unitsOf(primary.total)));
+        if (over) expect(over.side).toEqual(o.pick(unitsOf(over.total)));
+      }),
+      opts,
+    );
   });
 
   it('never proposes a Side wider than the Sleeve, round-up included (ADR-0012)', () => {
