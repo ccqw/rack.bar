@@ -64,3 +64,30 @@ write -- a failed or unavailable clipboard leaves the label unchanged rather tha
 claiming a copy that did not happen. The entrance animation (the `rack-card` and
 `rack-fade` keyframes, the handoff's `cardIn`) and the final colour/spacing
 treatment fold from the RBAR-10 handoff; the structure ships thin here.
+
+## Amended 2026-10-16 (RBAR-64): the copied text is a Wordle-style emoji plan
+
+The Copy button's text grows from three lines to five, still one pure function
+(`loadingSummary`) in `lib/summary.ts`:
+
+    rack.bar - 100 kg
+    (one emoji per Plate on a Side, heaviest first)
+    Per side: 2x 25  1x 15
+    20 kg / 44 lb bar - Competition
+    https://rack.bar
+
+- **One map.** `plateEmoji` reads a single `PLATE_EMOJI` table keyed by Plate colour:
+  a coloured square for a bumper, the same colour as a circle for a change Plate
+  (under 5 kg; the 5 kg white stays a square). Iron has no colour, so it is a black
+  large square (45 / 35 / 25 lb) or a black medium-small square (10 / 5 / 2.5 lb).
+  The source stays ASCII: every glyph is a `\u{...}` escape named in a comment.
+- **The count line stays.** It is the real instruction and the fallback for screen
+  readers and colour-blind readers; the emoji row is the flourish. Both read the same
+  Side Load, so the row's order and counts match `groupSide` (tested).
+- **Bare Bar:** no emoji row; the "Bare bar - no plates" line stays.
+- **Collars** stay on the config line only (they are not Plates); no glyph in the row.
+- **Closing link** `https://rack.bar`, so a paste advertises the app and links in
+  every chat app (a bare `rack.bar` may not autolink on a newer TLD).
+- The card's visible chips are unchanged. There is no separate plain-text summary
+  any more: the count and config lines inside the new text are that plain version.
+- Web Share (`navigator.share`) is not part of this change.

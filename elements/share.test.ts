@@ -118,6 +118,24 @@ describe('<rack-share>', () => {
     vi.unstubAllGlobals();
   });
 
+  it('Copy writes the emoji loading plan with the count line beside it (RBAR-64)', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const { el, root } = mount();
+    el.open();
+    (root.querySelector('[data-copy]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    const lines = (writeText.mock.calls[0]![0] as string).split('\n');
+    // 25, 25, 15, 2.5: red square x2, yellow square, red circle.
+    expect(lines[1]).toBe('\u{1F7E5}\u{1F7E5}\u{1F7E8}\u{1F534}');
+    expect(lines[2]).toBe('Per side: 2x 25  1x 15  1x 2.5');
+    expect(lines.at(-1)).toBe('https://rack.bar');
+    // The visible chips are unchanged: plain count labels, no emoji.
+    const chips = [...root.querySelectorAll('[data-chip]')].map((c) => c.textContent);
+    expect(chips).toEqual(['2x 25', '1x 15', '1x 2.5']);
+    vi.unstubAllGlobals();
+  });
+
   it('does not falsely claim a copy when the clipboard write fails', async () => {
     const writeText = vi.fn().mockRejectedValue(new Error('denied'));
     vi.stubGlobal('navigator', { clipboard: { writeText } });

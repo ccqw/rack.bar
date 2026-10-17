@@ -2,8 +2,8 @@
 // RBAR-44). A centered modal that shows the current load as a clean summary -- a
 // header row (wordmark left, 'Loading card' label right), big Total, secondary unit,
 // the per-Side Plates as wrapped colour chips (or a bare-bar state), and a config
-// caption -- then one action row: Copy summary (accent, grows; writes the plain-text
-// version to the clipboard) beside Close (quiet outline).
+// caption -- then one action row: Copy summary (accent, grows; writes the Wordle-style
+// emoji loading plan to the clipboard, RBAR-64) beside Close (quiet outline).
 //
 // A controlled, stateless shell (ADR-0001), the same shape as <rack-setup> / <rack-recents>:
 // one property down (`load`, a snapshot of the current load), one event up (`close`). It
@@ -264,7 +264,7 @@ class RackShare extends HTMLElement {
     this.captionEl.textContent = `${configText(barKg, collarKg, setLabel)} - per side`;
   }
 
-  // Write the plain-text summary to the clipboard and confirm with a transient "Copied"
+  // Write the loading summary (emoji row + count line, RBAR-64) to the clipboard and confirm with a transient "Copied"
   // (ADR-0011). The confirmation flips ONLY on a successful write -- a missing or denied
   // clipboard leaves the label unchanged rather than claiming a copy that did not happen.
   private copy(): void {

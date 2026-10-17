@@ -1,7 +1,7 @@
 // Loading summary -- the share card's text (RBAR-19, ADR-0011). Pure core (ADR-0001):
 // it folds a snapshot of the current load into the per-Side Plate groups the card
-// renders as colour chips and the ~3-line plain text the Copy button writes to the
-// clipboard. Both the visible chips and the copied text derive from here, so they
+// renders as colour chips and the short Wordle-style text the Copy button writes to
+// the clipboard (an emoji row per Side plus the plain count line, RBAR-64). Both the visible chips and the copied text derive from here, so they
 // cannot drift. No DOM, no clipboard -- the element wires those.
 //
 // Plate faces stay the Plate's own stamp (`label ?? kg`): kg on the Eleiko set even
@@ -105,26 +105,69 @@ export function configText(barKg: number, collarKg: number, setLabel: string): s
   return `${rig} - ${setLabel}`;
 }
 
+/** The closing link line of the copied text, so a paste advertises the app (RBAR-64). */
+export const SHARE_LINK = 'https://rack.bar';
+
 /**
- * The 3-line plain-text loading summary the Copy button writes (RBAR-19/44,
- * ADR-0011; prototype copyText L906):
+ * The one Plate-to-emoji map (RBAR-64). The source stays ASCII, so every glyph is an
+ * escape, named in its comment. A bumper is a coloured square; a change Plate wears
+ * its bumper's colour as a circle. Iron carries no colour, so it is black: a large
+ * square for the big Plates, a medium-small square for the small ones. Every glyph is
+ * a single code point with default emoji presentation (no variation selector needed).
+ */
+const PLATE_EMOJI: Record<PlateColor, { readonly big: string; readonly small: string }> = {
+  red: { big: '\u{1F7E5}', small: '\u{1F534}' }, // large red square / large red circle
+  blue: { big: '\u{1F7E6}', small: '\u{1F535}' }, // large blue square / large blue circle
+  yellow: { big: '\u{1F7E8}', small: '\u{1F7E1}' }, // large yellow square / large yellow circle
+  green: { big: '\u{1F7E9}', small: '\u{1F7E2}' }, // large green square / large green circle
+  white: { big: '\u{2B1C}', small: '\u{26AA}' }, // white large square / medium white circle
+  iron: { big: '\u{2B1B}', small: '\u{25FE}' }, // black large square / black medium-small square
+};
+
+// A Plate lighter than this is "small" in the emoji row: the Eleiko change Plates
+// (2.5 kg and down; the 5 kg white stays a square) and the iron 10 / 5 / 2.5 lb.
+const SMALL_PLATE_BELOW_KG = 5;
+
+/** One Plate's emoji: its colour, a square when big, the small glyph when small. */
+export function plateEmoji(p: Plate): string {
+  const glyphs = PLATE_EMOJI[p.color];
+  return p.kg < SMALL_PLATE_BELOW_KG ? glyphs.small : glyphs.big;
+}
+
+/**
+ * The Wordle-style emoji row (RBAR-64): one emoji per Plate on a Side, in loading
+ * order (heaviest first), so the colour run shows the plan at a glance. It reads the
+ * same Side Load `groupSide` folds, so its order and counts match the count line
+ * (asserted in summary.test.ts). An empty Side is an empty row.
+ */
+export function emojiRow(side: readonly Plate[]): string {
+  return side.map(plateEmoji).join('');
+}
+
+/**
+ * The loading summary the Copy button writes (RBAR-19/44, ADR-0011; reshaped into a
+ * Wordle-style paste by RBAR-64):
  *
  *   rack.bar - 100 kg                       <- wordmark + Total (display Unit)
+ *   (emoji row)                             <- one glyph per Plate on a Side
  *   Per side: 2x 25  1x 15                  <- groups, counts always, two-space join
  *   20 kg / 44 lb bar - Competition         <- the config caption the card shows
+ *   https://rack.bar                        <- closing link
  *
- * The Total reads in `unit`; the config line is dual-unit by construction. The Total
- * is derived from the rig + Side Load (`loadTotalKg`), and the group label, bare-bar
- * text, and config all come from the shared helpers -- so the text and the card
- * cannot diverge. Plate faces are the Plate's own stamp; `setLabel` is the active
- * plate set's lifter-facing name (the element resolves it, `plateSetFor(key).label`).
+ * The emoji row is the flourish; the count line is the instruction (and what a
+ * screen reader or colour-blind reader relies on), so both always ship together. A
+ * bare Bar has no emoji row and keeps the "Bare bar - no plates" line. Collars stay
+ * on the config line only -- they are not Plates. The Total reads in `unit`; the
+ * config line is dual-unit by construction. The Total is derived from the rig + Side
+ * Load (`loadTotalKg`), and the group label, bare-bar text, and config all come from
+ * the shared helpers -- so the text and the card cannot diverge. `setLabel` is the
+ * active plate set's lifter-facing name (the element resolves it).
  */
 export function loadingSummary(s: LoadSummary, setLabel: string): string {
-  const total = loadTotalKg(s);
-  const head = `rack.bar - ${format(total, s.unit)}`;
-  const perSide =
+  const head = `rack.bar - ${format(loadTotalKg(s), s.unit)}`;
+  const plan =
     s.side.length === 0
-      ? BARE_BAR
-      : `Per side: ${groupSide(s.side).map(groupText).join('  ')}`;
-  return `${head}\n${perSide}\n${configText(s.barKg, s.collarKg, setLabel)}`;
+      ? [BARE_BAR]
+      : [emojiRow(s.side), `Per side: ${groupSide(s.side).map(groupText).join('  ')}`];
+  return [head, ...plan, configText(s.barKg, s.collarKg, setLabel), SHARE_LINK].join('\n');
 }
