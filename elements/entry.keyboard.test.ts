@@ -5,8 +5,9 @@ import { lbToKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 
 // Physical keyboard input for the Target keypad (RBAR-49). While the sheet is open,
-// physical keys drive the SAME press()/closeKeypad() path as taps, so these cases mirror
-// the tap-path oracle set in entry.test.ts with real KeyboardEvents in place of clicks.
+// physical keys drive the SAME press()/step()/closeKeypad() paths as taps, so these
+// cases mirror the tap-path oracle set in entry.test.ts with real KeyboardEvents in
+// place of clicks.
 
 type Entry = HTMLElement & { unit: Unit };
 
@@ -599,7 +600,7 @@ describe('<rack-entry> physical keyboard (RBAR-49)', () => {
     document.body.append(field);
     openSheet(root);
     field.focus();
-    for (const k of ['5', 'Backspace', 'Enter']) {
+    for (const k of ['5', ',', 'Backspace', 'ArrowUp', 'Enter']) {
       expect(keydown(k, {}, field).defaultPrevented).toBe(false);
     }
     expect(seen).not.toHaveBeenCalled();
@@ -630,7 +631,7 @@ describe('<rack-console> physical keyboard commits to Recents (RBAR-49)', () => 
       shadow.querySelector<HTMLButtonElement>(`[${attr}]`)!.click(); // modal over the pad
       const seen = targetSpy(entry);
       const closed = closeSpy(entry);
-      for (const k of ['5', 'Backspace', 'Escape', 'Enter']) {
+      for (const k of ['5', ',', 'Backspace', 'ArrowUp', 'Escape', 'Enter']) {
         expect(keydown(k).defaultPrevented).toBe(false);
       }
       expect(seen).not.toHaveBeenCalled();
@@ -663,7 +664,9 @@ describe('<rack-console> physical keyboard commits to Recents (RBAR-49)', () => 
     shadow.querySelector<HTMLButtonElement>('[data-mode="encode"]')!.click();
     const seen = targetSpy(entry as HTMLElement);
     const closed = closeSpy(entry as HTMLElement);
-    for (const k of ['5', 'Enter']) expect(keydown(k).defaultPrevented).toBe(false);
+    for (const k of ['5', ',', 'ArrowUp', 'Enter']) {
+      expect(keydown(k).defaultPrevented).toBe(false);
+    }
     expect(seen).not.toHaveBeenCalled();
     expect(closed).not.toHaveBeenCalled();
     const recents = shadow.querySelector('rack-recents')!;
