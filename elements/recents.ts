@@ -283,6 +283,14 @@ class RackRecents extends HTMLElement {
         this.closeMenu(true);
       }
     });
+    // Keyboard focus moving on (Tab) closes the popover, per the ARIA menu pattern. Only
+    // a focus that lands on a real element outside counts: a null relatedTarget is a
+    // blur to the page (Safari blurs on a tap of a button), and that must not close the
+    // menu between the press and the click on Remove. Outside taps close it anyway.
+    this.menuEl.addEventListener('focusout', (e) => {
+      const next = e.relatedTarget;
+      if (next instanceof Node && !this.menuEl.contains(next)) this.closeMenu(false);
+    });
     this.renderChips();
   }
 
@@ -382,6 +390,13 @@ class RackRecents extends HTMLElement {
     for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
       this.rail.addEventListener(type, () => this.cancelHold());
     }
+    // The click a long-press release fires (if any) is dispatched right after its
+    // pointerup, so the swallow flag only needs to outlive that task. iOS often sends no
+    // click after a long hold; without this a stale flag would eat the next keyboard
+    // activation (Enter/Space fire a click with no pointerdown to reset it).
+    this.rail.addEventListener('pointerup', () => {
+      if (this.suppressClick) setTimeout(() => (this.suppressClick = false), 0);
+    });
     this.rail.addEventListener('scroll', () => this.cancelHold(), { passive: true });
 
     // The non-gesture route to the same popover: the context-menu key, Shift+F10 and a
@@ -402,15 +417,18 @@ class RackRecents extends HTMLElement {
 
     // Delete/Backspace on a focused chip removes it at once (RBAR-73, pairing with the
     // RBAR-49 keyboard work). Claimed and stopped here, so an open keypad's document
-    // listener never also reads Backspace as deleting a digit.
+    // listener never also reads Backspace as deleting a digit -- on the Undo chip too,
+    // where focus lands after a removal, so a held key's auto-repeat cannot eat Target
+    // digits. A repeat never removes: one held key removes one chip.
     this.rail.addEventListener('keydown', (e) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const onUndo = (e.target as Element | null)?.closest?.('[data-undo]');
       const chip = chipOf(e);
-      if (!chip) return;
+      if (!chip && !onUndo) return;
       e.preventDefault();
       e.stopPropagation();
-      this.removeTarget(Number(chip.dataset.target));
+      if (chip && !e.repeat) this.removeTarget(Number(chip.dataset.target));
     });
   }
 
@@ -446,6 +464,7 @@ class RackRecents extends HTMLElement {
     if (this.menuFor === null) return;
     const kg = this.menuFor;
     this.menuFor = null;
+    this.suppressClick = false; // a closed popover has no pending release to swallow
     this.menuEl.hidden = true;
     document.removeEventListener('pointerdown', this.onDocPointer, true);
     if (refocus) this.chipFor(kg)?.focus();

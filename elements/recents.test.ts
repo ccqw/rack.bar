@@ -429,6 +429,71 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     expect(undoBtn(root)!.getAttribute('aria-label')).toBe('Undo remove 80 kg');
   });
 
+  it('Backspace on the Undo chip is claimed too, and a held (repeating) key removes one chip only', () => {
+    const { root, removed } = owned([120, 100, 80]);
+    const docKeys = vi.fn();
+    document.addEventListener('keydown', docKeys);
+    chips(root)[0].dispatchEvent(del('Backspace'));
+    const repeat = new KeyboardEvent('keydown', {
+      key: 'Backspace', bubbles: true, composed: true, cancelable: true, repeat: true,
+    });
+    undoBtn(root)!.dispatchEvent(repeat); // auto-repeat lands on the focused Undo
+    chips(root)[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, composed: true, repeat: true }),
+    );
+    document.removeEventListener('keydown', docKeys);
+    expect(removed.map((r) => r.target)).toEqual([120]);
+    expect(repeat.defaultPrevented).toBe(true);
+    expect(docKeys).not.toHaveBeenCalled(); // an open keypad never sees it as a digit delete
+  });
+
+  it('Tab out of the popover closes it', () => {
+    const { root } = owned([120, 100]);
+    chips(root)[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(menu(root).hidden).toBe(false);
+    removeItem(root).dispatchEvent(
+      new FocusEvent('focusout', { bubbles: true, composed: true, relatedTarget: chips(root)[1] }),
+    );
+    expect(menu(root).hidden).toBe(true);
+  });
+
+  it('a blur to the page (Safari, a tap on Remove) keeps the popover open so Remove still lands', () => {
+    const { root, removed } = owned([120, 100]);
+    chips(root)[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    removeItem(root).dispatchEvent(
+      new FocusEvent('focusout', { bubbles: true, composed: true, relatedTarget: null }),
+    );
+    expect(menu(root).hidden).toBe(false);
+    removeItem(root).click();
+    expect(removed.map((r) => r.target)).toEqual([120]);
+  });
+
+  it('a long-press release with no click (iOS) never swallows a later keyboard activation', () => {
+    const { el, root } = owned([120, 100]);
+    const applied = vi.fn();
+    el.addEventListener('recentapply', applied);
+    const chip = chips(root)[0];
+    chip.dispatchEvent(pointer('pointerdown'));
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    chip.dispatchEvent(pointer('pointerup')); // no click follows
+    vi.advanceTimersByTime(1);
+    removeItem(root).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    chips(root)[0].click(); // Enter/Space: a click with no pointerdown before it
+    expect(applied).toHaveBeenCalledTimes(1);
+  });
+
+  it('when the Undo lapses, keyboard focus moves to the chip now in its slot', () => {
+    const { root } = owned([120, 100]);
+    chips(root)[0].focus();
+    chips(root)[0].dispatchEvent(del());
+    expect(root.activeElement).toBe(undoBtn(root));
+    vi.advanceTimersByTime(UNDO_MS);
+    expect(root.activeElement).toBe(chips(root)[0]);
+    expect(chips(root)[0].dataset.target).toBe('100');
+  });
+
   it('tells screen readers how to remove, and announces a removal and its undo', () => {
     const { root } = owned([120]);
     const chip = chips(root)[0];

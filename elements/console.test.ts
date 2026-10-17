@@ -1057,6 +1057,19 @@ describe('<rack-console> removing a Recent (RBAR-73, ADR-0009)', () => {
     }
   });
 
+  it('re-renders that commit nothing (a unit toggle, a keypad digit) keep the Undo alive', () => {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100]));
+    const el = mountConsole();
+    pressDelete(recentChips(el)[0]);
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="kg"]')!.click();
+    valueBtn(el).click(); // open the keypad
+    type(el, '5'); // a digit: renders, does not commit
+    expect(undo(el)).not.toBeNull();
+    undo(el)!.click();
+    expect(recentLabels(el)).toEqual([120, 100]);
+  });
+
   it('a fresh commit during the Undo window makes the removal final', () => {
     localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100]));
     const el = mountConsole();
