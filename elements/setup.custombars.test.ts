@@ -151,16 +151,75 @@ describe('<rack-setup> custom Bars (RBAR-76, ADR-0017)', () => {
     addTile(root)!.click();
     const hint = root.querySelector<HTMLElement>('[data-bar-hint]')!;
     expect(hint.textContent).toBe('Up to 50 kg');
-    for (const bad of ['', '0', '51', '7.125', 'abc']) {
+    // Each failure names its own cause (RBAR-76 review): an in-range number with too
+    // many decimals is not blamed on the range.
+    const cases: [string, string][] = [
+      ['', 'Enter a number, like 15 or 15.5'],
+      ['abc', 'Enter a number, like 15 or 15.5'],
+      ['1e1', 'Enter a number, like 15 or 15.5'],
+      ['35.555', 'Up to 2 decimals'],
+      ['7.125', 'Up to 2 decimals'],
+      ['0', 'Enter 0.01 to 50 kg'],
+      ['51', 'Enter 0.01 to 50 kg'],
+    ];
+    for (const [bad, why] of cases) {
       input(root).value = bad;
       save(root).click();
       expect(input(root).getAttribute('aria-invalid')).toBe('true');
+      expect(hint.textContent).toBe(why);
+      expect(hint.classList.contains('bad')).toBe(true);
     }
     expect(added).not.toHaveBeenCalled();
-    expect(hint.textContent).toBe('Enter 0.01 to 50 kg');
     unitBtn(root, 'lb').click();
     expect(hint.textContent).toBe('Up to 110 lb');
     expect(input(root).hasAttribute('aria-invalid')).toBe(false);
+  });
+
+  it('accepts a trailing dot ("35." is 35)', () => {
+    const { el, root } = mount();
+    const added = spy(el, 'baradd');
+    addTile(root)!.click();
+    unitBtn(root, 'lb').click();
+    input(root).value = '35.';
+    save(root).click();
+    expect(added).toHaveBeenCalledWith({ value: 35, unit: 'lb' });
+  });
+
+  it('a custom Bar the set hides takes no slot there: "+" counts the custom tiles shown', () => {
+    const { el, root } = mount();
+    // 45 lb is Training's own Bar: three custom Bars on Comp, two custom tiles on Training.
+    el.customBars = [
+      { value: 45, unit: 'lb' },
+      { value: 35, unit: 'lb' },
+      { value: 25, unit: 'kg' },
+    ];
+    expect(addTile(root)).toBeNull();
+    el.plateSet = 'training';
+    expect(customTiles(root)).toHaveLength(2);
+    expect(addTile(root)).not.toBeNull();
+  });
+
+  it('refuses, with a hint naming the set, an add that would give another set a 4th custom Bar', () => {
+    const { el, root } = mount();
+    const added = spy(el, 'baradd');
+    el.customBars = [
+      { value: 45, unit: 'lb' },
+      { value: 35, unit: 'lb' },
+      { value: 25, unit: 'kg' },
+    ];
+    el.plateSet = 'training';
+    addTile(root)!.click();
+    input(root).value = '15';
+    save(root).click(); // 15 lb would be Comp's 4th custom tile
+    expect(added).not.toHaveBeenCalled();
+    expect(input(root).getAttribute('aria-invalid')).toBe('true');
+    expect(root.querySelector('[data-bar-hint]')!.textContent).toBe(
+      'Comp has 3 custom Bars: remove one there',
+    );
+    unitBtn(root, 'kg').click();
+    input(root).value = '15'; // 15 kg is Comp's own Bar: shown on Training only, so it fits
+    save(root).click();
+    expect(added).toHaveBeenCalledWith({ value: 15, unit: 'kg' });
   });
 
   it('Cancel and Escape return to the tiles without adding, focus back on "+"', () => {
@@ -257,6 +316,25 @@ describe('<rack-setup> removing a custom Bar (RBAR-76; the RBAR-73 long-press pa
     vi.advanceTimersByTime(5000);
     expect(root.querySelector('[data-bar-undo]')).toBeNull();
     expect(addTile(root)).not.toBeNull();
+  });
+
+  // RBAR-76 review (WCAG 2.4.3): when the Undo lapses, focus stays in the dialog, on
+  // the custom tile now in that slot, else "+" (as rack-recents' finishCollapse).
+  it('when the Undo lapses, focus moves to the tile now in its slot, or to "+"', () => {
+    const { el, root } = mount();
+    el.customBars = [
+      { value: 35, unit: 'lb' },
+      { value: 7, unit: 'kg' },
+    ];
+    del(customTiles(root)[0]!);
+    el.customBars = [{ value: 7, unit: 'kg' }];
+    expect(root.activeElement).toBe(root.querySelector('[data-bar-undo]'));
+    vi.advanceTimersByTime(5000);
+    expect(root.activeElement).toBe(customTiles(root)[0]);
+    del(customTiles(root)[0]!);
+    el.customBars = [];
+    vi.advanceTimersByTime(5000);
+    expect(root.activeElement).toBe(addTile(root));
   });
 
   it('closing the sheet ends a pending Undo', () => {

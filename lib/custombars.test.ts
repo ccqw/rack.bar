@@ -13,6 +13,9 @@ import {
   serializeCustomBars,
   barsFor,
   barLabel,
+  readStamp,
+  visibleCustomCount,
+  addRefusal,
 } from './custombars.ts';
 import { PLATE_SETS } from './platesets.ts';
 import { lbToKg } from './units.ts';
@@ -43,10 +46,27 @@ describe('custom Bar stamps (RBAR-76, ADR-0017)', () => {
     expect(parseStampText(' 15.9 ', 'kg')).toEqual({ value: 15.9, unit: 'kg' });
     expect(parseStampText('15,9', 'kg')).toEqual({ value: 15.9, unit: 'kg' });
     expect(parseStampText('7.50', 'kg')).toEqual({ value: 7.5, unit: 'kg' });
-    for (const bad of ['', ' ', '0', '1e1', '0x10', '-5', '7.125', '51', 'abc', '7.', '.5x']) {
+    for (const bad of ['', ' ', '0', '1e1', '0x10', '-5', '7.125', '51', 'abc', '.', '.5x']) {
       expect(parseStampText(bad, 'kg')).toBeNull();
     }
     expect(parseStampText('.5', 'kg')).toEqual({ value: 0.5, unit: 'kg' });
+    // A trailing dot is easy to leave on a decimal pad; it reads as the whole number.
+    expect(parseStampText('35.', 'lb')).toEqual({ value: 35, unit: 'lb' });
+  });
+
+  it('says why an entry fails: its format, too many decimals, or the range', () => {
+    expect(readStamp('35', 'lb')).toEqual({ stamp: { value: 35, unit: 'lb' } });
+    for (const t of ['', ' ', 'abc', '1e1', '0x10', '-5', '.', '1.2.3', '.5x']) {
+      expect(readStamp(t, 'kg')).toEqual({ error: 'format' });
+    }
+    for (const t of ['35.555', '7.125', '.125']) {
+      expect(readStamp(t, 'kg')).toEqual({ error: 'decimals' });
+    }
+    for (const t of ['0', '0.00', '50.01', '51', '1234']) {
+      expect(readStamp(t, 'kg')).toEqual({ error: 'range' });
+    }
+    expect(readStamp('110', 'lb')).toEqual({ stamp: { value: 110, unit: 'lb' } });
+    expect(readStamp('110.01', 'lb')).toEqual({ error: 'range' });
   });
 
   it('derives kg from the stamp: lb through the exact factor, kg as is', () => {
@@ -74,6 +94,24 @@ describe('the custom Bar list (RBAR-76, ADR-0017)', () => {
     expect(addCustomBar(list, { value: 35.0, unit: 'lb' })).toEqual([s35, s7]);
     list = addCustomBar(list, s25);
     expect(addCustomBar(list, s15)).toEqual([s35, s7, s25]);
+  });
+
+  // The cap counts the custom Bars a set SHOWS (RBAR-76 review): a custom Bar weighing
+  // what a set's own Bar weighs is not a tile there, so it takes no slot there -- but
+  // no set may ever show more than 3.
+  it('caps the custom Bars each set shows, not the stored list', () => {
+    const s45 = { value: 45, unit: 'lb' } as const; // Training's own Bar: hidden there
+    const list = [s45, s35, s25];
+    expect(visibleCustomCount(list, 'comp')).toBe(3);
+    expect(visibleCustomCount(list, 'training')).toBe(2);
+    // On Training there is room for one more -- unless Competition would then show 4.
+    expect(addCustomBar(list, s7)).toBe(list);
+    expect(addRefusal(list, s7)).toBe('comp');
+    // A Bar Competition offers itself (15 kg) shows only on Training: it fits.
+    const s15kg = { value: 15, unit: 'kg' } as const;
+    expect(addRefusal(list, s15kg)).toBeNull();
+    expect(addCustomBar(list, s15kg)).toEqual([s45, s35, s25, s15kg]);
+    expect(addRefusal([s35, s7, s25], s15)).toBe('comp');
   });
 
   it('ignores an invalid stamp', () => {

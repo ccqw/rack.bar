@@ -23,10 +23,24 @@ Bars that belongs to the lifter, not the set.
    Competition).
 
 3. **Limits** (for Caitlin to confirm): a stamp is above 0 and at most **50 kg /
-   110 lb**, at up to **2 decimals** (some Bars are stamped "15.9 kg"); at most **3**
-   custom Bars. When the list is full the "+" tile is not offered. Adding a weight the
-   active set already offers selects that Bar; adding a weight a custom Bar already has
-   selects it; neither is stored twice.
+   110 lb**, at up to **2 decimals** (some Bars are stamped "15.9 kg"); a trailing dot
+   ("35.") reads as the whole number. A refused entry says why, one hint per cause: not
+   a number ("Enter a number, like 15 or 15.5"), too many decimals ("Up to 2
+   decimals"), or out of range ("Enter 0.01 to 50 kg"). Adding a weight the active set
+   already offers selects that Bar; adding a weight a custom Bar already has selects
+   it; neither is stored twice.
+
+   **At most 3 custom Bars show on any one set.** The cap counts the custom tiles a set
+   *shows*, not the stored list (amended in review, 2026-10-17): a custom Bar a set
+   hides under rule 2 has no tile there to remove, so it must not take a slot there
+   either. "45 lb" added on Competition is hidden on Training, so Training still offers
+   "+" with two other custom Bars. An add is refused only when it would give some set a
+   4th custom tile, and the hint names that set ("Comp has 3 custom Bars: remove one
+   there") because only there can one be removed. The stored list can therefore hold
+   one more Bar than a set shows (at most 3 per set, by the property tests). The
+   alternative -- refusing any stamp that equals a built-in Bar on *any* set -- was
+   rejected: it would block real Bars, a 15 kg or 5 kg bar loaded with iron, or a 45 lb
+   bar loaded with Eleiko.
 
 4. **Persistence** (ADR-0007): the list lives in the app shell under
    `rackbar.customBars` as JSON `[{"value":35,"unit":"lb"}]`, validated on read. A
@@ -37,7 +51,9 @@ Bars that belongs to the lifter, not the set.
 
 5. **Removal** reuses the RBAR-73 Recents gesture: a long-press (or right-click / the
    context-menu key) on a custom tile opens Remove, Delete on a focused tile removes at
-   once, and an Undo tile holds the slot for 5 s. Built-in Bars cannot be removed. **If
+   once, and an Undo tile holds the slot for 5 s; when it lapses, focus moves to the
+   custom tile now in that slot, else "+", never out of the dialog (WCAG 2.4.3, as
+   Recents). Built-in Bars cannot be removed. **If
    the chosen Bar is removed, the Bar falls back to the set's default**; Undo restores
    the Bar at its place and re-selects it if it was chosen.
 

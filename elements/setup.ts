@@ -30,13 +30,14 @@ import type { Bar, PlateSetKey } from '../lib/platesets.ts';
 import {
   CUSTOM_BAR_MAX,
   MAX_CUSTOM_BARS,
+  addRefusal,
   barLabel,
-  parseStampText,
+  readStamp,
   stampBar,
   stampKg,
   stampLabel,
 } from '../lib/custombars.ts';
-import type { BarStamp } from '../lib/custombars.ts';
+import type { BarStamp, StampError } from '../lib/custombars.ts';
 import type { Unit } from '../lib/units.ts';
 import { LONG_PRESS_MS, MOVE_SLOP_PX, UNDO_MS } from './recents.ts';
 import { BOX_SIZING } from './boxsizing.ts';
@@ -325,6 +326,7 @@ class RackSetup extends HTMLElement {
         .hint {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
           letter-spacing: .04em; color: var(--rack-text-dim);
+          min-width: 0; text-align: right;
         }
         .hint.bad { color: var(--rack-danger); }
         /* The Bar row: custom Bars and "+" join the set's own, so the row scrolls
@@ -548,7 +550,10 @@ class RackSetup extends HTMLElement {
       if (!own.includes(bar.kg)) items.push(this.barTile(bar, i));
     });
     if (this.pending && this.pending.index >= this._customBars.length) items.push(undo);
-    if (!this.pending && this._customBars.length < MAX_CUSTOM_BARS) {
+    // "+" counts the custom tiles THIS set shows: a custom Bar weighing what a set Bar
+    // weighs has no tile here, so it takes no slot here (ADR-0017).
+    const shownCustoms = this._customBars.filter((s) => !own.includes(stampKg(s))).length;
+    if (!this.pending && shownCustoms < MAX_CUSTOM_BARS) {
       items.push(`
         <button type="button" class="tile add" data-bar-add aria-label="Add a Bar">${PLUS_SVG}</button>`);
     }
@@ -635,18 +640,42 @@ class RackSetup extends HTMLElement {
   // the chosen one; anything else flags the field and says the range.
   private submitAdd(): void {
     const field = this.barTilesEl.querySelector<HTMLInputElement>('[data-bar-input]')!;
-    const stamp = parseStampText(field.value, this.addUnit);
-    if (!stamp) {
-      field.setAttribute('aria-invalid', 'true');
-      this.barHintEl.classList.add('bad');
-      this.barHintEl.textContent = `Enter 0.01 to ${CUSTOM_BAR_MAX[this.addUnit]} ${this.addUnit}`;
-      field.focus();
-      return;
+    const read = readStamp(field.value, this.addUnit);
+    if ('error' in read) return this.refuseAdd(field, this.stampErrorText(read.error));
+    const stamp = read.stamp;
+    // A Bar the set offers, or a custom Bar of that weight, is simply selected (the app
+    // decides). A new one must leave every set at 3 custom tiles or fewer; if it would
+    // not, say which set is full -- its tiles are only removable there.
+    const kg = stampKg(stamp);
+    const known =
+      plateSetFor(this._plateSetKey).bars.some((b) => b.kg === kg) ||
+      this._customBars.some((b) => stampKg(b) === kg);
+    const full = known ? null : addRefusal(this._customBars, stamp);
+    if (full !== null) {
+      return this.refuseAdd(
+        field,
+        `${PLATE_SETS[full].shortLabel} has ${MAX_CUSTOM_BARS} custom Bars: remove one there`,
+      );
     }
     this.adding = false;
     this.renderBarTiles();
     this.emit('baradd', { value: stamp.value, unit: stamp.unit });
     this.barTilesEl.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+  }
+
+  // Flag the entry and say why it was not added; focus stays in the field.
+  private refuseAdd(field: HTMLInputElement, why: string): void {
+    field.setAttribute('aria-invalid', 'true');
+    this.barHintEl.classList.add('bad');
+    this.barHintEl.textContent = why;
+    field.focus();
+  }
+
+  // The hint for each way typed text fails to be a stamp (lib/custombars readStamp).
+  private stampErrorText(error: StampError): string {
+    if (error === 'decimals') return 'Up to 2 decimals';
+    if (error === 'range') return `Enter 0.01 to ${CUSTOM_BAR_MAX[this.addUnit]} ${this.addUnit}`;
+    return 'Enter a number, like 15 or 15.5';
   }
 
   // The Bar row's delegated listeners (the row outlives every re-render): tile taps,
@@ -801,9 +830,23 @@ class RackSetup extends HTMLElement {
     if (!stamp) return;
     this.clearPending();
     this.pending = { stamp, index: i, select: this._barKg === stampKg(stamp) };
+    // When the window lapses the Undo tile goes; if it had focus, focus moves to the
+    // custom tile now in that slot, else "+" -- never out of the dialog (WCAG 2.4.3; as
+    // rack-recents' finishCollapse).
     this.undoTimer = setTimeout(() => {
+      const onUndo = (this.root.activeElement as HTMLElement | null)?.hasAttribute(
+        'data-bar-undo',
+      );
       this.clearPending();
       this.renderBarTiles();
+      if (!onUndo) return;
+      const customs = this.barTilesEl.querySelectorAll<HTMLButtonElement>('[data-custom]');
+      const next =
+        [...customs].find((t) => Number(t.dataset.custom) >= i) ??
+        this.barTilesEl.querySelector<HTMLButtonElement>('[data-bar-add]') ??
+        customs[customs.length - 1] ??
+        this.barTilesEl.querySelector<HTMLButtonElement>('[data-bar]');
+      next?.focus();
     }, UNDO_MS);
     this.emit('barremove', { index: i });
     this.renderBarTiles();

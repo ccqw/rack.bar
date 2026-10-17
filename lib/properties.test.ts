@@ -87,8 +87,11 @@ import {
   serializeCustomBars,
   stampKg,
   addCustomBar,
+  removeCustomBar,
+  restoreCustomBar,
 } from './custombars.ts';
 import type { BarStamp } from './custombars.ts';
+import type { PlateSetKey } from './platesets.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -1653,6 +1656,22 @@ describe('Custom Bar properties (ADR-0017)', () => {
   );
   // The kg a stamp weighs, from the ADR alone: lb through the exact factor (ADR-0006).
   const oracleKg = (s: BarStamp) => (s.unit === 'lb' ? s.value * 0.45359237 : s.value);
+  // Stamps biased toward the weights the sets offer themselves (20 / 15 / 5 kg, 45 lb),
+  // where a custom Bar is hidden on one set and shown on the other (ADR-0017 rule 2).
+  const builtInStampArb = fc.constantFrom<BarStamp>(
+    { value: 20, unit: 'kg' },
+    { value: 15, unit: 'kg' },
+    { value: 5, unit: 'kg' },
+    { value: 45, unit: 'lb' },
+  );
+  const biasedStampArb = fc.oneof(stampArb, builtInStampArb, fc.constantFrom<BarStamp>(
+    { value: 35, unit: 'lb' },
+    { value: 25, unit: 'kg' },
+    { value: 7, unit: 'kg' },
+  ));
+  // The custom tiles a set shows, from the ADR: the stamps not weighing one of its Bars.
+  const shownOn = (list: readonly BarStamp[], key: PlateSetKey) =>
+    list.filter((s) => !PLATE_SETS[key].bars.some((b) => b.kg === oracleKg(s)));
 
   it('the Total on a custom Bar is the stamp\'s kg + 2 x Side Load + 2 x Collar, at the greatest achievable Total at or under the Target (ADR-0017, ADR-0002, ADR-0003, ADR-0008)', () => {
     const arb = fc
@@ -1724,7 +1743,9 @@ describe('Custom Bar properties (ADR-0017)', () => {
     fc.assert(
       fc.property(rawArb, (raw) => {
         const list = parseCustomBars(raw);
-        expect(list.length).toBeLessThanOrEqual(MAX_CUSTOM_BARS);
+        for (const key of PLATE_SET_KEYS) {
+          expect(shownOn(list, key).length).toBeLessThanOrEqual(MAX_CUSTOM_BARS);
+        }
         for (const s of list) expect(isValidStamp(s)).toBe(true);
         expect(new Set(list.map(oracleKg)).size).toBe(list.length);
         expect(parseCustomBars(serializeCustomBars(list))).toEqual(list);
@@ -1732,10 +1753,45 @@ describe('Custom Bar properties (ADR-0017)', () => {
       opts,
     );
     fc.assert(
-      fc.property(fc.array(stampArb, { maxLength: 6 }), (stamps) => {
+      fc.property(fc.array(biasedStampArb, { maxLength: 6 }), (stamps) => {
         const list = stamps.reduce<readonly BarStamp[]>((acc, s) => addCustomBar(acc, s), []);
-        expect(list.length).toBeLessThanOrEqual(MAX_CUSTOM_BARS);
         expect(parseCustomBars(serializeCustomBars(list))).toEqual(list);
+      }),
+      opts,
+    );
+  });
+
+  // RBAR-76 review: a custom Bar a set hides (it weighs what the set's own Bar weighs)
+  // must not take a slot on that set, where it has no tile to remove. The cap is on
+  // the tiles each set shows.
+  it('the cap counts only the custom Bars a set shows: an add is accepted exactly when it is new by weight and no set would show more than 3 (ADR-0017)', () => {
+    fc.assert(
+      fc.property(fc.array(biasedStampArb, { maxLength: 8 }), (stamps) => {
+        let list: readonly BarStamp[] = [];
+        for (const s of stamps) {
+          const fresh = !list.some((b) => oracleKg(b) === oracleKg(s));
+          const fits = PLATE_SET_KEYS.every(
+            (k) => shownOn([...list, s], k).length <= MAX_CUSTOM_BARS,
+          );
+          const next = addCustomBar(list, s);
+          expect(next.length).toBe(list.length + (fresh && fits ? 1 : 0));
+          list = next;
+          for (const k of PLATE_SET_KEYS) {
+            expect(shownOn(list, k).length).toBeLessThanOrEqual(MAX_CUSTOM_BARS);
+          }
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('Undo is the inverse of a removal: restoring a removed custom Bar at its index gives back the list (ADR-0017)', () => {
+    fc.assert(
+      fc.property(fc.array(biasedStampArb, { maxLength: 8 }), fc.nat(), (stamps, n) => {
+        const list = stamps.reduce<readonly BarStamp[]>((acc, s) => addCustomBar(acc, s), []);
+        fc.pre(list.length > 0);
+        const i = n % list.length;
+        expect(restoreCustomBar(removeCustomBar(list, i), list[i]!, i)).toEqual(list);
       }),
       opts,
     );

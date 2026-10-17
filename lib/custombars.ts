@@ -7,7 +7,8 @@
 // lifter typed it -- not as kg. The kg is derived (lbToKg for lb), so the label never
 // drifts: 35 lb is 15.87573295 kg, and re-deriving a label from that kg would read
 // "15.88 kg" or a rounded lb. The stamp is the fact; the kg is arithmetic.
-import type { Bar, PlateSet } from './platesets.ts';
+import { PLATE_SETS, PLATE_SET_KEYS } from './platesets.ts';
+import type { Bar, PlateSet, PlateSetKey } from './platesets.ts';
 import { format, isUnit, lbToKg } from './units.ts';
 import type { Unit } from './units.ts';
 
@@ -17,16 +18,23 @@ export interface BarStamp {
   readonly unit: Unit;
 }
 
-/** The most custom Bars the lifter keeps (newest last). */
+/** The most custom Bars any one Plate set shows (newest last). A custom Bar weighing
+ * what a set's own Bar weighs is no tile on that set, so it takes no slot there. */
 export const MAX_CUSTOM_BARS = 3;
 
 /** The heaviest stamp accepted, per Unit: 50 kg / 110 lb, past any real Bar (a 25 kg
  * squat bar, a 60 lb trap bar) but short of a typo like 200. */
 export const CUSTOM_BAR_MAX: Readonly<Record<Unit, number>> = { kg: 50, lb: 110 };
 
-// What the entry accepts: up to 3 digits and up to 2 decimals (`.5` and `15.9` too).
-// No sign, exponent, hex or trailing dot: Number() would read all of those.
-const STAMP_RE = /^(?:[0-9]{1,3}(?:\.[0-9]{1,2})?|\.[0-9]{1,2})$/;
+// A plain decimal: digits with an optional fraction (`.5`, `15.9`, and a trailing dot,
+// `35.`, easy to leave on a decimal pad). No sign, exponent or hex, all of which
+// Number() would read. The decimals and the range are judged after, so each failure
+// can say what is wrong.
+const NUMBER_RE = /^(?:[0-9]+(?:\.([0-9]*))?|\.([0-9]+))$/;
+
+/** Why typed text is not a stamp: not a plain number, more than 2 decimals, or outside
+ * above 0 .. CUSTOM_BAR_MAX. */
+export type StampError = 'format' | 'decimals' | 'range';
 
 /** True for a stamp the app accepts: a Unit, a finite number above 0, at most the cap,
  * and at most 2 decimals. */
@@ -40,13 +48,24 @@ export function isValidStamp(s: BarStamp): boolean {
   );
 }
 
-/** Parse typed text (a comma decimal reads as a point) in `unit` to a valid stamp, or
- * null. */
-export function parseStampText(text: string, unit: Unit): BarStamp | null {
+/** Read typed text (a comma decimal reads as a point) in `unit`: the stamp, or why it
+ * is not one. */
+export function readStamp(
+  text: string,
+  unit: Unit,
+): { readonly stamp: BarStamp } | { readonly error: StampError } {
   const t = text.trim().replace(',', '.');
-  if (!STAMP_RE.test(t)) return null;
+  const m = NUMBER_RE.exec(t);
+  if (!m) return { error: 'format' };
+  if ((m[1] ?? m[2] ?? '').length > 2) return { error: 'decimals' };
   const s = { value: Number(t), unit };
-  return isValidStamp(s) ? s : null;
+  return isValidStamp(s) ? { stamp: s } : { error: 'range' };
+}
+
+/** Parse typed text in `unit` to a valid stamp, or null (see readStamp for why). */
+export function parseStampText(text: string, unit: Unit): BarStamp | null {
+  const r = readStamp(text, unit);
+  return 'stamp' in r ? r.stamp : null;
 }
 
 /** The stamp's true mass in kg: lb through the exact factor, kg as is. */
@@ -70,16 +89,36 @@ export function barLabel(bar: Bar): string {
   return bar.stamp !== undefined ? `${bar.stamp} ${bar.unit}` : format(bar.kg, bar.unit);
 }
 
+/** How many of `list` the set keyed `key` shows as custom tiles: those that do not
+ * weigh what one of its own Bars weighs (barsFor). */
+export function visibleCustomCount(list: readonly BarStamp[], key: PlateSetKey): number {
+  const own = PLATE_SETS[key].bars.map((b) => b.kg);
+  return list.filter((s) => !own.includes(stampKg(s))).length;
+}
+
+/** The first set (in PLATE_SET_KEYS order) that would show more than `max` custom Bars
+ * with `s` added, or null when every set has room. */
+export function addRefusal(
+  list: readonly BarStamp[],
+  s: BarStamp,
+  max: number = MAX_CUSTOM_BARS,
+): PlateSetKey | null {
+  const next = [...list, s];
+  return PLATE_SET_KEYS.find((k) => visibleCustomCount(next, k) > max) ?? null;
+}
+
 /** Append `s` (newest last) when it is valid, weighs differently from every Bar in the
- * list, and the list has room; else the list unchanged. Pure. */
+ * list, and no set would then show more than `max` custom Bars; else the list
+ * unchanged. Pure. */
 export function addCustomBar(
   list: readonly BarStamp[],
   s: BarStamp,
   max: number = MAX_CUSTOM_BARS,
 ): readonly BarStamp[] {
-  if (!isValidStamp(s) || list.length >= max) return list;
+  if (!isValidStamp(s)) return list;
   const kg = stampKg(s);
   if (list.some((b) => stampKg(b) === kg)) return list;
+  if (addRefusal(list, s, max) !== null) return list;
   return [...list, { value: s.value, unit: s.unit }];
 }
 
