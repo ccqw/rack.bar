@@ -24,7 +24,7 @@ import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
 import './warmup.ts';
-import './ways.ts';
+import { wayName } from './ways.ts';
 import { LONG_PRESS_MS } from './recents.ts';
 import { decodeWithin } from '../lib/decode.ts';
 import { waysFor } from '../lib/ways.ts';
@@ -94,6 +94,7 @@ type Ways = HTMLElement & {
   index: number;
   heading: string;
   open(): void;
+  close(toSetup?: boolean): void;
 };
 // 'warmup' is the Warm up mode (RBAR-65 slice 2): the Ramp's stairs drive the Side.
 type Mode = 'decode' | 'encode' | 'warmup';
@@ -144,6 +145,9 @@ const ICON_PX = 30;
 const VIZ_PAD_PX = 5;
 const LABEL_PX = 15;
 const VIZ_GAP_PX = 6;
+// A click this soon after a long press's release belongs to that press (RBAR-66): the
+// browser fires it right after pointerup, so this only needs to outlast that gap.
+const HELD_CLICK_MS = 300;
 
 class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -223,6 +227,11 @@ class RackConsole extends HTMLElement {
   // When the last press on the bar went down, so a long-press does not count as a tap
   // (long-press stays free, RBAR-73).
   private barDownAt: number | null = null;
+  // When a long press on the bar was released (null: the last release was a tap).
+  private barHeldUpAt: number | null = null;
+  // Whether the last change to the loaded way was a step by the lifter (a bar tap or a
+  // list row), so the spoken line names the Plates now on the Bar (RBAR-66).
+  private wayStepped = false;
   // Which mode's keypad sheet is open, if any (RBAR-53): By Weight's Target field or, since
   // RBAR-65, Warm up's working-weight field. While that mode is active -- so the sheet
   // actually shows -- the sheet's own "On the bar" load line is the live announcement
@@ -929,14 +938,29 @@ class RackConsole extends HTMLElement {
     });
     // Another way (RBAR-66). Tapping the bar steps to the next way, wrapping to the
     // first; it is a button only while there is more than one (see render). A press
-    // held past LONG_PRESS_MS is not a tap: long-press stays free (RBAR-73).
+    // held past LONG_PRESS_MS is not a tap: long-press stays free (RBAR-73). The hold is
+    // judged at pointerup (on touch, pointerleave fires between pointerup and click),
+    // and only swallows a click that follows that release at once -- so a press that
+    // was cancelled, dragged off, or never produced a click cannot swallow a later
+    // click with no pointer of its own (a TalkBack double-tap, Switch Access).
     this.sleeve.addEventListener('pointerdown', (e) => {
       this.barDownAt = e.timeStamp;
     });
-    this.sleeve.addEventListener('click', (e) => {
-      const held = this.barDownAt !== null && e.timeStamp - this.barDownAt >= LONG_PRESS_MS;
+    this.sleeve.addEventListener('pointerup', (e) => {
+      const down = this.barDownAt;
       this.barDownAt = null;
-      if (!held) this.nextWay();
+      this.barHeldUpAt = down !== null && e.timeStamp - down >= LONG_PRESS_MS ? e.timeStamp : null;
+    });
+    const dropPress = () => {
+      this.barDownAt = null;
+    };
+    this.sleeve.addEventListener('pointercancel', dropPress);
+    this.sleeve.addEventListener('pointerleave', dropPress);
+    this.sleeve.addEventListener('click', (e) => {
+      const up = this.barHeldUpAt;
+      this.barHeldUpAt = null;
+      if (up !== null && e.timeStamp - up < HELD_CLICK_MS) return;
+      this.nextWay();
     });
     this.sleeve.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -947,7 +971,13 @@ class RackConsole extends HTMLElement {
     // The Another way pill opens the list of ways; a row loads that way.
     this.another.addEventListener('click', () => this.openWays());
     this.waysSheet.addEventListener('wayselect', (e) => {
-      this.loadWay((e as CustomEvent<{ index: number }>).detail.index);
+      this.loadWay((e as CustomEvent<{ index: number }>).detail.index, true);
+    });
+    // Closing the sheet hands focus back to the pill that opened it -- unless it closed
+    // into Setup ("Set Plate Inventory"), where the app moves focus into that sheet.
+    this.waysSheet.addEventListener('close', (e) => {
+      const toSetup = (e as CustomEvent<{ toSetup?: boolean } | null>).detail?.toSetup;
+      if (!toSetup && !this.another.hidden) this.another.focus();
     });
     // The Share control opens the loading card (RBAR-19, ADR-0011); see openShare.
     this.root.querySelector('[data-share]')!.addEventListener('click', () => this.openShare());
@@ -1042,19 +1072,24 @@ class RackConsole extends HTMLElement {
     const loaded = this.side;
     if (!this.showingOver && shownIn(primary.total, was) === shownIn(target, was)) {
       this.entry.retarget(primary.total);
-      this.decodeTo(primary.total); // renders
+      this.solveTo(primary.total);
     } else {
       const chosenOver = this.showingOver && over ? over.total : null;
-      this.decodeTo(target); // clears showingOver, renders
+      this.solveTo(target); // clears showingOver
       const next = this.decoded as Decoded | null;
       if (chosenOver !== null && next?.over && Math.abs(next.over.total - chosenOver) < 1e-9) {
         this.showingOver = true;
         this.loadWays();
-        this.render();
       }
     }
+    // A Total that held keeps its way list, so the loaded way is found in it; then one
+    // render, so the toggle is announced once, with the way.
     const kept = this.ways.findIndex((w) => sameSide(w, loaded));
-    if (kept > 0) this.loadWay(kept);
+    if (kept > 0) {
+      this.wayIdx = kept;
+      this.side = this.ways[kept];
+    }
+    this.render();
   }
 
   /**
@@ -1070,6 +1105,7 @@ class RackConsole extends HTMLElement {
    *  - By Weight without a Target, or By Plates: the linked Plates as the carried Side.
    */
   applyLink(link: LinkLoad): void {
+    this.closeWays(); // a link pasted over an open ways sheet replaces its load
     this.unitPref = link.unit;
     // The entry seeds below read in the link's unit, so hand it over first (a later
     // render-time unit change would re-dress a seed as a lifter reformat, RBAR-38).
@@ -1227,6 +1263,13 @@ class RackConsole extends HTMLElement {
   // or under everything the Target's READING covers in the active unit (RBAR-60): a
   // typed-back displayed Total must land on itself, not a Plate step below it.
   private decodeTo(target: number | null): void {
+    this.solveTo(target);
+    this.render();
+  }
+
+  // decodeTo without the render, for a caller that adjusts the result first (the kg|lb
+  // toggle keeping a way) and then renders -- and so announces -- once.
+  private solveTo(target: number | null): void {
     this.showingOver = false;
     this.byWeightTarget = target;
     this.decoded =
@@ -1239,19 +1282,27 @@ class RackConsole extends HTMLElement {
             this.inventory(),
           );
     this.loadWays();
-    this.render();
   }
 
   // Load the shown Decode answer (the primary, or the round-up while chosen) on its
   // first way, and list its ways (RBAR-66, lib/ways.ts) on the same Inventory -- so a
   // re-solve of any kind (Target, Bar, Collar, Plate set, Round up, the Inventory)
-  // starts over from the canonical stack. No live decode: no ways, a bare Side.
+  // starts over from the canonical stack. No live decode: no ways, a bare Side. An open
+  // ways sheet closes: its rows are the old list, and a tap on one must never load a
+  // way of the new list it does not show.
   private loadWays(): void {
     const d = this.decoded;
     const shown = d ? (this.showingOver && d.over ? d.over : d.primary) : null;
     this.ways = shown ? waysFor(shown.side, this.inventory()) : [];
     this.wayIdx = 0;
+    this.wayStepped = false;
     this.side = shown ? shown.side : [];
+    this.closeWays();
+  }
+
+  // Close the ways sheet if it is open (pre-connect there is none yet).
+  private closeWays(): void {
+    if (this.waysSheet && !this.waysSheet.hidden) this.waysSheet.close();
   }
 
   // How many ways the Bar can step through right now: By Weight with a live decode.
@@ -1259,18 +1310,20 @@ class RackConsole extends HTMLElement {
     return this.mode === 'decode' && this.decoded ? this.ways.length : 0;
   }
 
-  // Put way `i` on the Bar (a list row, a kept way, a link's Plates).
-  private loadWay(i: number): void {
+  // Put way `i` on the Bar (a list row, a bar tap, a link's Plates) and render.
+  // `stepped`: the lifter chose it, so the spoken line names its Plates.
+  private loadWay(i: number, stepped = false): void {
     if (this.wayCount() === 0) return;
     this.wayIdx = Math.min(Math.max(0, Math.trunc(i) || 0), this.ways.length - 1);
     this.side = this.ways[this.wayIdx];
+    this.wayStepped = stepped;
     this.render();
   }
 
   // A tap on the bar: the next way, wrapping to the first. Inert with one way or none.
   private nextWay(): void {
     const n = this.wayCount();
-    if (n > 1) this.loadWay((this.wayIdx + 1) % n);
+    if (n > 1) this.loadWay((this.wayIdx + 1) % n, true);
   }
 
   // Open the ways sheet, titled with the Total in the display unit.
@@ -1279,7 +1332,7 @@ class RackConsole extends HTMLElement {
     this.waysSheet.heading = `Load ${format(this.loadTotalKg(), this.activeUnit())} another way`;
     this.waysSheet.ways = this.ways;
     this.waysSheet.index = this.wayIdx;
-    this.waysSheet.open();
+    this.waysSheet.open(); // focuses the loaded way's row
   }
 
   // Switch modes without disturbing the shared Side Load (ADR-0005). Entering Decode
@@ -1474,9 +1527,13 @@ class RackConsole extends HTMLElement {
       // names the capacity fact in the round-up row (which the absent offer vacated --
       // ADR-0012 ties the two). The spoken line carries BOTH facts.
       this.atcap.hidden = pill.kind !== 'capacity';
-      // Off the first way (RBAR-66) the line says which way, so a bar tap -- which keeps
-      // the Total -- is still heard.
-      const way = this.wayIdx > 0 ? `, way ${this.wayIdx + 1} of ${this.ways.length}` : '';
+      // After a step to another way, or while off the first (RBAR-66), the line says
+      // which way and names its Plates -- a bar tap keeps the Total, so the Plates are
+      // the news ("140 kilograms, Exact, way 2 of 5, 25 kg + 20 kg + 15 kg per side").
+      const way =
+        this.wayIdx > 0 || this.wayStepped
+          ? `, way ${this.wayIdx + 1} of ${this.ways.length}, ${wayName(this.side)} per side`
+          : '';
       const line = announceLine(
         shownIn(shown.total, unit),
         unit,
@@ -1520,9 +1577,14 @@ class RackConsole extends HTMLElement {
     const on = n > 1;
     const at = on && this.wayIdx > 0 ? `${this.wayIdx + 1}/${n}` : '';
     if (on) {
+      // A button's children are presentational, so its label carries the Plates the
+      // discs would have named: in By Weight the bar is the only per-Plate readout.
       this.sleeve.setAttribute('role', 'button');
       this.sleeve.tabIndex = 0;
-      this.sleeve.setAttribute('aria-label', `Another way, ${this.wayIdx + 1} of ${n}`);
+      this.sleeve.setAttribute(
+        'aria-label',
+        `${wayName(this.side)} per side. Another way, ${this.wayIdx + 1} of ${n}`,
+      );
     } else {
       this.sleeve.removeAttribute('role');
       this.sleeve.removeAttribute('tabindex');

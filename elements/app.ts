@@ -237,7 +237,11 @@ class RackApp extends HTMLElement {
 
     this.pill.addEventListener('click', () => this.openSetup());
     // The Another way sheet's "Set Plate Inventory" door (RBAR-66) opens the same sheet.
-    this.console.addEventListener('opensetup', () => this.openSetup());
+    // Focus follows into Setup (its Done), since the sheet it came from has closed.
+    this.console.addEventListener('opensetup', () => {
+      this.openSetup();
+      this.setup.shadowRoot?.querySelector<HTMLButtonElement>('[data-done]')?.focus();
+    });
     this.setup.addEventListener('barchange', (e) =>
       this.adopt((e as CustomEvent<{ barKg: number }>).detail.barKg),
     );

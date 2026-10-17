@@ -72,23 +72,57 @@ describe('<rack-console> Another way: tap the bar (RBAR-66)', () => {
     expect(kgs(el)).toEqual([25, 20, 15]);
     bar(el).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     expect(kgs(el)).toEqual([20, 20, 20]);
-    expect(bar(el).getAttribute('aria-label')).toBe('Another way, 3 of 5');
   });
+
+  it('as a button, the bar still names its Plates for screen readers', () => {
+    const el = mountConsole();
+    type(el, '140');
+    expect(bar(el).getAttribute('aria-label')).toBe(
+      '25 kg + 25 kg + 10 kg per side. Another way, 1 of 5',
+    );
+    tapBar(el);
+    tapBar(el);
+    expect(bar(el).getAttribute('aria-label')).toBe(
+      '20 kg + 20 kg + 20 kg per side. Another way, 3 of 5',
+    );
+  });
+
+  const at = (el: HTMLElement, type: string, t: number) => {
+    const e = new Event(type, { bubbles: true });
+    Object.defineProperty(e, 'timeStamp', { value: t });
+    bar(el).dispatchEvent(e);
+  };
 
   it('a long press is not a tap: long-press stays free (RBAR-73)', () => {
     const el = mountConsole();
     type(el, '140');
-    const at = (type: string, t: number) => {
-      const e = new Event(type, { bubbles: true });
-      Object.defineProperty(e, 'timeStamp', { value: t });
-      bar(el).dispatchEvent(e);
-    };
-    at('pointerdown', 1000);
-    at('click', 1600);
+    at(el, 'pointerdown', 1000);
+    at(el, 'pointerup', 1600);
+    at(el, 'pointerleave', 1601); // touch: leave comes between pointerup and click
+    at(el, 'click', 1602);
     expect(kgs(el)).toEqual([25, 25, 10]);
-    at('pointerdown', 2000);
-    at('click', 2120);
+    at(el, 'pointerdown', 2000);
+    at(el, 'pointerup', 2120);
+    at(el, 'click', 2121);
     expect(kgs(el)).toEqual([25, 20, 15]);
+  });
+
+  it('a cancelled or dragged-off press never swallows a later click with no pointer', () => {
+    const el = mountConsole();
+    type(el, '140');
+    at(el, 'pointerdown', 1000);
+    at(el, 'pointercancel', 1100);
+    at(el, 'click', 5000); // e.g. a TalkBack double-tap
+    expect(kgs(el)).toEqual([25, 20, 15]);
+    at(el, 'pointerdown', 6000);
+    at(el, 'pointerleave', 6100);
+    at(el, 'click', 9000);
+    expect(kgs(el)).toEqual([20, 20, 20]);
+    // A long press whose click never came does not eat the next one either.
+    at(el, 'pointerdown', 10000);
+    at(el, 'pointerup', 10800);
+    at(el, 'click', 20000);
+    expect(kgs(el)).toEqual([25, 25, 5, 5]);
   });
 
   it('By Plates and Warm up never step the bar', () => {
@@ -104,11 +138,20 @@ describe('<rack-console> Another way: tap the bar (RBAR-66)', () => {
     expect(bar(el).getAttribute('role')).toBeNull();
   });
 
-  it('says which way is on the Bar once off the first', () => {
+  it('a step is spoken with the way and its Plates, wrapping back to the first included', () => {
     const el = mountConsole();
     type(el, '140');
+    expect(announced(el)).toBe('140 kilograms, Exact');
     tapBar(el);
-    expect(announced(el)).toBe('140 kilograms, Exact, way 2 of 5');
+    expect(announced(el)).toBe(
+      '140 kilograms, Exact, way 2 of 5, 25 kg + 20 kg + 15 kg per side',
+    );
+    for (let i = 0; i < 4; i++) tapBar(el);
+    expect(announced(el)).toBe(
+      '140 kilograms, Exact, way 1 of 5, 25 kg + 25 kg + 10 kg per side',
+    );
+    type(el, '140'); // a re-solve is the plain line again
+    expect(announced(el)).toBe('140 kilograms, Exact');
   });
 });
 
@@ -198,6 +241,39 @@ describe('<rack-console> the Another way pill and sheet (RBAR-66)', () => {
     expect(sheet(el).hidden).toBe(true);
   });
 
+  it('focus: the loaded row on open; Escape closes and focus returns to the pill', () => {
+    const el = mountConsole();
+    type(el, '140');
+    tapBar(el);
+    pill(el).click();
+    expect(sr(sheet(el)).activeElement).toBe(rows(el)[1]);
+    rows(el)[1].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    expect(sheet(el).hidden).toBe(true);
+    expect(sr(el).activeElement).toBe(pill(el));
+    pill(el).click();
+    sr(sheet(el)).querySelector<HTMLButtonElement>('[data-done]')!.click();
+    expect(sr(el).activeElement).toBe(pill(el));
+  });
+
+  it('a re-solve under an open sheet closes it, so a stale row cannot load a new way', () => {
+    const el = mountConsole() as Console & { applyLink(l: LinkLoad): void };
+    type(el, '140');
+    pill(el).click();
+    const stale = rows(el)[2];
+    const kg = (w: number) => ELEIKO_KG.find((p) => p.kg === w)!;
+    el.applyLink({ mode: 'decode', side: [kg(25), kg(15)], targetKg: 100, unit: 'kg' });
+    expect(sheet(el).hidden).toBe(true);
+    stale.click();
+    expect(kgs(el)).toEqual([25, 15]);
+    roundUp(el); // the Round up toggle is a re-solve too
+    type(el, '139.5');
+    pill(el).click();
+    roundUp(el).click();
+    expect(sheet(el).hidden).toBe(true);
+  });
+
   it('in the app, Set Plate Inventory opens the same Setup sheet as the header pill', () => {
     const app = document.createElement('rack-app');
     document.body.append(app);
@@ -205,8 +281,11 @@ describe('<rack-console> the Another way pill and sheet (RBAR-66)', () => {
     type(c, '140');
     pill(c).click();
     sr(sheet(c)).querySelector<HTMLButtonElement>('[data-inventory]')!.click();
-    expect(q<HTMLElement>(sr(app), 'rack-setup').hidden).toBe(false);
+    const setup = q<HTMLElement>(sr(app), 'rack-setup');
+    expect(setup.hidden).toBe(false);
     expect(q(sr(app), '[data-setup-pill]').getAttribute('aria-expanded')).toBe('true');
+    // Focus follows into Setup, not back to the pill behind its scrim.
+    expect(sr(setup).activeElement).toBe(sr(setup).querySelector('[data-done]'));
     // The same sliders glyph as the header pill.
     const glyph = (svg: Element) => svg.innerHTML.replace(/\s+/g, ' ').trim();
     expect(glyph(sr(sheet(c)).querySelector('[data-inventory] svg')!)).toBe(
@@ -265,6 +344,18 @@ describe('<rack-console> which way is kept (RBAR-66)', () => {
     expect(count(el)).toBe('2/5');
     unitBtn(el, 'kg').click();
     expect(kgs(el)).toEqual([25, 20, 15]);
+  });
+
+  it('a kg|lb toggle that keeps a way renders and announces once, with the way', async () => {
+    const el = onSecondWay();
+    const lines: string[] = [];
+    const announcer = q(sr(el), '[data-announce]');
+    const seen = new MutationObserver(() => lines.push(announcer.textContent ?? ''));
+    seen.observe(announcer, { childList: true, characterData: true, subtree: true });
+    unitBtn(el, 'lb').click();
+    await Promise.resolve();
+    seen.disconnect();
+    expect(lines).toEqual(['309 pounds, Exact, way 2 of 5, 25 kg + 20 kg + 15 kg per side']);
   });
 
   it('a mode round trip reseeds the Target from the loaded way and starts over', () => {

@@ -3,7 +3,8 @@
 // (lib/ways.ts waysFor, at most MAX_WAYS): each row a mini stack of colored Plate chips,
 // heaviest-first, with its "k per side" count, the loaded way selected (a radio look).
 // Tapping a row emits `wayselect` with its index -- the console loads it; the sheet
-// stays open so the lifter can compare. Done or a scrim tap closes (`close`). At the
+// stays open so the lifter can compare. Opening focuses the loaded way's row; Done,
+// Escape or a scrim tap closes (`close`, and the console refocuses its pill). At the
 // bottom, "Set Plate Inventory" (the Setup sliders glyph) emits `opensetup` and closes:
 // the app opens the Setup sheet, where the plates you have are set (RBAR-72).
 // No list label and no helper text (Caitlin, 2026-10-17, design H).
@@ -20,8 +21,14 @@ import { SLIDERS_GLYPH } from './sliders.ts';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
-// A Plate's spoken name in a row label: the lb stamp on iron, the kg on Eleiko.
+// A Plate's spoken name: the lb stamp on iron, the kg on Eleiko.
 const faceOf = (p: Plate) => (p.label !== undefined ? `${p.label} lb` : `${p.kg} kg`);
+
+/** A way's spoken name (a row's label, and the console's bar label and live line):
+ * "25 kg + 20 kg + 15 kg", or "bare Bar". */
+export function wayName(way: readonly Plate[]): string {
+  return way.length === 0 ? 'bare Bar' : way.map(faceOf).join(' + ');
+}
 
 class RackWays extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -61,16 +68,22 @@ class RackWays extends HTMLElement {
     return this._heading;
   }
 
-  /** Show the sheet. */
+  /** Show the sheet, with focus on the loaded way's row (it is a modal dialog). */
   open(): void {
     this.hidden = false;
+    const rows = this.listEl?.querySelectorAll<HTMLElement>('[data-way]');
+    const row = rows?.[this._index] ?? rows?.[0];
+    row?.focus();
   }
 
-  /** Hide the sheet and tell the console. */
-  close(): void {
+  /** Hide the sheet and tell the console, which returns focus to the pill that opened
+   * it -- unless `toSetup`, where the Setup sheet takes focus instead. */
+  close(toSetup = false): void {
     if (this.hidden) return;
     this.hidden = true;
-    this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+    this.dispatchEvent(
+      new CustomEvent('close', { detail: { toSetup }, bubbles: true, composed: true }),
+    );
   }
 
   connectedCallback(): void {
@@ -190,13 +203,21 @@ class RackWays extends HTMLElement {
       .querySelector('[data-panel]')!
       .addEventListener('click', (e) => e.stopPropagation());
     this.root.querySelector('[data-done]')!.addEventListener('click', () => this.close());
+    // Escape closes, as Done does.
+    this.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.hidden) {
+        e.preventDefault();
+        this.close();
+      }
+    });
     this.root.querySelector('[data-inventory]')!.addEventListener('click', () => {
-      this.close();
+      this.close(true);
       this.dispatchEvent(new CustomEvent('opensetup', { bubbles: true, composed: true }));
     });
     this.listEl.addEventListener('click', (e) => {
       const row = (e.target as Element | null)?.closest?.<HTMLElement>('[data-way]');
-      if (!row) return;
+      // A closed sheet's rows may be stale (the console closes it on a re-solve).
+      if (!row || this.hidden) return;
       this.dispatchEvent(
         new CustomEvent<{ index: number }>('wayselect', {
           detail: { index: Number(row.dataset.way) },
@@ -221,7 +242,7 @@ class RackWays extends HTMLElement {
                     `<span class="mc${darkInk(p.color) ? ' dark' : ''}" style="--disc: var(--rack-plate-${p.color})">${esc(plateLabel(p))}</span>`,
                 )
                 .join('')}</span>`;
-        const name = way.length === 0 ? 'bare Bar' : way.map(faceOf).join(' + ');
+        const name = wayName(way);
         const on = i === this._index;
         return `<button type="button" class="way" role="radio" data-way="${i}"
           aria-checked="${on}" aria-label="${esc(`${name}, ${way.length} per side`)}"

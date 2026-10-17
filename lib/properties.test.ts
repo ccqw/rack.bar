@@ -1997,14 +1997,23 @@ describe('Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', () => {
 describe('Another way properties (RBAR-66, ADR-0003, ADR-0012, ADR-0016)', () => {
   // A Decode answer to list the ways of: a Target on a rig, solved as read in a unit
   // (decodeWithin, as the console does), optionally with Plate limits, and either the
-  // at-or-under primary or the round-up. Targets stay where the brute-force oracle is
-  // quick (a Side up to ~80 kg); the ranking is the same everywhere (RBAR-69).
+  // at-or-under primary or the round-up. Targets run past the heaviest Side the Sleeve
+  // can hold, so the band where the Sleeve (ADR-0012) thins or reorders the ways is hit.
   const capArb = fc.oneof(fc.integer({ min: 0, max: 3 }), fc.constant(Infinity));
+  const sleeveSideKg = (rig: Rig) =>
+    Math.max(...rig.inventory.map((p) => p.kg / p.widthMm)) * SLEEVE_MM;
   const caseArb = rigArb.chain((rig) =>
     fc.record({
       rig: fc.constant(rig),
       u: unitArb,
-      t: fc.integer({ min: 0, max: Math.round((rig.baselineKg + 160) * 100) }).map((c) => c / 100),
+      t: fc.oneof(
+        fc.integer({ min: 0, max: Math.round((rig.baselineKg + 2 * sleeveSideKg(rig) + 10) * 100) }),
+        // Half the runs inside the Sleeve band itself (the top ~40 kg of a Side).
+        fc.integer({
+          min: Math.round((rig.baselineKg + 2 * (sleeveSideKg(rig) - 40)) * 100),
+          max: Math.round((rig.baselineKg + 2 * sleeveSideKg(rig) + 10) * 100),
+        }),
+      ).map((c) => c / 100),
       caps: fc.option(
         fc.array(capArb, { minLength: rig.inventory.length, maxLength: rig.inventory.length }),
       ),

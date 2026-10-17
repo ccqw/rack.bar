@@ -77,6 +77,10 @@ describe('<rack-ways> (RBAR-66)', () => {
     const picked: number[] = [];
     el.addEventListener('wayselect', (e) => picked.push((e as CustomEvent).detail.index));
     const row = rows(el)[1];
+    row.click(); // closed: its rows may be stale, so nothing is emitted
+    expect(picked).toEqual([]);
+    el.open();
+    expect(el.shadowRoot!.activeElement).toBe(rows(el)[0]); // the loaded way's row
     row.click();
     expect(picked).toEqual([1]);
     el.index = 1;

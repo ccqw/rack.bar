@@ -4,15 +4,17 @@
 // come from the brute-force oracle (lib/properties.oracle.ts waysOracle), never from
 // lib/ways.ts. The core counterparts are lib/properties.test.ts "Another way
 // properties". See console-state.properties.test.ts for the conventions.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fc from 'fast-check';
+import './app.ts';
 import { waysOracle } from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
 import { MAX_WAYS } from '../lib/ways.ts';
 import {
-  SEED, EPS, other, on, q, sr, unitBtn, step, type, roundUp, totalText, statusKind,
-  sideOnScreen, drawnTotalKg, rigDraftCaseArb,
+  SEED, EPS, other, on, fresh, q, sr, unitBtn, step, type, roundUp, totalText, statusKind,
+  sideOnScreen, drawnTotalKg, rigDraftCaseArb, entryDraft,
 } from './properties.drivers.ts';
+import type { Console } from './properties.drivers.ts';
 
 const bar = (el: HTMLElement) => q<HTMLElement>(sr(el), 'rack-sleeve');
 const pill = (el: HTMLElement) => q<HTMLButtonElement>(sr(el), '[data-another]');
@@ -92,6 +94,54 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
         }
       }),
       { seed: SEED, numRuns: 60 },
+    );
+  }, 30_000);
+
+  // The whole trip (ADR-0014): the sender types a Target, maybe takes the round-up, taps
+  // the bar 0-4 times, then Copy link; that exact URL boots a fresh app. The recipient
+  // must see the way the sender loaded -- the same Plates and the same n/m -- not the
+  // canonical stack. Last in the file: it mounts fresh pages (fresh() drops the pool).
+  it('Copy link carries the way actually loaded: the recipient shows the same Plates and n/m (RBAR-66, ADR-0014)', () => {
+    fc.assert(
+      fc.property(rigDraftCaseArb, fc.boolean(), fc.integer({ min: 0, max: 4 }), ([rig, u, draft], takeRoundUp, taps) => {
+        const sender = fresh(rig, u);
+        type(sender, draft);
+        if (takeRoundUp && !roundUp(sender).hidden) roundUp(sender).click();
+        for (let i = 0; i < taps; i++) bar(sender).click();
+        const seen = {
+          side: sideOnScreen(sender),
+          count: count(sender),
+          total: totalText(sender),
+          status: statusKind(sender),
+          draft: entryDraft(sender),
+        };
+        q<HTMLButtonElement>(sr(sender), '[data-share]').click();
+        const copyLink = q<HTMLButtonElement>(sr(q(sr(sender), 'rack-share')), '[data-link]');
+        fc.pre(!copyLink.disabled); // a 0 kg Target has no link (covered elsewhere)
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        vi.stubGlobal('navigator', { clipboard: { writeText } });
+        try {
+          copyLink.click();
+        } finally {
+          vi.unstubAllGlobals();
+        }
+        const url = writeText.mock.calls[0]![0] as string;
+        localStorage.clear();
+        history.replaceState(null, '', `/${url.slice(url.indexOf('#'))}`);
+        document.body.innerHTML = '';
+        const app = document.createElement('rack-app');
+        document.body.append(app);
+        const c = q<Console>(sr(app), 'rack-console');
+        expect({
+          side: sideOnScreen(c),
+          count: count(c),
+          total: totalText(c),
+          status: statusKind(c),
+          draft: entryDraft(c),
+        }).toEqual(seen);
+        history.replaceState(null, '', '/');
+      }),
+      { seed: SEED, numRuns: 60, endOnFailure: true },
     );
   }, 30_000);
 });
