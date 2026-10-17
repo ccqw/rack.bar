@@ -16,7 +16,7 @@ import {
 import type { EasyRow } from './moves.ts';
 import { DEFAULT_RAMP } from './plan.ts';
 import type { RampRig } from './plan.ts';
-import { ELEIKO_KG, IRON_LB, sideLoadKg } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, sideLoadKg, withLimits } from './plates.ts';
 import type { Plate } from './plates.ts';
 import { decode } from './decode.ts';
 import { lbToKg, kgToLb } from './units.ts';
@@ -276,6 +276,60 @@ describe('planEasyRamp: floors, collars and degenerate Ramps', () => {
   it('a planned Ramp is not degraded', () => {
     expect(planEasyRamp(140, DEFAULT_RAMP, COMP).degraded).toBe(false);
     expect(planEasyRamp(140, DEFAULT_RAMP, { ...COMP, inventory: [] }).degraded).toBe(false);
+  });
+});
+
+describe('planEasyRamp under Plate limits (RBAR-72 slice 3, ADR-0016 as amended)', () => {
+  const show = (rig: RampRig, w: number) => planEasyRamp(w, DEFAULT_RAMP, rig).rows.map((r) => kgs(r.side).join('+'));
+  const drifts = (rig: RampRig, w: number) => planEasyRamp(w, DEFAULT_RAMP, rig).rows.map((r) => r.drift);
+  // One pair of 25s and no 2.5s: her six Targets keep their shape; only the 2.5s change.
+  const NO_25_PAIR: RampRig = { ...COMP, inventory: withLimits(ELEIKO_KG, { '25': 1, '2.5': 0 }) };
+  // One pair of 25s and no change Plates at all (5 kg per Side is the grid).
+  const NO_CHANGE: RampRig = {
+    ...COMP,
+    inventory: withLimits(ELEIKO_KG, { '25': 1, '2.5': 0, '2': 0, '1.5': 0, '1': 0, '0.5': 0 }),
+  };
+
+  it("one pair of 25s, no 2.5s: Caitlin's six Targets, every row from the pairs on hand", () => {
+    expect(show(NO_25_PAIR, 60)).toEqual(['', '5', '10+1', '10+5+2', '10+5+5']);
+    expect(show(NO_25_PAIR, 75)).toEqual(['', '5+2+1.5', '15+1', '15+5+2+1.5', '15+5+5+1.5+1']);
+    expect(show(NO_25_PAIR, 80)).toEqual(['', '10', '10+5+2+1', '10+15+1', '10+15+5']);
+    expect(show(NO_25_PAIR, 100)).toEqual(['', '15', '15+10', '15+10+10', '15+10+10+5']);
+    expect(show(NO_25_PAIR, 120)).toEqual(['', '20', '20+10+2', '20+10+15', '20+10+15+5']);
+    expect(show(NO_25_PAIR, 140)).toEqual(['', '25', '25+15', '25+15+10+2+1', '25+15+10+10']);
+    for (const w of [60, 75, 80, 100, 120, 140]) expect(drifts(NO_25_PAIR, w)).not.toContain(true);
+  });
+
+  it('no change Plates: 140 kg loads her own hand Ramp, 25 / 25+15 / 25+15+15', () => {
+    expect(show(NO_CHANGE, 140)).toEqual(['', '25', '25+15', '25+15+15', '25+15+15+5']);
+  });
+
+  it('no change Plates: a 60 kg 90% set can only be 50 or 60 kg, so it drifts to 50 kg and says so', () => {
+    const easy = planEasyRamp(60, DEFAULT_RAMP, NO_CHANGE);
+    expect(totals(easy.rows)).toEqual([20, 30, 40, 50, 60]);
+    expect(easy.rows.map((r) => r.drift)).toEqual([false, false, false, true, false]);
+    expect(Math.round(easy.rows[3].realPct)).toBe(83);
+  });
+
+  it('a Working set the pairs on hand cannot reach stays at or under it (ADR-0003): 75 kg loads 70 kg', () => {
+    const easy = planEasyRamp(75, DEFAULT_RAMP, NO_CHANGE);
+    expect(easy.rows[4].total).toBe(70);
+    expect(easy.working.primary.total).toBe(70);
+    // 50% of 70 kg is 35 kg; 30 kg is the nearest a 5 kg Side grid allows above the Bar.
+    expect(easy.rows[1].total).toBe(30);
+    expect(easy.rows[1].drift).toBe(true);
+  });
+
+  it('one pair of 10s at 100 kg: the 70% set goes to a 25 rather than a second 10', () => {
+    // Caitlin's own load with no more 10s is 15 / 15+10 / 15+20; the station rule's is
+    // one Plate lighter on the Ramp.
+    const rig: RampRig = { ...COMP, inventory: withLimits(ELEIKO_KG, { '10': 1 }) };
+    expect(show(rig, 100)).toEqual(['', '15', '25', '25+10', '25+10+5']);
+  });
+
+  it('a row on the bare rig never flags drift: the 30 kg 50% set is the 20 kg Bar', () => {
+    expect(drifts(COMP, 30)).toEqual([false, false, false, false, false]);
+    for (const w of [60, 75, 80, 100, 120, 140]) expect(drifts(COMP, w)).not.toContain(true);
   });
 });
 
