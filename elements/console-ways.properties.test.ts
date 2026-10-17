@@ -7,12 +7,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import fc from 'fast-check';
 import './app.ts';
-import { waysOracle } from '../lib/properties.oracle.ts';
+import { RIGS, waysOracle } from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
+import type { Unit } from '../lib/units.ts';
 import { MAX_WAYS } from '../lib/ways.ts';
 import {
-  SEED, EPS, other, on, fresh, q, sr, unitBtn, step, type, roundUp, totalText, statusKind,
-  sideOnScreen, drawnTotalKg, rigDraftCaseArb, entryDraft,
+  SEED, EPS, other, on, q, sr, unitBtn, step, type, roundUp, totalText, statusKind,
+  sideOnScreen, drawnTotalKg, rigDraftCaseArb, entryDraft, nextRun,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
 
@@ -27,10 +28,20 @@ function oracleWays(el: HTMLElement, rig: Rig): string[] {
   return waysOracle(rig.inventory, sideKg, MAX_WAYS).map(shape);
 }
 
+// RBAR-90: 30 random runs each, plus pinned cases with many ways (a full comp Side, a
+// training load) so the stepping is always exercised, not left to the draw.
+const RUNS = { seed: SEED, numRuns: 30 };
+type Case = readonly [Rig, Unit, string];
+const MANY_WAYS: readonly [Case, Case] = [
+  [RIGS[0]!, 'kg', '180'],
+  [RIGS[6]!, 'lb', '315'],
+];
+
 describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
-  it('tapping the bar steps through exactly the oracle ways in rank order and wraps; the Total and status never move (RBAR-66, ADR-0003, ADR-0012)', () => {
-    fc.assert(
-      fc.property(rigDraftCaseArb, ([rig, u, draft]) => {
+  it('tapping the bar steps through exactly the oracle ways in rank order and wraps; the Total and status never move (RBAR-66, ADR-0003, ADR-0012)', async () => {
+    await fc.assert(
+      fc.asyncProperty(rigDraftCaseArb, async ([rig, u, draft]) => {
+        await nextRun();
         const el = on(rig, u);
         type(el, draft);
         const want = oracleWays(el, rig);
@@ -51,14 +62,15 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
         }
         expect(seen).toEqual([...want.slice(1), want[0]]);
       }),
-      { seed: SEED, numRuns: 60 },
+      { ...RUNS, examples: MANY_WAYS.map((c): [Case] => [c]) },
     );
-  }, 30_000);
+  });
 
-  it('any re-solve -- a typed Target, a stepper, Round up or back -- starts on the first way (RBAR-66)', () => {
+  it('any re-solve -- a typed Target, a stepper, Round up or back -- starts on the first way (RBAR-66)', async () => {
     const actionArb = fc.constantFrom('retype', 'inc', 'dec', 'roundup');
-    fc.assert(
-      fc.property(rigDraftCaseArb, fc.integer({ min: 1, max: 4 }), actionArb, ([rig, u, draft], taps, action) => {
+    await fc.assert(
+      fc.asyncProperty(rigDraftCaseArb, fc.integer({ min: 1, max: 4 }), actionArb, async ([rig, u, draft], taps, action) => {
+        await nextRun();
         const el = on(rig, u);
         type(el, draft);
         for (let i = 0; i < taps; i++) bar(el).click();
@@ -71,13 +83,22 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
         const want = oracleWays(el, rig);
         expect(shape(sideOnScreen(el))).toBe(want[0]);
       }),
-      { seed: SEED, numRuns: 60 },
+      {
+        ...RUNS,
+        examples: [
+          [MANY_WAYS[0], 2, 'retype'],
+          [MANY_WAYS[1], 3, 'inc'],
+          [MANY_WAYS[0], 1, 'dec'],
+          [[RIGS[1]!, 'kg', '142.3'], 2, 'roundup'],
+        ],
+      },
     );
-  }, 30_000);
+  });
 
-  it('a kg|lb toggle keeps the way on the Bar when the Total holds, else starts on the first way (RBAR-66, ADR-0010 RBAR-60)', () => {
-    fc.assert(
-      fc.property(rigDraftCaseArb, fc.integer({ min: 0, max: 4 }), ([rig, u, draft], taps) => {
+  it('a kg|lb toggle keeps the way on the Bar when the Total holds, else starts on the first way (RBAR-66, ADR-0010 RBAR-60)', async () => {
+    await fc.assert(
+      fc.asyncProperty(rigDraftCaseArb, fc.integer({ min: 0, max: 4 }), async ([rig, u, draft], taps) => {
+        await nextRun();
         const el = on(rig, u);
         type(el, draft);
         for (let i = 0; i < taps; i++) bar(el).click();
@@ -93,18 +114,21 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
           expect(shape(sideOnScreen(el))).toBe(oracleWays(el, rig)[0]);
         }
       }),
-      { seed: SEED, numRuns: 60 },
+      { ...RUNS, examples: [[MANY_WAYS[0], 2], [MANY_WAYS[1], 3]] },
     );
-  }, 30_000);
+  });
 
   // The whole trip (ADR-0014): the sender types a Target, maybe takes the round-up, taps
   // the bar 0-4 times, then Copy link; that exact URL boots a fresh app. The recipient
   // must see the way the sender loaded -- the same Plates and the same n/m -- not the
-  // canonical stack. Last in the file: it mounts fresh pages (fresh() drops the pool).
-  it('Copy link carries the way actually loaded: the recipient shows the same Plates and n/m (RBAR-66, ADR-0014)', () => {
-    fc.assert(
-      fc.property(rigDraftCaseArb, fc.boolean(), fc.integer({ min: 0, max: 4 }), ([rig, u, draft], takeRoundUp, taps) => {
-        const sender = fresh(rig, u);
+  // canonical stack. The sender is the pooled console (on() closes its share card and
+  // presses Clear); only the recipient app is mounted fresh each run, and only the
+  // previous one is removed.
+  it('Copy link carries the way actually loaded: the recipient shows the same Plates and n/m (RBAR-66, ADR-0014)', async () => {
+    await fc.assert(
+      fc.asyncProperty(rigDraftCaseArb, fc.boolean(), fc.integer({ min: 0, max: 4 }), async ([rig, u, draft], takeRoundUp, taps) => {
+        await nextRun();
+        const sender = on(rig, u);
         type(sender, draft);
         if (takeRoundUp && !roundUp(sender).hidden) roundUp(sender).click();
         for (let i = 0; i < taps; i++) bar(sender).click();
@@ -128,7 +152,7 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
         const url = writeText.mock.calls[0]![0] as string;
         localStorage.clear();
         history.replaceState(null, '', `/${url.slice(url.indexOf('#'))}`);
-        document.body.innerHTML = '';
+        for (const old of document.querySelectorAll('rack-app')) old.remove();
         const app = document.createElement('rack-app');
         document.body.append(app);
         const c = q<Console>(sr(app), 'rack-console');
@@ -141,7 +165,15 @@ describe('<rack-console> Another way properties (RBAR-66, ADR-0003)', () => {
         }).toEqual(seen);
         history.replaceState(null, '', '/');
       }),
-      { seed: SEED, numRuns: 60, endOnFailure: true },
+      {
+        ...RUNS,
+        endOnFailure: true,
+        examples: [
+          [MANY_WAYS[0], false, 3],
+          [MANY_WAYS[1], false, 2],
+          [[RIGS[1]!, 'kg', '142.3'], true, 1],
+        ],
+      },
     );
-  }, 30_000);
+  });
 });

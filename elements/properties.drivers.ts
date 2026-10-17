@@ -19,6 +19,7 @@ import type { Plate } from '../lib/plates.ts';
 import { PLATE_SETS, PLATE_SET_KEYS } from '../lib/platesets.ts';
 import { MAX_TARGET_KG } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
+import { nextMacrotask } from '../vitest.timers.ts';
 
 export const SEED = 62;
 export const EPS = 1e-9;
@@ -58,14 +59,18 @@ export function on(rig: Rig, unit: Unit): Console {
     el = mount(rig, unit);
     pool.set(key, el);
   }
+  // A share card left open by the last run (e.g. one that bailed at an fc.pre) is closed,
+  // as the lifter would, so it never carries into the next.
+  const card = q<HTMLElement>(sr(el), 'rack-share');
+  if (!card.hidden) q<HTMLButtonElement>(sr(card), '[data-close]').click();
   modeBtn(el, 'decode').click();
   unitBtn(el, unit).click();
   press(el, 'clear');
   // The reset contract every pooled run relies on: a cleared entry means no Target and
   // a bare rig. If a future change breaks it, fail loudly here rather than let state
   // leak between runs (and make counterexamples non-replayable).
-  if (entryDraft(el) !== '' || sideOnScreen(el).length !== 0) {
-    throw new Error(`pool reset failed for ${key}: Clear left a Target or Plates`);
+  if (entryDraft(el) !== '' || sideOnScreen(el).length !== 0 || !card.hidden) {
+    throw new Error(`pool reset failed for ${key}: Clear left a Target, Plates or an open share card`);
   }
   return el;
 }
@@ -286,3 +291,16 @@ export function commitWorking(el: HTMLElement, value: string): void {
 // The Recent Targets as persisted (canonical kg).
 export const storedRecents = (): number[] =>
   JSON.parse(localStorage.getItem('rackbar.recents') ?? '[]') as number[];
+
+// ---- Between runs (RBAR-90) --------------------------------------------------------
+
+/**
+ * Yield one macrotask. Await it at the top of each run of a DOM-heavy property
+ * (`fc.asyncProperty`). happy-dom caches query results behind WeakRefs, and V8 keeps
+ * every WeakRef target alive until the current task ends -- so inside one synchronous
+ * `fc.assert`, every tree a run rendered (~6.6 MB per app mount, and every replaced
+ * render) stays reachable until the test finishes, and GC churns on memory it cannot
+ * free. A microtask (`await Promise.resolve()`) is not enough: the task must end.
+ * It uses the real setImmediate (vitest.timers.ts), so it still yields under fake timers.
+ */
+export const nextRun = nextMacrotask;

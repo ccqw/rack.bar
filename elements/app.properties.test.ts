@@ -19,7 +19,7 @@ import type { Rig } from '../lib/properties.oracle.ts';
 import { PLATE_SET_KEYS } from '../lib/platesets.ts';
 import { displayCeilingKg, draftToKg, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
-import { sideOnScreen } from './properties.drivers.ts';
+import { sideOnScreen, nextRun } from './properties.drivers.ts';
 import {
   SEED, type Console, resetPool, q, sr, entryRoot, unitBtn, type, totalText, rigArb,
   unitArb, draftArb,
@@ -54,9 +54,10 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
   const appUnit = (app: App): string =>
     unitBtn(appConsole(app), 'lb').getAttribute('aria-pressed') === 'true' ? 'lb' : 'kg';
 
-  it('the plate set, Bar, Collar, unit and Recents chosen through the UI survive a reload (ADR-0007, ADR-0009, ADR-0010)', () => {
-    fc.assert(
-      fc.property(rigArb, unitArb, fc.array(draftArb, { maxLength: 5 }), (rig, u, commits) => {
+  it('the plate set, Bar, Collar, unit and Recents chosen through the UI survive a reload (ADR-0007, ADR-0009, ADR-0010)', async () => {
+    await fc.assert(
+      fc.asyncProperty(rigArb, unitArb, fc.array(draftArb, { maxLength: 5 }), async (rig, u, commits) => {
+        await nextRun();
         localStorage.clear();
         const app = mountApp();
         q<HTMLButtonElement>(sr(app), '[data-setup-pill]').click();
@@ -90,7 +91,7 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
     );
   });
 
-  it('removing Recents (Delete on a chip) never moves a chip, any Undo restores in place, and it all survives a reload (ADR-0009 RBAR-73)', () => {
+  it('removing Recents (Delete on a chip) never moves a chip, any Undo restores in place, and it all survives a reload (ADR-0009 RBAR-73)', async () => {
     // A stored row (distinct, loadable, 2 dp, capped), then a script of removals and
     // Undos through the real chip paths, inside one Undo window. The expected rail is
     // modelled from the rule, not the core: the rail is frozen into slots while removals
@@ -108,8 +109,9 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
       [...q(sr(appConsole(app)), 'rack-recents').shadowRoot!.querySelector('[data-rail]')!.children]
         .map((c) => (c.hasAttribute('data-undo') ? 'undo' : (c as HTMLElement).dataset.target));
     const recentsRoot = (app: App) => sr(q(sr(appConsole(app)), 'rack-recents'));
-    fc.assert(
-      fc.property(rowArb, fc.array(opArb, { maxLength: 8 }), (row, ops) => {
+    await fc.assert(
+      fc.asyncProperty(rowArb, fc.array(opArb, { maxLength: 8 }), async (row, ops) => {
+        await nextRun();
         localStorage.clear();
         localStorage.setItem('rackbar.recents', JSON.stringify(row));
         const app = mountApp();
@@ -146,7 +148,7 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
     );
   });
 
-  it('any corrupt persisted value loads as a valid default, never throws (ADR-0007 validate-at-boundary)', () => {
+  it('any corrupt persisted value loads as a valid default, never throws (ADR-0007 validate-at-boundary)', async () => {
     const junk = fc.oneof(
       fc.string(),
       fc.json(),
@@ -158,8 +160,9 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
         String(PLATE_SETS.training.defaultBarKg),
       ),
     );
-    fc.assert(
-      fc.property(junk, junk, junk, junk, junk, (set, bar, collar, unit, recents) => {
+    await fc.assert(
+      fc.asyncProperty(junk, junk, junk, junk, junk, async (set, bar, collar, unit, recents) => {
+        await nextRun();
         localStorage.clear();
         localStorage.setItem('rackbar.plateSet', set);
         localStorage.setItem('rackbar.barKg', bar);
@@ -211,15 +214,16 @@ describe('<rack-app> custom Bar properties (ADR-0017)', () => {
   const oracleKg = (s: { value: number; unit: Unit }) =>
     s.unit === 'lb' ? s.value * 0.45359237 : s.value;
 
-  it('a custom Bar added in Setup is the rig: Total = its kg + 2 x Side Load + 2 x Collar, the greatest at or under the reading, and it survives a reload labelled as typed (ADR-0017, ADR-0002, ADR-0003, ADR-0008)', () => {
-    fc.assert(
-      fc.property(
+  it('a custom Bar added in Setup is the rig: Total = its kg + 2 x Side Load + 2 x Collar, the greatest at or under the reading, and it survives a reload labelled as typed (ADR-0017, ADR-0002, ADR-0003, ADR-0008)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.constantFrom(...PLATE_SET_KEYS),
         stampArb,
         fc.constantFrom(...COLLARS_KG),
         fc.constantFrom<Unit>('kg', 'lb'),
         draftArb,
-        (set, stamp, collarKg, u, draft) => {
+        async (set, stamp, collarKg, u, draft) => {
+          await nextRun();
           localStorage.clear();
           const app = mountApp();
           const s = setupRoot(app);
@@ -261,7 +265,7 @@ describe('<rack-app> custom Bar properties (ADR-0017)', () => {
     );
   });
 
-  it('any stored custom Bar list loads as at most 3 valid, distinct tiles, and the stored Bar is always one of the tiles (ADR-0017, ADR-0007 validate-at-boundary)', () => {
+  it('any stored custom Bar list loads as at most 3 valid, distinct tiles, and the stored Bar is always one of the tiles (ADR-0017, ADR-0007 validate-at-boundary)', async () => {
     const junk = fc.oneof(
       fc.string(),
       fc.json(),
@@ -280,8 +284,9 @@ describe('<rack-app> custom Bar properties (ADR-0017)', () => {
       fc.string(),
       fc.constantFrom('20', '15', '35', String(35 * 0.45359237), '7', '15.9'),
     );
-    fc.assert(
-      fc.property(junk, barJunk, fc.constantFrom(...PLATE_SET_KEYS), (raw, bar, set) => {
+    await fc.assert(
+      fc.asyncProperty(junk, barJunk, fc.constantFrom(...PLATE_SET_KEYS), async (raw, bar, set) => {
+        await nextRun();
         localStorage.clear();
         localStorage.setItem('rackbar.customBars', raw);
         localStorage.setItem('rackbar.barKg', bar);
@@ -307,18 +312,19 @@ describe('<rack-app> custom Bar properties (ADR-0017)', () => {
   // the real long-press under fake timers: removing the chosen custom Bar falls back to
   // the set's default Bar; any other removal keeps the Bar; Undo restores the list in
   // order and the chosen Bar.
-  it('removing the chosen custom Bar falls back to the set\'s default; Undo puts it back in place and re-selects it only if it was chosen (ADR-0017, ADR-0007)', () => {
+  it('removing the chosen custom Bar falls back to the set\'s default; Undo puts it back in place and re-selects it only if it was chosen (ADR-0017, ADR-0007)', async () => {
     const DEFAULT_NAME: Record<PlateSetKey, string> = { comp: '20 kg', training: '45 lb' };
     const listArb = fc.uniqueArray(stampArb, { minLength: 1, maxLength: 3, selector: oracleKg });
     vi.useFakeTimers();
     try {
-      fc.assert(
-        fc.property(
+      await fc.assert(
+        fc.asyncProperty(
           fc.constantFrom(...PLATE_SET_KEYS),
           listArb,
           fc.nat(),
           fc.nat(),
-          (set, list, pick, gone) => {
+          async (set, list, pick, gone) => {
+            await nextRun();
             localStorage.clear();
             localStorage.setItem('rackbar.plateSet', set);
             localStorage.setItem('rackbar.customBars', JSON.stringify(list));
@@ -368,7 +374,7 @@ describe('<rack-app> custom Bar properties (ADR-0017)', () => {
   // already has is only selected; a new one is stored when no set would then show more
   // than 3 custom tiles (else refused with a hint); "+" shows while the set shows fewer
   // than 3.
-  it('Bars added in Setup are stored at most once by weight, never a weight the set offers, no set ever shows more than 3, and an accepted add is the chosen Bar (ADR-0017)', () => {
+  it('Bars added in Setup are stored at most once by weight, never a weight the set offers, no set ever shows more than 3, and an accepted add is the chosen Bar (ADR-0017)', async () => {
     const addArb = fc.record({
       stamp: fc.oneof(
         stampArb,
@@ -387,11 +393,12 @@ describe('<rack-app> custom Bar properties (ADR-0017)', () => {
     });
     const shownOn = (list: readonly { value: number; unit: Unit }[], key: PlateSetKey) =>
       list.filter((x) => !PLATE_SETS[key].bars.some((b) => b.kg === oracleKg(x)));
-    fc.assert(
-      fc.property(
+    await fc.assert(
+      fc.asyncProperty(
         fc.constantFrom(...PLATE_SET_KEYS),
         fc.array(addArb, { minLength: 1, maxLength: 5 }),
-        (set, adds) => {
+        async (set, adds) => {
+          await nextRun();
           localStorage.clear();
           localStorage.setItem('rackbar.plateSet', set);
           const app = mountApp();

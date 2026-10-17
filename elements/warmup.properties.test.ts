@@ -16,7 +16,7 @@ import { rampTotalsOracle, achievableTotals } from '../lib/properties.oracle.ts'
 import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, EPS, other, fresh, resetPool, q, sr, unitBtn, modeBtn, totalText, sideOnScreen,
-  stairs, nextBtn, workDraft, commitWorking, storedRecents, rigDraftCaseArb,
+  stairs, nextBtn, workDraft, commitWorking, storedRecents, rigDraftCaseArb, nextRun,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
 
@@ -79,9 +79,10 @@ const stairTotals = (el: HTMLElement) =>
   stairs(el).map((b) => b.querySelector('.tot')!.textContent ?? '');
 
 describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () => {
-  it('selecting any step shows exactly that row\'s Side and Total on the sleeve and readout (ADR-0005, ADR-0015)', () => {
-    fc.assert(
-      fc.property(workCaseArb, fc.nat({ max: 4 }), ([rig, u, draft], i) => {
+  it('selecting any step shows exactly that row\'s Side and Total on the sleeve and readout (ADR-0005, ADR-0015)', async () => {
+    await fc.assert(
+      fc.asyncProperty(workCaseArb, fc.nat({ max: 4 }), async ([rig, u, draft], i) => {
+        await nextRun();
         const el = warmOn(rig, u, draft);
         const want = oracleTotals(rig, u, draft);
         stairs(el)[i].click();
@@ -96,9 +97,10 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
-  it('Next from row i selects row i+1, and only the Working set disables it (ADR-0015)', () => {
-    fc.assert(
-      fc.property(workCaseArb, fc.nat({ max: 4 }), ([rig, u, draft], i) => {
+  it('Next from row i selects row i+1, and only the Working set disables it (ADR-0015)', async () => {
+    await fc.assert(
+      fc.asyncProperty(workCaseArb, fc.nat({ max: 4 }), async ([rig, u, draft], i) => {
+        await nextRun();
         const el = warmOn(rig, u, draft);
         const want = oracleTotals(rig, u, draft);
         stairs(el)[i].click();
@@ -118,7 +120,7 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
-  it('following the Next caption literally rebuilds the next Side exactly: off from the outside, then on (ADR-0015 as amended)', () => {
+  it('following the Next caption literally rebuilds the next Side exactly: off from the outside, then on (ADR-0015 as amended)', async () => {
     // The caption is what the lifter does at the Bar. Read it off the Next button,
     // apply it to the Side on screen, and the result must be the Side Next loads.
     const faces = (rig: Rig, el: HTMLElement) =>
@@ -145,8 +147,9 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
       }
       return [...out, ...on];
     };
-    fc.assert(
-      fc.property(workCaseArb, ([rig, u, draft]) => {
+    await fc.assert(
+      fc.asyncProperty(workCaseArb, async ([rig, u, draft]) => {
+        await nextRun();
         const el = warmOn(rig, u, draft);
         const n = stairs(el).length;
         for (let i = 0; i < n - 1; i++) {
@@ -163,7 +166,7 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
-  it('Warm up never pushes a warm-up row onto Recents; only the working-weight commit does (ADR-0009)', () => {
+  it('Warm up never pushes a warm-up row onto Recents; only the working-weight commit does (ADR-0009)', async () => {
     type Act = { kind: 'stair'; i: number } | { kind: 'next' } | { kind: 'share' } | { kind: 'unit' };
     const actArb: fc.Arbitrary<Act> = fc.oneof(
       fc.nat({ max: 4 }).map((i) => ({ kind: 'stair' as const, i })),
@@ -171,8 +174,9 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
       fc.constant({ kind: 'share' as const }),
       fc.constant({ kind: 'unit' as const }),
     );
-    fc.assert(
-      fc.property(workCaseArb, fc.array(actArb, { maxLength: 6 }), ([rig, u, draft], acts) => {
+    await fc.assert(
+      fc.asyncProperty(workCaseArb, fc.array(actArb, { maxLength: 6 }), async ([rig, u, draft], acts) => {
+        await nextRun();
         const el = warmOn(rig, u, draft);
         let unit = u;
         for (const a of acts) {
@@ -190,9 +194,10 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
-  it('the working weight round-trips through rackbar.working across a reload (ADR-0007, ADR-0009)', () => {
-    fc.assert(
-      fc.property(workCaseArb, ([rig, u, draft]) => {
+  it('the working weight round-trips through rackbar.working across a reload (ADR-0007, ADR-0009)', async () => {
+    await fc.assert(
+      fc.asyncProperty(workCaseArb, async ([rig, u, draft]) => {
+        await nextRun();
         const el = warmOn(rig, u, draft);
         const shown = workDraft(el);
         const totals = stairTotals(el);
@@ -211,9 +216,10 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
-  it('a unit toggle keeps the working weight as read: an Exact Working set stays put, a load never moves down, and a second round trip changes nothing (ADR-0010 RBAR-60)', () => {
-    fc.assert(
-      fc.property(workCaseArb, ([rig, u, draft]) => {
+  it('a unit toggle keeps the working weight as read: an Exact Working set stays put, a load never moves down, and a second round trip changes nothing (ADR-0010 RBAR-60)', async () => {
+    await fc.assert(
+      fc.asyncProperty(workCaseArb, async ([rig, u, draft]) => {
+        await nextRun();
         const el = warmOn(rig, u, draft);
         const kg = draftToKg(draft, u)!;
         const workBefore = oracleTotals(rig, u, draft).at(-1)!;
