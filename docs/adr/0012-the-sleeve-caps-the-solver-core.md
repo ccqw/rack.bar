@@ -89,3 +89,17 @@ ADR-0003 caveat).
 - **RBAR-28's `atSleeveCapacity` view helper** stays (the pill still needs the
   "cannot close the miss" reading) but now describes a Side the core itself produced,
   so the discs can no longer overflow the frame.
+
+## 2026-10-16 -- the round-up refill steps until it lands (RBAR-62)
+
+"The over step is re-filled under the same cap" was implemented as ONE step (primary
+Side + the smallest Plate). In the sleeve-bound band the next step can be unbuildable
+within the sleeve while a later one is not -- Target 349 on the default rig: primary
+348, no 164.5 kg Side fits 415 mm, but a 165 kg Side (Total 350) does -- so the core
+returned no `over` and the console showed "Bar at capacity" beside a heavier load that
+still fit (4 grid gaps per Competition rig, 2 per Training rig; found by the RBAR-62
+property suite). The refill now keeps stepping until it lands strictly above the
+Target, bounded by the heaviest Side the sleeve could hold. The rule this ADR states is
+unchanged -- `over` is the least physically loadable Total above the Target, present
+whenever one exists; only the mechanism caught up with it. Uncapped Targets still do a
+single refill.

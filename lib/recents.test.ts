@@ -41,6 +41,14 @@ describe('pushRecent', () => {
     expect(pushRecent([100], -20)).toEqual([100]);
   });
 
+  it('ignores a positive Target that rounds to 0 at stored precision (RBAR-62)', () => {
+    // Found by the RBAR-62 property suite: 0.004 is > 0 but stores as 0, which would
+    // put a "0 kg" chip in the row (and parseRecents would then drop it on reload).
+    expect(pushRecent([100], 0.004)).toEqual([100]);
+    expect(pushRecent([100], 5e-324)).toEqual([100]);
+    expect(pushRecent([100], 0.005)).toEqual([0.01, 100]); // rounds up: a real chip
+  });
+
   it('does not mutate the input list', () => {
     const original = [100, 80];
     pushRecent(original, 120);
@@ -78,6 +86,10 @@ describe('parseRecents', () => {
     expect(parseRecents(JSON.stringify([100, 'x', null, 0, -5, 80]))).toEqual([
       100, 80,
     ]);
+  });
+
+  it('drops an entry that rounds to 0 at stored precision (RBAR-62)', () => {
+    expect(parseRecents(JSON.stringify([100, 0.001, 5e-324, 80]))).toEqual([100, 80]);
   });
 
   it('dedupes and caps a corrupt over-long / duplicate-laden payload', () => {

@@ -39,6 +39,9 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - Decode never overshoots the Target by default (ADR-0003); a closer over-Target
   loadout is offered as an explicit opt-in only.
 - Style through `--rack-*` tokens, not hard-coded values; elements use Shadow DOM.
+- Invariant (property) tests live in `lib/properties.test.ts` (core, vs the ADR-derived
+  oracle in `lib/properties.oracle.ts`) and `elements/*.properties.test.ts` (shell, via
+  real input paths); add a property there for every new rule, named after it + its ADR.
 - happy-dom can't see rendering — visual changes also need a human eyeball on
   `npm run dev`.
 
