@@ -6,9 +6,10 @@
 // its unit (Caitlin's "no loose numerals" rule): Totals in the display Unit, Plate faces
 // in the set's stamped Unit.
 //
-// What changed between two rows is diffed from their Sides here, so it stays right when
-// fewest-moves loading (slice 4) changes which Side a row picks: the diff always
-// describes the Plates actually on the Bar.
+// What changed between two rows is diffed from their Sides here, so it stays right
+// whichever Side the station rule (ADR-0015, slice 4b) picks: the diff always describes
+// the Plates actually on the Bar, in the order the Sides stack them (a station-rule
+// Side is not always heaviest-first, so nothing here re-sorts).
 import type { Plate } from './plates.ts';
 import type { RampRow } from './plan.ts';
 import { format, shownIn } from './units.ts';
@@ -16,9 +17,9 @@ import type { Unit } from './units.ts';
 
 /** The Plates to put on and take off one Side to go from one row to the next. */
 export interface SideDelta {
-  /** Plates to add, heaviest-first. */
+  /** Plates to add, in the order the next Side stacks them (inside -> outside). */
   readonly added: readonly Plate[];
-  /** Plates to take off, heaviest-first. */
+  /** Plates to take off, outermost first (the order they come off). */
   readonly removed: readonly Plate[];
 }
 
@@ -28,8 +29,6 @@ const plateKey = (p: Plate) => `${p.label ?? p.kg}|${p.color}`;
 
 /** A Plate's stamped face: its lb `label` (iron) or its kg (Eleiko). */
 const face = (p: Plate) => p.label ?? String(p.kg);
-
-const heaviestFirst = (a: Plate, b: Plate) => b.kg - a.kg;
 
 /**
  * The multiset difference between two Sides: what to add to `prev` and take off it to
@@ -47,8 +46,16 @@ export function sideDelta(prev: readonly Plate[], next: readonly Plate[]): SideD
     if (pool && pool.length > 0) pool.pop();
     else added.push(p);
   }
-  const removed = [...left.values()].flat();
-  return { added: added.sort(heaviestFirst), removed: removed.sort(heaviestFirst) };
+  // What is left of `prev` comes off, outermost first.
+  const removed: Plate[] = [];
+  for (let i = prev.length - 1; i >= 0; i--) {
+    const pool = left.get(plateKey(prev[i]))!;
+    if (pool.includes(prev[i])) {
+      pool.splice(pool.indexOf(prev[i]), 1);
+      removed.push(prev[i]);
+    }
+  }
+  return { added, removed };
 }
 
 /** The delta from the previous row to row `i` (the first row loads from a bare Bar). */

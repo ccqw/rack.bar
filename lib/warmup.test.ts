@@ -37,7 +37,14 @@ describe('sideDelta', () => {
   it('lists Plates to take off and put on when the stack changes (a swap)', () => {
     const d = sideDelta([kg(25), kg(10), kg(2.5), kg(1.5)], [kg(25), kg(25), kg(2.5), kg(0.5)]);
     expect(kgs(d.added)).toEqual([25, 0.5]);
-    expect(kgs(d.removed)).toEqual([10, 1.5]);
+    expect(kgs(d.removed)).toEqual([1.5, 10]); // outermost first
+  });
+
+  it('keeps a station-rule stack in its own order, never re-sorted (ADR-0015 slice 4b)', () => {
+    // 10+5+2.5 -> 10+15+1: the 15 goes outside the 10, then the 1.
+    const d = sideDelta([kg(10), kg(5), kg(2.5)], [kg(10), kg(15), kg(1)]);
+    expect(kgs(d.added)).toEqual([15, 1]);
+    expect(kgs(d.removed)).toEqual([2.5, 5]);
   });
 
   it('counts duplicates (a second 25 is an add)', () => {
@@ -60,7 +67,7 @@ describe('rowDelta', () => {
     expect(kgs(rowDelta(RAMP140, 0).added)).toEqual([]);
     expect(kgs(rowDelta(RAMP140, 1).added)).toEqual([25]);
     expect(kgs(rowDelta(RAMP140, 4).added)).toEqual([10]);
-    expect(kgs(rowDelta(RAMP140, 4).removed)).toEqual([2.5, 0.5]);
+    expect(kgs(rowDelta(RAMP140, 4).removed)).toEqual([0.5, 2.5]);
   });
 });
 
@@ -166,7 +173,7 @@ describe('warmupView', () => {
     expect(v.steps[0].label).toBe('Set 1 of 5, bare bar, 20 kilograms');
     expect(v.steps[1].label).toBe('Set 2 of 5, 50 percent, 70 kilograms, add 25 kilograms per side');
     expect(v.steps[4].label).toBe(
-      'Set 5 of 5, working set, 140 kilograms, swap 2.5 and 0.5 for 10 kilograms per side',
+      'Set 5 of 5, working set, 140 kilograms, swap 0.5 and 2.5 for 10 kilograms per side',
     );
   });
 
@@ -177,7 +184,7 @@ describe('warmupView', () => {
       sub: '+10 +2.5 +1.5 kg per side',
       disabled: false,
     });
-    expect(warmupView(RAMP140, 3, 'kg', 'kg').next.sub).toBe('swap 2.5 + 0.5 -> 10 kg per side');
+    expect(warmupView(RAMP140, 3, 'kg', 'kg').next.sub).toBe('swap 0.5 + 2.5 -> 10 kg per side');
   });
 
   it('disables Next on the Working set', () => {

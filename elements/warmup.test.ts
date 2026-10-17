@@ -193,12 +193,13 @@ describe('<rack-console> Warm up mode (RBAR-65 slice 2)', () => {
     expect(vizAdd(el).hidden).toBe(false);
     expect(vizAdd(el).textContent).toBe('+25 kg');
     nextBtn(el).click();
-    // 70% is 100 kg (25 + 15), not the nearest 98 kg: the 25 stays on (ADR-0015 as amended).
+    // 70% is 100 kg (25 + 15), not the nearest 98 kg: the 25 stays on (ADR-0015, the
+    // station rule).
     expect(totalText(el)).toBe('100 kg');
     expect(kgs(el)).toEqual([25, 15]);
   });
 
-  it('loads the fewest-moves Ramp: at 70 kg each step after 70% only adds Plates on top', () => {
+  it("loads the station-rule Ramp: at 70 kg, 5+2.5 / 15 / 15+5+1.5 / 15+5+5 (ADR-0015)", () => {
     const el = mountConsole();
     modeBtn(el, 'warmup').click();
     commitWorking(el, '70');

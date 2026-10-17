@@ -3,16 +3,16 @@
 // and mode toggles, Share, and a reload -- and judged from what is on screen. Each `it`
 // is named after the rule it guards, with its ADR. Expected Totals come from the
 // ADR-derived oracle (rampTotalsOracle, lib/properties.oracle.ts), never from the
-// planner under test; Warm-up sets are judged against the fewest-moves band
+// planner under test; Warm-up sets are judged against the station rule's 5% band
 // (ADR-0015 as amended), since the screen loads planEasyRamp. Drivers + generators are in properties.drivers.ts.
 import { describe, it, expect, beforeEach } from 'vitest';
 import fc from 'fast-check';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
-import { RAMP_TOLERANCE } from '../lib/moves.ts';
+import { RAMP_BAND } from '../lib/moves.ts';
 import { pushRecent } from '../lib/recents.ts';
 import { draftToKg, displayCeilingKg, format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
-import { rampTotalsOracle } from '../lib/properties.oracle.ts';
+import { rampTotalsOracle, achievableTotals } from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, EPS, other, fresh, resetPool, q, sr, unitBtn, modeBtn, totalText, sideOnScreen,
@@ -44,10 +44,12 @@ function oracleTotals(rig: Rig, u: Unit, draft: string): number[] {
   return rampTotalsOracle(rig, t, displayCeilingKg(t, u), DEFAULT_RAMP);
 }
 
-// Whether `shown` is a Total the fewest-moves Ramp may load on row `i` (ADR-0015 as
+// Whether `shown` is a Total the station-rule Ramp may load on row `i` (ADR-0015 as
 // amended): the bare-Bar row is the Bar, the Working set is the oracle's Total exactly,
-// and a Warm-up set is its nearest Total or any Total within the tolerance of its raw
-// target (pct x Working Total) between the loaded bare rig and the Working Total.
+// and a Warm-up set is any Total within the band (RAMP_BAND of the Working Total) of
+// its raw target (pct x Working Total), between the loaded bare rig and the Working
+// Total -- or, when the floor forces it out (nothing achievable in the band), its
+// nearest Total or any Total up to the Working set.
 function allowedRowKg(rig: Rig, want: readonly number[], i: number, shown: number): boolean {
   const last = want.length - 1;
   const step = DEFAULT_RAMP[i];
@@ -55,9 +57,13 @@ function allowedRowKg(rig: Rig, want: readonly number[], i: number, shown: numbe
   if (Math.abs(shown - want[i]) < 1e-6) return true;
   const working = want[last];
   const grid = Math.min(...rig.inventory.map((p) => p.kg));
-  const tol = Math.max(RAMP_TOLERANCE * working, grid);
-  return Math.abs(shown - (working * step.pct) / 100) <= tol + 1e-6
-    && shown >= rig.baselineKg - 1e-6 && shown <= working + 1e-6;
+  const tol = Math.max(RAMP_BAND * working, grid);
+  const raw = (working * step.pct) / 100;
+  const between = shown >= rig.baselineKg - 1e-6 && shown <= working + 1e-6;
+  const forced = !achievableTotals(rig).some(
+    (t) => t >= rig.baselineKg - 1e-6 && t <= working + 1e-6 && Math.abs(t - raw) <= tol + 1e-6,
+  );
+  return between && (forced || Math.abs(shown - raw) <= tol + 1e-6);
 }
 
 // The Total the sleeve's discs add up to for Ramp row `i`: the bare-Bar row carries no

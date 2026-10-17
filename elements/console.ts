@@ -1005,9 +1005,10 @@ class RackConsole extends HTMLElement {
     this.render();
   }
 
-  // Plan the Ramp for the Working set on the current rig, picked for fewest Plate moves
-  // (lib/moves.ts, ADR-0015 as amended), and load the selected row. The Working set solves at or under its reading in the
-  // display unit (displayCeilingKg, RBAR-60), exactly as By Weight would. The template
+  // Plan the Ramp for the Working set on the current rig by Caitlin's station rule
+  // (lib/moves.ts, ADR-0015 as amended), and load the selected row. The Working set
+  // solves at or under its reading in the display unit (displayCeilingKg, RBAR-60),
+  // exactly as By Weight would. The template
   // is DEFAULT_RAMP (editing it is slice 3). The selection is kept across re-plans,
   // clamped into the rows.
   private planWarmup(): void {
