@@ -90,6 +90,12 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
       fc.string(),
       fc.json(),
       fc.constantFrom('NaN', '-1', '1e999', 'lb ', 'KG', '20.0'),
+      // VALID values for every slot, from both sets, so the cross-checks run: a Bar
+      // stored for one set but loaded under the other, a real Collar, a real unit.
+      fc.constantFrom(
+        'comp', 'training', 'kg', 'lb', '15', '5', '20', '0', '2.5',
+        String(PLATE_SETS.training.defaultBarKg),
+      ),
     );
     fc.assert(
       fc.property(junk, junk, junk, junk, junk, (set, bar, collar, unit, recents) => {
@@ -104,8 +110,13 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
         const key = c.plateSet as PlateSetKey;
         expect(['comp', 'training']).toContain(key);
         expect(key).toBe(set === 'training' ? 'training' : 'comp');
-        expect(PLATE_SETS[key].bars.map((b) => b.kg)).toContain(c.barKg);
-        expect(COLLARS_KG).toContain(c.collarKg);
+        // The Bar validates against the ACTIVE set (ADR-0007/0010): kept when that set
+        // offers it, else the set's default -- a 15 kg Bar never loads on Training.
+        const offered = PLATE_SETS[key].bars.map((b) => b.kg);
+        expect(c.barKg).toBe(
+          offered.includes(Number(bar)) ? Number(bar) : PLATE_SETS[key].defaultBarKg,
+        );
+        expect(c.collarKg).toBe(COLLARS_KG.includes(Number(collar)) ? Number(collar) : 0);
         expect(appUnit(app)).toBe(unit === 'lb' ? 'lb' : 'kg');
         expect(totalText(c)).toMatch(/^\d+(\.\d{1,2})? (kg|lb)$/);
         expect(recentChips(app).length).toBeLessThanOrEqual(MAX_RECENTS);

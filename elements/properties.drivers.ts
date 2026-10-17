@@ -3,9 +3,15 @@
 // properties judge, plus the shared generators. Never imported by app code.
 import fc from 'fast-check';
 import './console.ts';
-import { draftToKg, shownIn } from '../lib/units.ts';
+import { draftToKg, displayCeilingKg, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
-import { RIGS, achievableTotals } from '../lib/properties.oracle.ts';
+import {
+  RIGS,
+  achievableTotals,
+  greatestAtOrUnder,
+  leastAbove,
+  maxTotal,
+} from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
 
 export const SEED = 62;
@@ -152,3 +158,47 @@ export const offGridCaseArb = rigArb.chain((rig) => {
       return [rig, u, String(shownIn(kg, u))] as const;
     });
 });
+
+// A typed Target sized to its rig and unit (the review finding: a flat 0-900 draft put
+// ~60% of runs past the Sleeve's reach, so Exact / short / kg-Exact barely ran). A mix
+// of: a Total's own reading (Exact), a reading between two Totals (short + round-up),
+// any <= 2 dp value up to just past the rig's heaviest Total, and a minority past the
+// cap (capacity) or under the Bar (the floor).
+export const rigDraftCaseArb = rigArb.chain((rig) =>
+  unitArb.chain((u) => {
+    const totals = achievableTotals(rig);
+    const top = shownIn(maxTotal(rig) + 20, u);
+    const reading = (kg: number) => String(shownIn(kg, u));
+    const draft = fc.oneof(
+      { weight: 3, arbitrary: fc.constantFrom(...totals).map(reading) },
+      {
+        weight: 3,
+        arbitrary: fc
+          .tuple(
+            fc.integer({ min: 0, max: totals.length - 2 }),
+            fc.double({ min: 0.25, max: 0.75, noNaN: true }),
+          )
+          .map(([i, f]) => reading(totals[i] + f * (totals[i + 1] - totals[i]))),
+      },
+      {
+        weight: 3,
+        arbitrary: fc.integer({ min: 0, max: Math.round(top * 100) }).map((c) => String(c / 100)),
+      },
+      { weight: 1, arbitrary: fc.integer({ min: Math.ceil(top), max: 900 }).map(String) },
+    );
+    return draft.map((d) => [rig, u, d] as const);
+  }),
+);
+
+/** What the ADRs say the console should show for `draft` typed on `rig` in `u`: the
+ * loaded Total (ADR-0003 at or under the reading, ADR-0010 RBAR-60), whether it reads
+ * short, and whether a physical round-up exists (ADR-0003 RBAR-11, ADR-0012). */
+export function expectedFor(rig: Rig, u: Unit, draft: string) {
+  const t = draftToKg(draft, u)!;
+  const ceiling = displayCeilingKg(t, u);
+  const totalKg = greatestAtOrUnder(rig, ceiling);
+  const short = shownIn(totalKg, u) < shownIn(t, u);
+  const roundUpKg = short ? leastAbove(rig, ceiling) : null;
+  return { totalKg, short, roundUpKg, atCapacity: short && roundUpKg === null };
+}
+

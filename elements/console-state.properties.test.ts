@@ -11,11 +11,11 @@
 // This file: steppers, the unit toggle, and mode switches.
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { format, stepFor } from '../lib/units.ts';
+import { format, shownIn, stepFor } from '../lib/units.ts';
 import {
   SEED, EPS, other, on, unitBtn, modeBtn, step, type, roundUp, tapAdd,
   totalText, secondaryText, statusKind, entryDraft, sideOnScreen, drawnTotalKg, rigArb,
-  unitArb, draftArb, offGridCaseArb,
+  unitArb, draftArb, offGridCaseArb, rigDraftCaseArb, expectedFor,
 } from './properties.drivers.ts';
 
 // The pool is kept across this file's tests (each checkout resets the entry, mode and
@@ -33,8 +33,21 @@ describe('<rack-console> stepper properties (ADR-0010 stepFor)', () => {
         if (draft !== null) type(el, draft);
         const grid = stepFor(u);
         for (const dir of script) {
+          // The rule (ADR-0010 stepFor, RBAR-38): from an empty field the anchor is the
+          // bare rig in the unit; an on-grid value moves one whole step; an off-grid one
+          // snaps to the next grid line in the step's direction; never below 0.
+          const before = entryDraft(el);
+          const base = before === '' ? shownIn(rig.baselineKg, u) : Number(before);
+          const q = base / grid;
+          const onGrid = Math.abs(q - Math.round(q)) < 1e-9;
+          const steps =
+            dir === 'inc'
+              ? onGrid ? Math.round(q) + 1 : Math.ceil(q)
+              : onGrid ? Math.round(q) - 1 : Math.floor(q);
+          const want = Math.max(0, Number((steps * grid).toFixed(2)));
           step(el, dir);
           const v = Number(entryDraft(el));
+          expect(v).toBe(want);
           expect(v).toBeGreaterThanOrEqual(0);
           expect(Math.abs(v / grid - Math.round(v / grid))).toBeLessThan(1e-9);
           step(el, 'inc');
@@ -50,13 +63,20 @@ describe('<rack-console> stepper properties (ADR-0010 stepFor)', () => {
 describe('<rack-console> unit toggle properties (ADR-0010 RBAR-60 amendment)', () => {
   it('a kg -> lb -> kg round trip never moves the load down, keeps an Exact load identical, and settles (a second round trip changes nothing)', () => {
     fc.assert(
-      fc.property(rigArb, unitArb, draftArb, (rig, u, draft) => {
+      fc.property(rigDraftCaseArb, ([rig, u, draft]) => {
         const el = on(rig, u);
         type(el, draft);
         const beforeKg = drawnTotalKg(el, rig);
         const beforeSide = sideOnScreen(el);
         const wasExact = statusKind(el) === 'exact';
         unitBtn(el, other(u)).click();
+        // Judged in the OTHER unit too, not just after the round trip: a lost Exact
+        // retarget drops a Plate step here and the toggle back would hide it.
+        expect(drawnTotalKg(el, rig)).toBeGreaterThanOrEqual(beforeKg - EPS);
+        if (wasExact) {
+          expect(sideOnScreen(el)).toEqual(beforeSide);
+          expect(statusKind(el)).toBe('exact');
+        }
         unitBtn(el, u).click();
         expect(drawnTotalKg(el, rig)).toBeGreaterThanOrEqual(beforeKg - EPS);
         if (wasExact) {
@@ -74,20 +94,24 @@ describe('<rack-console> unit toggle properties (ADR-0010 RBAR-60 amendment)', (
     );
   });
 
-  it('a chosen round-up survives a toggle: the same load stays on the Bar, as the round-up or as the Exact primary, never a stale over (ADR-0010 RBAR-60)', () => {
+  it('a chosen round-up survives a toggle there and back: the same load stays on the Bar, as the round-up or as the Exact primary, never a stale over (ADR-0010 RBAR-60)', () => {
     fc.assert(
       fc.property(offGridCaseArb, ([rig, u, draft]) => {
         const el = on(rig, u);
         type(el, draft);
-        fc.pre(!roundUp(el).hidden); // rare: a reading that still lands Exact
+        const { roundUpKg } = expectedFor(rig, u, draft);
+        expect(!roundUp(el).hidden).toBe(roundUpKg !== null);
+        if (roundUpKg === null) return; // a reading that still lands Exact
         roundUp(el).click();
         const chosen = drawnTotalKg(el, rig);
-        unitBtn(el, other(u)).click();
-        expect(drawnTotalKg(el, rig)).toBeCloseTo(chosen, 9);
-        const kind = statusKind(el);
-        expect(['over', 'exact']).toContain(kind);
-        if (kind === 'exact') expect(roundUp(el).hidden).toBe(true);
-        else expect(roundUp(el).textContent).toMatch(/^Use /);
+        for (const unit of [other(u), u]) {
+          unitBtn(el, unit).click();
+          expect(drawnTotalKg(el, rig)).toBeCloseTo(chosen, 9);
+          const kind = statusKind(el);
+          expect(['over', 'exact']).toContain(kind);
+          if (kind === 'exact') expect(roundUp(el).hidden).toBe(true);
+          else expect(roundUp(el).textContent).toMatch(/^Use /);
+        }
       }),
       { seed: SEED, numRuns: 25 },
     );

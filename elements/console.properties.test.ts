@@ -16,8 +16,8 @@ import { RIGS, leastAbove } from '../lib/properties.oracle.ts';
 import {
   SEED, other, on, press, step, type, roundUp, totalText, secondaryText,
   statusKind, statusLabel, atcapShown, barnoteShown, loadLine, entryDraft,
-  sideOnScreen, drawnTotalKg, shownTarget, rigArb, unitArb, draftArb, gridCaseArb,
-  offGridCaseArb,
+  sideOnScreen, drawnTotalKg, shownTarget, gridCaseArb, offGridCaseArb,
+  rigDraftCaseArb, expectedFor, rigArb, unitArb,
 } from './properties.drivers.ts';
 
 // The pool is kept across this file's tests (each checkout resets the entry, mode and
@@ -42,7 +42,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
 
   it('never shows the Total over the Target by default, except the bare-rig floor, which names itself (ADR-0003 as read, RBAR-55)', () => {
     fc.assert(
-      fc.property(rigArb, unitArb, draftArb, (rig, u, draft) => {
+      fc.property(rigDraftCaseArb, ([rig, u, draft]) => {
         const el = on(rig, u);
         type(el, draft);
         const target = shownTarget(el, u);
@@ -63,9 +63,14 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
 
   it('the pill, the round-up, the capacity caption and the keypad line all tell the same story (ADR-0003, ADR-0010, ADR-0012)', () => {
     fc.assert(
-      fc.property(rigArb, unitArb, draftArb, (rig, u, draft) => {
+      fc.property(rigDraftCaseArb, ([rig, u, draft]) => {
         const el = on(rig, u);
         type(el, draft);
+        const want = expectedFor(rig, u, draft);
+        // The loaded Total and the pill's kind are the ORACLE's, not just self-consistent.
+        expect(drawnTotalKg(el, rig)).toBeCloseTo(want.totalKg, 9);
+        expect(statusKind(el) === 'capacity').toBe(want.atCapacity);
+        expect(statusKind(el) === 'short').toBe(want.short && !want.atCapacity);
         const target = shownTarget(el, u);
         const total = shownIn(drawnTotalKg(el, rig), u);
         const mag = String(Number(Math.abs(target - total).toFixed(2)));
@@ -102,7 +107,11 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
       fc.property(offGridCaseArb, ([rig, u, draft]) => {
         const el = on(rig, u);
         type(el, draft);
-        fc.pre(!roundUp(el).hidden); // rare: a reading that still lands Exact
+        // Offered exactly when the oracle says a round-up exists (not filtered with
+        // fc.pre, which would silently skip a partial regression); then exercised.
+        const { roundUpKg } = expectedFor(rig, u, draft);
+        expect(!roundUp(el).hidden).toBe(roundUpKg !== null);
+        if (roundUpKg === null) return;
         const primarySide = sideOnScreen(el);
         const primaryText = totalText(el);
         const ceiling = displayCeilingKg(draftToKg(entryDraft(el), u)!, u);

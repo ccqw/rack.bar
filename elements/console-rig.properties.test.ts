@@ -19,7 +19,7 @@ import { RIGS, COLLARS_KG, greatestAtOrUnder } from '../lib/properties.oracle.ts
 import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, fresh, resetPool, unitBtn, modeBtn, type, roundUp, tapAdd, totalText,
-  entryDraft, sideOnScreen, drawnTotalKg, rigArb, unitArb, draftArb,
+  entryDraft, sideOnScreen, drawnTotalKg, unitArb, draftArb, rigDraftCaseArb,
 } from './properties.drivers.ts';
 
 beforeEach(resetPool);
@@ -92,7 +92,7 @@ describe('<rack-console> rig change properties (ADR-0007, ADR-0008, ADR-0010)', 
             if (mode === 'decode' && live && draftBefore !== '') {
               const t = draftToKg(draftBefore, unit)!;
               expect(drawnTotalKg(el, rig())).toBeCloseTo(
-                greatestAtOrUnder(rig(), Math.max(t, displayCeilingKg(t, unit))),
+                greatestAtOrUnder(rig(), displayCeilingKg(t, unit)),
                 9,
               );
             }
@@ -128,9 +128,15 @@ describe('<rack-console> rig change properties (ADR-0007, ADR-0008, ADR-0010)', 
   });
 
   it('a Bar or Collar change re-solves the same Target on the new baseline (total - delta invariant, ADR-0002, ADR-0008)', () => {
-    const changeArb = fc.tuple(rigArb, rigArb).filter(([a, b]) => a.set === b.set);
+    // A Target sized to the rig (mostly within reach, so "re-solve the Target" and
+    // "keep the old Total" give different answers), then any other Bar/Collar of the set.
+    const changeArb = rigDraftCaseArb.chain(([from, u, draft]) =>
+      fc
+        .constantFrom(...RIGS.filter((r) => r.set === from.set))
+        .map((to) => [from, to, u, draft] as const),
+    );
     fc.assert(
-      fc.property(changeArb, unitArb, draftArb, ([from, to], u, draft) => {
+      fc.property(changeArb, ([from, to, u, draft]) => {
         const el = fresh(from, u);
         type(el, draft);
         const draftBefore = entryDraft(el);
