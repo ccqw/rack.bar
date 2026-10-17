@@ -10,7 +10,9 @@ plates back into a total. A future game mode will quiz this same skill.
 
 **Bar**:
 The barbell being loaded; contributes its own weight to the Total. The lifter
-selects the Bar (20 / 15 / 5 kg); it defaults to 20 kg.
+selects the Bar from the Plate set's offer -- Competition 20 / 15 / 5 kg (default
+20 kg), Training 45 lb or 20 kg (default 45 lb). A Bar is named in the unit it is
+stamped in.
 _Avoid_: barbell, rod.
 
 **Collar**:

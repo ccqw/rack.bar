@@ -307,6 +307,55 @@ describe('<rack-app> plate-set wiring (RBAR-17, ADR-0010)', () => {
     expect(totalText(root)).toBe('45 lb');
   });
 
+  // RBAR-63: Training offers a 20 kg Bar beside the 45 lb one, labelled in kg.
+  const pillLabel = (root: ShadowRoot) =>
+    pill(root).querySelector('[data-pill-label]')!.textContent;
+
+  it('picking the Training 20 kg Bar threads it, persists it, and labels it in kg', () => {
+    const { root } = mountApp();
+    pill(root).click();
+    choosePlateset(root, 'training');
+    chooseBar(root, 20);
+    expect(consoleEl(root).barKg).toBe(20);
+    expect(localStorage.getItem(KEY)).toBe('20');
+    expect(pillLabel(root)).toBe('20 kg bar \u00B7 Training'); // never "44 lb bar"
+    expect(pressedBars(root)).toEqual([20]);
+    expect(totalText(root)).toBe('20 kg'); // the empty Bar reads exactly 20 kg
+  });
+
+  it('restores a persisted 20 kg Bar on Training across a reload', () => {
+    localStorage.setItem(PLATESET_KEY, 'training');
+    localStorage.setItem(KEY, '20');
+    const { root } = mountApp();
+    expect(consoleEl(root).plateSet).toBe('training');
+    expect(consoleEl(root).barKg).toBe(20);
+    expect(pillLabel(root)).toBe('20 kg bar \u00B7 Training');
+  });
+
+  it('switching sets resets the Bar to the default, even from the shared 20 kg', () => {
+    // 20 kg is offered on both sets; a set switch still lands on the new set's default
+    const { root } = mountApp();
+    pill(root).click();
+    choosePlateset(root, 'training');
+    chooseBar(root, 20);
+    choosePlateset(root, 'comp');
+    expect(consoleEl(root).barKg).toBe(20);
+    expect(pillLabel(root)).toBe('20 kg bar \u00B7 Comp');
+    choosePlateset(root, 'training');
+    expect(consoleEl(root).barKg).toBe(lbToKg(45));
+    expect(pillLabel(root)).toBe('45 lb bar \u00B7 Training');
+    expect(localStorage.getItem(KEY)).toBe(String(lbToKg(45)));
+  });
+
+  it('keeps the 20 kg Bar label in kg whatever the display unit', () => {
+    localStorage.setItem(PLATESET_KEY, 'training');
+    localStorage.setItem(KEY, '20');
+    localStorage.setItem('rackbar.unit', 'lb');
+    const { root } = mountApp();
+    expect(pillLabel(root)).toBe('20 kg bar \u00B7 Training');
+    expect(totalText(root)).toBe('44 lb'); // the readout follows the toggle
+  });
+
   it('falls back to Competition when the persisted plate set is off-menu', () => {
     localStorage.setItem(PLATESET_KEY, 'bogus');
     const { root } = mountApp();

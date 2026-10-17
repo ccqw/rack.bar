@@ -178,20 +178,44 @@ describe('<rack-setup> Plates section (RBAR-17, ADR-0010)', () => {
     expect(seen).toHaveBeenLastCalledWith('training');
   });
 
-  it('re-renders the Bar tiles for the active set: a single 45 lb Bar on Training', () => {
+  it('re-renders the Bar tiles for the active set: 45 lb and 20 kg on Training', () => {
     const { el, root } = mountSetup();
     el.plateSet = 'training';
     el.barKg = lbToKg(45);
-    // the kg tiles are gone; the one iron Bar tile reads in pounds
-    expect(root.querySelector('[data-bar="20"]')).toBeNull();
-    const ironTile = root.querySelector<HTMLButtonElement>(
-      `[data-bar="${lbToKg(45)}"]`,
-    )!;
-    expect(ironTile).toBeTruthy();
-    expect(ironTile.textContent).toContain('45');
+    // the Competition 15 / 5 kg tiles are gone; Training offers two Bars (RBAR-63)
+    expect(root.querySelector('[data-bar="15"]')).toBeNull();
+    expect(root.querySelectorAll('[data-bar]')).toHaveLength(2);
+    const ironTile = tile(root, lbToKg(45));
+    expect(word(ironTile)).toBe('45 lb');
+    expect(csub(ironTile)).toBe('20.41 kg');
     expect(ironTile.getAttribute('aria-pressed')).toBe('true');
+    expect(ironTile.getAttribute('aria-label')).toBe('45 lb Bar (20.41 kg)');
+  });
+
+  it('labels the Training 20 kg Bar in kg, its stamped unit, never "44 lb" (RBAR-63)', () => {
+    const { el, root } = mountSetup();
+    el.plateSet = 'training';
+    el.barKg = 20;
+    const kgTile = tile(root, 20);
+    expect(word(kgTile)).toBe('20 kg');
+    expect(csub(kgTile)).toBe('44 lb');
+    expect(kgTile.getAttribute('aria-label')).toBe('20 kg Bar (44 lb)');
+    expect(kgTile.getAttribute('aria-pressed')).toBe('true');
+    expect(tile(root, lbToKg(45)).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('emits barchange with 20 when the Training 20 kg tile is tapped', () => {
+    const { el, root } = mountSetup();
+    el.plateSet = 'training';
+    el.barKg = lbToKg(45);
+    const seen = barchangeSpy(el);
+    tile(root, 20).click();
+    expect(seen).toHaveBeenLastCalledWith(20);
   });
 });
+
+const word = (t: HTMLElement) => t.querySelector('.word')!.textContent;
+const csub = (t: HTMLElement) => t.querySelector('.csub')!.textContent;
 
 describe('<rack-setup> plate-set row swatches + selected check (RBAR-29)', () => {
   function row(root: ShadowRoot, key: string): HTMLButtonElement {

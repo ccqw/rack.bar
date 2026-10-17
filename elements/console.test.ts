@@ -2093,6 +2093,70 @@ describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
 // 55 lb -- and fell a whole Plate step low on every reading that rounds down
 // (114 of the 231 achievable Competition Totals from 20 to 250 kg, read in lb; 33 of
 // 72 iron Totals from 45 to 400 lb, read in kg).
+// RBAR-63: the Training set's 20 kg Bar under iron Plates. Its Totals are 20 kg plus
+// 5 lb steps, so in lb they are never whole (44.09, 49.09, ...): every one must still
+// read back Exact when typed, in either unit -- the RBAR-60 read-back rule on a new
+// baseline.
+describe('<rack-console> the Training 20 kg Bar (RBAR-63)', () => {
+  const mountIron20 = () => {
+    const el = mountConsole();
+    el.barKg = 20;
+    el.plateSet = 'training';
+    return el;
+  };
+
+  it('an empty 20 kg Bar reads exactly 20 kg, and a 20 kg Target reads Exact', () => {
+    const el = mountIron20();
+    expect(total(el)).toBe('20 kg');
+    type(el, '20');
+    expect(total(el)).toBe('20 kg');
+    expect(statusKind(el)).toBe('exact');
+    expect(barnote(el).hidden).toBe(true); // not below the Bar
+    expect(discs(el)).toHaveLength(0);
+  });
+
+  it('lands every 20 kg Bar iron Total read in kg back on itself, Exact', () => {
+    const el = mountIron20();
+    const misses: string[] = [];
+    for (let plateLb = 0; plateLb <= 360; plateLb += 5) {
+      const reading = String(Number((20 + lbToKg(plateLb)).toFixed(2)));
+      type(el, reading);
+      if (total(el) !== `${reading} kg` || statusKind(el) !== 'exact') {
+        misses.push(`+${plateLb} lb read ${reading} kg -> ${total(el)} ${statusKind(el)}`);
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it('lands every 20 kg Bar iron Total read in lb back on itself, Exact', () => {
+    const el = mountIron20();
+    unitBtn(el, 'lb').click();
+    const misses: string[] = [];
+    for (let plateLb = 0; plateLb <= 360; plateLb += 5) {
+      const reading = String(Math.round(20 / 0.45359237 + plateLb));
+      type(el, reading);
+      if (total(el) !== `${reading} lb` || statusKind(el) !== 'exact') {
+        misses.push(`+${plateLb} lb read ${reading} lb -> ${total(el)} ${statusKind(el)}`);
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it('never reads over in either unit for any whole-number Target (ADR-0003)', () => {
+    const el = mountIron20();
+    const overs: string[] = [];
+    for (const u of ['kg', 'lb'] as const) {
+      unitBtn(el, u).click();
+      const [lo, hi] = u === 'kg' ? [20, 200] : [45, 440];
+      for (let t = lo; t <= hi; t++) {
+        type(el, String(t));
+        if (statusKind(el) === 'over') overs.push(`${t} ${u} -> ${total(el)}`);
+      }
+    }
+    expect(overs).toEqual([]);
+  });
+});
+
 describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
   it('lands every iron Total read in kg back on itself, Exact', () => {
     const el = mountConsole();

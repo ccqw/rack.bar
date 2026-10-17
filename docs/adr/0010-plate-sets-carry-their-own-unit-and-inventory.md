@@ -19,7 +19,7 @@ The two v1 sets:
 | set         | inventory         | native unit | bars (default first) |
 | ----------- | ----------------- | ----------- | -------------------- |
 | Competition | Eleiko, color, kg | kg          | 20, 15, 5 kg         |
-| Training    | plain iron, lb    | lb          | 45 lb                |
+| Training    | plain iron, lb    | lb          | 45 lb, 20 kg (RBAR-63) |
 
 kg is therefore **no longer the sole canonical Unit** (ADR-0006 relaxed). Instead:
 
@@ -167,3 +167,26 @@ the 72 iron Totals from 45 to 400 lb, read in kg, once kg was allowed on iron). 
   the new reading makes it the Exact primary (100.95 kg -> 223 lb, and 101 kg reads
   223 lb) it is shown as the primary, never as a stale "over" whose "use" button would
   step the lifter down to a short load.
+
+## Amendment (2026-10-16, RBAR-63): Training offers a 20 kg Bar; each Bar carries its stamp
+
+The Training row's Bars become **45 lb (default), 20 kg**. Many bars sold and talked
+about as "45 lb" are really 20 kg (the IWF standard, Rogue's Ohio Bar); the 0.41 kg
+gap is under cast-iron plate tolerance, but a kg lifter typing 20 kg on the 45 lb Bar
+read "0.41 kg over". The fix is to let the lifter pick the Bar they own, not to round
+one Bar into the other (Caitlin: no rounding fudges).
+
+- **A Bar names itself in its own stamped Unit.** `PlateSet.bars` is now a list of
+  `Bar { kg, unit }`; the Setup tile headline and the header pill use the Bar's unit
+  (`platesets.ts barUnit`), the tile subtitle the other one. Before, a Bar borrowed
+  the set's Unit, which would have called this Bar "44 lb". The set's `unit` now names
+  only its Plate stamps (and is the fallback for an off-menu Bar).
+- **No swap by display unit.** The kg|lb toggle never changes the Bar: a Bar weighs
+  what it weighs. Only the Total/Target readouts follow the toggle.
+- **A Bar choice still does not cross sets.** 20 kg is offered by both sets, but a set
+  switch always lands on the new set's default, as before. `rackbar.barKg` keeps
+  storing the bare kg number, validated against the active set's Bars, so no migration.
+- The RBAR-60 read-back rule covers this Bar unchanged: its lb Totals are never whole
+  (44.09 lb plus 5 lb steps), and every one types back Exact in both units (oracle in
+  `console.test.ts`).
+

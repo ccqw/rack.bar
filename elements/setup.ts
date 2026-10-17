@@ -25,8 +25,8 @@ import { BUTTON_FX } from './buttonfx.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
 
 // The Competition Bar weights, heaviest-first (men's / women's / technique). The other
-// sets carry their own Bars (ADR-0010, lib/platesets); these stay exported as the
-// Competition source of truth and for the existing app validation path.
+// sets carry their own Bars (ADR-0010, lib/platesets -- the app validates against
+// offeredBarKgs there); these stay exported as a Competition reference.
 export const BAR_OPTIONS = [20, 15, 5] as const;
 
 /** A Competition Bar the lifter can pick. */
@@ -312,22 +312,23 @@ class RackSetup extends HTMLElement {
   }
 
   // Render the Bar tiles for the active plate set's Bars (ADR-0010). The headline reads
-  // in the set's native Unit, the subtitle in the other Unit. data-bar carries the
-  // canonical kg, so the app validates and reflects against the same value. The labels
-  // reuse the Collar tiles' word/csub treatment (RBAR-39, prototype L863): Hanken 700
-  // 14px headline, dimming with the tile like the Collars do.
+  // in the Bar's own stamped Unit (RBAR-63: "45 lb", "20 kg" on Training), the subtitle
+  // in the other Unit. data-bar carries the canonical kg, so the app validates and
+  // reflects against the same value. The labels reuse the Collar tiles' word/csub
+  // treatment (RBAR-39, prototype L863): Hanken 700 14px headline, dimming with the
+  // tile like the Collars do.
   private renderBarTiles(): void {
     const set = plateSetFor(this._plateSetKey);
-    const other = set.unit === 'kg' ? 'lb' : 'kg';
     this.barTilesEl.innerHTML = set.bars
-      .map(
-        (kg) => `
+      .map(({ kg, unit }) => {
+        const other = unit === 'kg' ? 'lb' : 'kg';
+        return `
         <button type="button" class="tile" data-bar="${kg}" aria-pressed="false"
-                aria-label="${format(kg, set.unit)} Bar (${format(kg, other)})">
-          <span class="word">${format(kg, set.unit)}</span>
+                aria-label="${format(kg, unit)} Bar (${format(kg, other)})">
+          <span class="word">${format(kg, unit)}</span>
           <span class="csub">${format(kg, other)}</span>
-        </button>`,
-      )
+        </button>`;
+      })
       .join('');
     this.tiles = this.barTilesEl.querySelectorAll<HTMLButtonElement>('[data-bar]');
     this.tiles.forEach((t) =>
