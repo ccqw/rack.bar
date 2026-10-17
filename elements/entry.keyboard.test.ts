@@ -243,7 +243,7 @@ describe('<rack-entry> physical keyboard (RBAR-49)', () => {
     const seen = targetSpy(el);
     const closed = closeSpy(el);
     openSheet(root);
-    for (const k of ['r', '1', '.', 'Backspace', 'Enter', 'Escape']) {
+    for (const k of ['r', '1', '.', ',', 'Backspace', 'Enter', 'Escape', 'ArrowUp', 'ArrowDown']) {
       expect(keydown(k, mod).defaultPrevented).toBe(false);
     }
     expect(seen).not.toHaveBeenCalled();
@@ -251,13 +251,11 @@ describe('<rack-entry> physical keyboard (RBAR-49)', () => {
     expect(sheet(root).hidden).toBe(false);
   });
 
-  it('ignores unmapped keys (letters, Space, arrows) and lets them pass through', () => {
-    // ArrowUp/ArrowDown are deliberately NOT stepper nudges in this slice (RBAR-49
-    // scope call): the on-screen +/- steppers stay the only nudge affordance.
+  it('ignores unmapped keys (letters, Space, Tab, side arrows) and lets them pass through', () => {
     const { el, root } = mountEntry();
     const seen = targetSpy(el);
     openSheet(root);
-    for (const k of ['a', ' ', 'ArrowUp', 'ArrowDown', 'Tab', ',']) {
+    for (const k of ['a', ' ', 'ArrowLeft', 'ArrowRight', 'Tab', 'PageUp']) {
       expect(keydown(k).defaultPrevented).toBe(false);
     }
     expect(seen).not.toHaveBeenCalled();
@@ -328,6 +326,179 @@ describe('<rack-entry> physical keyboard (RBAR-49)', () => {
     openSheet(root);
     typeKeys(['5', 'Backspace', 'Enter']);
     expect(closed).toHaveBeenLastCalledWith(null);
+  });
+
+  describe('ArrowUp / ArrowDown nudge like the +/- steppers (grid snap, RBAR-38)', () => {
+    type Seeded = Entry & { display(v: number | null): void; barKg: number };
+
+    function seeded(value: number | null, unit: Unit = 'kg', barKg?: number) {
+      const { el, root } = mountEntry();
+      const e = el as Seeded;
+      if (barKg !== undefined) e.barKg = barKg;
+      e.unit = unit;
+      if (value !== null) e.display(value);
+      openSheet(root);
+      return { el: e, root, seen: targetSpy(el) };
+    }
+
+    it('claims the arrows so the page does not scroll', () => {
+      seeded(100);
+      expect(keydown('ArrowUp').defaultPrevented).toBe(true);
+      expect(keydown('ArrowDown').defaultPrevented).toBe(true);
+    });
+
+    it('kg: on-grid 142 steps a whole kg up / down', () => {
+      const { seen } = seeded(142);
+      keydown('ArrowUp');
+      expect(seen).toHaveBeenLastCalledWith(143);
+      keydown('ArrowDown');
+      keydown('ArrowDown');
+      expect(seen).toHaveBeenLastCalledWith(141);
+    });
+
+    it('kg: off-grid 142.5 snaps up to 143 and down to 142', () => {
+      const up = seeded(142.5);
+      keydown('ArrowUp');
+      expect(up.seen).toHaveBeenLastCalledWith(143);
+      document.body.innerHTML = '';
+      const down = seeded(142.5);
+      keydown('ArrowDown');
+      expect(down.seen).toHaveBeenLastCalledWith(142);
+    });
+
+    it('lb: off-grid 137 snaps up to 140 and down to 135', () => {
+      const up = seeded(lbToKg(137), 'lb');
+      keydown('ArrowUp');
+      expect(up.seen).toHaveBeenLastCalledWith(lbToKg(140));
+      document.body.innerHTML = '';
+      const down = seeded(lbToKg(137), 'lb');
+      keydown('ArrowDown');
+      expect(down.seen).toHaveBeenLastCalledWith(lbToKg(135));
+    });
+
+    it('Comp (20 kg Bar): steps from the Bar anchor in kg and snaps 44 lb in lb', () => {
+      const kg = seeded(null);
+      keydown('ArrowUp');
+      expect(kg.seen).toHaveBeenLastCalledWith(21);
+      document.body.innerHTML = '';
+      const lb = seeded(null, 'lb'); // the 20 kg anchor reads 44 lb, off the 5 lb grid
+      keydown('ArrowUp');
+      expect(lb.seen).toHaveBeenLastCalledWith(lbToKg(45));
+      keydown('ArrowDown');
+      expect(lb.seen).toHaveBeenLastCalledWith(lbToKg(40));
+    });
+
+    it('Training (45 lb Bar): steps the on-grid 45 lb anchor to 50 / 40', () => {
+      const lb = seeded(null, 'lb', lbToKg(45));
+      keydown('ArrowUp');
+      expect(lb.seen).toHaveBeenLastCalledWith(lbToKg(50));
+      keydown('ArrowDown');
+      keydown('ArrowDown');
+      expect(lb.seen).toHaveBeenLastCalledWith(lbToKg(40));
+    });
+
+    it('Training (45 lb Bar) in kg: the 20.41 kg anchor snaps up to 21 and down to 20', () => {
+      const up = seeded(null, 'kg', lbToKg(45));
+      keydown('ArrowUp');
+      expect(up.seen).toHaveBeenLastCalledWith(21);
+      document.body.innerHTML = '';
+      const down = seeded(null, 'kg', lbToKg(45));
+      keydown('ArrowDown');
+      expect(down.seen).toHaveBeenLastCalledWith(20);
+    });
+
+    it.each([
+      ['kg', 100, 100],
+      ['lb', lbToKg(225), lbToKg(225)],
+    ] as const)('%s: up then down returns to the same grid value', (unit, seed, back) => {
+      const { seen } = seeded(seed, unit);
+      keydown('ArrowUp');
+      keydown('ArrowDown');
+      expect(seen).toHaveBeenCalledTimes(2);
+      expect(seen).toHaveBeenLastCalledWith(back);
+    });
+
+    it.each(['kg', 'lb'] as const)('%s: never steps below zero', (unit) => {
+      const { seen } = seeded(0, unit);
+      keydown('ArrowDown');
+      expect(seen).toHaveBeenLastCalledWith(0);
+    });
+
+    it('steps a mid-entry trailing-decimal draft like the stepper (142. -> 143)', () => {
+      const { seen } = seeded(null);
+      typeKeys(['1', '4', '2', '.', 'ArrowUp']);
+      expect(seen).toHaveBeenLastCalledWith(143);
+    });
+
+    it('a digit after a nudge appends to the stepped value, as after a tap', () => {
+      const { root } = seeded(100);
+      typeKeys(['ArrowUp', '5']);
+      expect(shown(root)).toBe('1015');
+    });
+
+    it('a nudge makes the seed a real value: Enter then commits it, not null', () => {
+      const { el } = seeded(null);
+      const closed = closeSpy(el);
+      typeKeys(['ArrowUp', 'Enter']);
+      expect(closed).toHaveBeenLastCalledWith(21);
+    });
+
+    it('Shift+Arrow passes through (no big-step variant)', () => {
+      const { seen } = seeded(100);
+      expect(keydown('ArrowUp', { shiftKey: true }).defaultPrevented).toBe(false);
+      expect(keydown('ArrowDown', { shiftKey: true }).defaultPrevented).toBe(false);
+      expect(seen).not.toHaveBeenCalled();
+    });
+
+    it('arrows do nothing with the sheet closed', () => {
+      const { el } = mountEntry();
+      const seen = targetSpy(el);
+      expect(keydown('ArrowUp').defaultPrevented).toBe(false);
+      expect(keydown('ArrowDown').defaultPrevented).toBe(false);
+      expect(seen).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('comma is the decimal key too (comma-locale keyboards / numpads)', () => {
+    it('1 4 2 , 5 Enter commits 142.5, same as with a period', () => {
+      const { el, root } = mountEntry();
+      const seen = targetSpy(el);
+      const closed = closeSpy(el);
+      openSheet(root);
+      typeKeys(['1', '4', '2']);
+      expect(keydown(',').defaultPrevented).toBe(true); // claimed like '.'
+      typeKeys(['5', 'Enter']);
+      expect(seen).toHaveBeenLastCalledWith(142.5);
+      expect(closed).toHaveBeenLastCalledWith(142.5);
+    });
+
+    it('shows the separator as a period in the draft', () => {
+      const { root } = mountEntry();
+      openSheet(root);
+      typeKeys(['1', ',', '5']);
+      expect(shown(root)).toBe('1.5');
+    });
+
+    it.each([
+      [',', ','],
+      [',', '.'],
+      ['.', ','],
+    ])('a second separator (%s then %s) is ignored exactly like a second . tap', (a, b) => {
+      const { el, root } = mountEntry();
+      const seen = targetSpy(el);
+      openSheet(root);
+      typeKeys(['1', a, '5', b]);
+      expect(shown(root)).toBe('1.5');
+      expect(seen).toHaveBeenCalledTimes(4); // the ignored separator still emits, as a tap does
+      expect(seen).toHaveBeenLastCalledWith(1.5);
+    });
+
+    it('a comma typed first starts a fresh 0. draft, like a first period', () => {
+      const { root } = mountEntry();
+      openSheet(root);
+      typeKeys([',', '5']);
+      expect(shown(root)).toBe('0.5');
+    });
   });
 
   it('a held-key autorepeat still routes through press (Backspace repeat deletes)', () => {

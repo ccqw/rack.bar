@@ -494,8 +494,9 @@ class RackEntry extends HTMLElement {
   }
 
   // Physical keyboard input (RBAR-49): while the sheet is open, keys drive the SAME
-  // press()/closeKeypad() paths as taps, so they inherit every tap semantic (replace-on-
-  // open, pristine del-discard, the RBAR-38 re-pristine, the commit-on-close contract).
+  // press()/step()/closeKeypad() paths as taps (ArrowUp/ArrowDown are the +/- steppers),
+  // so they inherit every tap semantic (replace-on-open, pristine del-discard, the RBAR-38
+  // re-pristine and grid snap, the commit-on-close contract).
   // Listening only while open (added in openKeypad, removed in closeKeypad) means a closed
   // sheet never swallows a key. A Cmd/Ctrl/Alt-held key is a browser shortcut and passes
   // through untouched; so does any key typed into a text field elsewhere. Enter and Escape
@@ -528,7 +529,16 @@ class RackEntry extends HTMLElement {
     } else if (k === 'Backspace') {
       e.preventDefault();
       this.press('del');
-    } else if (/^[0-9.]$/.test(k)) {
+    } else if ((k === 'ArrowUp' || k === 'ArrowDown') && !e.shiftKey) {
+      // A stepper nudge, exactly as a +/- tap (grid snap, RBAR-38); claimed so the page
+      // does not scroll. Shift+Arrow passes through: there is no big-step variant.
+      e.preventDefault();
+      this.step(k === 'ArrowUp' ? 1 : -1);
+    } else if (k === '.' || k === ',') {
+      // Comma is the decimal on comma-locale keyboards and numpads: the same decimal key.
+      e.preventDefault();
+      this.press('.');
+    } else if (/^[0-9]$/.test(k)) {
       e.preventDefault();
       this.press(k);
     }
