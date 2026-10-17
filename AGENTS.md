@@ -10,6 +10,7 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `npm test` — Vitest (happy-dom), single run; `npm run test:watch` to watch
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — production build to `dist/`
+- `npm run icons` -- re-render the app icons and favicon into `public/` after a redraw
 
 ## Map
 
@@ -19,6 +20,9 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `tokens.css` — design tokens (`--rack-*`)
 - `scripts/fit-check.js` -- the phone-fit layout check (ADR-0013): a Playwright snippet
   run against the dev server that asserts no vertical scroll at the visible Safari viewports
+- `assets/icons/` -- the icon masters (RBAR-71): `rack-bar-icon-dark.svg` feeds the
+  Home Screen / manifest PNGs, `rack-bar-favicon.svg` is the favicon (one file, switches
+  light/dark). `scripts/icons.mjs` renders them into `public/`; the PNGs are committed
 - `docs/adr/` — accepted decisions; read before changing anything architectural
 - `docs/design-handoff/` -- authoritative Claude Design reference (RBAR-10 output):
   README spec, `--rb-*` design tokens, screenshots, prototype. Spec source for the
