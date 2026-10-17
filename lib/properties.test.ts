@@ -35,7 +35,10 @@ import {
   leastAbove,
   fewestPlatesFor,
   maxTotal,
+  rampTotalsOracle,
 } from './properties.oracle.ts';
+import { planRamp, DEFAULT_RAMP } from './plan.ts';
+import type { RampStep } from './plan.ts';
 import type { Rig } from './properties.oracle.ts';
 import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
 
@@ -309,6 +312,148 @@ describe('Decode as read: decodeWithin + displayCeilingKg (ADR-0010 RBAR-60, ADR
         const { primary, over } = solveAsRead(rig, t, u);
         expect(primary.total - primary.delta).toBeCloseTo(t, 9);
         if (over) expect(over.total - over.delta).toBeCloseTo(t, 9);
+      }),
+      opts,
+    );
+  });
+});
+
+describe('Warm-up Ramp properties (ADR-0015)', () => {
+  // A template: up to two leading bare-Bar steps, then up to six percentages in any
+  // order (the planner forces Totals non-decreasing itself), whole or fractional.
+  const pctArb = fc.oneof(
+    fc.integer({ min: 1, max: 100 }),
+    fc.double({ min: 0.01, max: 100, noNaN: true }),
+  );
+  const stepsArb: fc.Arbitrary<RampStep[]> = fc
+    .tuple(
+      fc.integer({ min: 0, max: 2 }),
+      fc.array(pctArb, { maxLength: 6 }),
+    )
+    .map(([bars, pcts]) => [
+      ...Array.from({ length: bars }, (): RampStep => ({ kind: 'bar' })),
+      ...pcts.map((pct): RampStep => ({ kind: 'pct', pct })),
+    ]);
+  const caseArb = fc.record({ rt: rigTargetArb, u: unitArb, steps: fc.oneof(stepsArb, fc.constant([...DEFAULT_RAMP])) });
+
+  // The console's call, exactly: the Working set solved as read in the active unit.
+  const plan = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
+    planRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
+      ceilingKg: displayCeilingKg(t, u),
+    });
+
+  it('every row is loadable within the Sleeve: Total = its baseline + 2 x Side Load, Plates from the Inventory, the canonical stack (ADR-0015, ADR-0012, ADR-0003)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const o = fewestOracle(rig.inventory, GRID_KG[rig.set]);
+        for (const row of plan(rig, t, u, steps).rows) {
+          const baseline = row.collars ? rig.baselineKg : rig.barKg;
+          expect(row.total).toBeCloseTo(totalKg(row.side, baseline), 9);
+          expect(sideWidthMm(row.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+          expect(fromInventory(row.side, rig)).toBe(true);
+          const units = Math.round((row.total - baseline) / 2 / o.gridKg);
+          expect(row.side).toEqual(o.pick(units));
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('Totals never decrease, start at or above the bare Bar, and never pass the Working set; no row is dropped (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const { rows } = plan(rig, t, u, steps);
+        expect(rows).toHaveLength(steps.length + 1);
+        const work = rows[rows.length - 1].total;
+        rows.forEach((row, i) => {
+          expect(row.total).toBeGreaterThanOrEqual(rig.barKg - EPS);
+          expect(row.total).toBeLessThanOrEqual(work + EPS);
+          if (i > 0) expect(row.total).toBeGreaterThanOrEqual(rows[i - 1].total - EPS);
+        });
+      }),
+      opts,
+    );
+  });
+
+  it('the Working set is the at-or-under solve as read and never overshoots (ADR-0015, ADR-0003)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const { rows, working } = plan(rig, t, u, steps);
+        const solved = decodeWithin(t, displayCeilingKg(t, u), rig.baselineKg, rig.inventory);
+        expect(working).toEqual(solved);
+        const last = rows[rows.length - 1];
+        expect(last.kind).toBe('working');
+        expect(last.side).toEqual(solved.primary.side);
+        expect(last.total).toBeCloseTo(greatestAtOrUnder(rig, displayCeilingKg(t, u)), 9);
+        if (shownIn(t, u) >= shownIn(rig.baselineKg, u)) {
+          expect(shownIn(last.total, u)).toBeLessThanOrEqual(shownIn(t, u));
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('each Warm-up set is the nearest loadable Total to its percentage within its floor and the Working set, ties down (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = plan(rig, t, u, steps).rows.map((r) => r.total);
+        const want = rampTotalsOracle(rig, t, displayCeilingKg(t, u), steps);
+        expect(got.length).toBe(want.length);
+        got.forEach((g, i) => expect(g).toBeCloseTo(want[i], 9));
+      }),
+      opts,
+    );
+  });
+
+  it('the default Ramp matches the oracle for every achievable Working Total on every rig (ADR-0015; exhaustive)', () => {
+    const misses: string[] = [];
+    for (const rig of RIGS) {
+      for (const total of achievableTotals(rig)) {
+        const got = plan(rig, total, 'kg', DEFAULT_RAMP).rows.map((r) => r.total);
+        const want = rampTotalsOracle(rig, total, displayCeilingKg(total, 'kg'), DEFAULT_RAMP);
+        if (got.some((g, i) => Math.abs(g - want[i]) > 1e-6)) {
+          misses.push(`${rig.name}: ${total} -> ${got.join(',')} (want ${want.join(',')})`);
+        }
+      }
+    }
+    expect(misses).toEqual([]);
+  });
+
+  it('a bare-Bar row is the Bar alone: no Plates, no Collars (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        for (const row of plan(rig, t, u, steps).rows.filter((r) => r.kind === 'bar')) {
+          expect(row.side).toEqual([]);
+          expect(row.collars).toBe(false);
+          expect(row.total).toBe(rig.barKg);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('warm-ups and the Working set carry Collars exactly when the rig has them (ADR-0015, ADR-0008)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        for (const row of plan(rig, t, u, steps).rows.filter((r) => r.kind !== 'bar')) {
+          expect(row.collars).toBe(rig.collarKg > 0);
+          expect(row.total).toBeGreaterThanOrEqual(rig.baselineKg - EPS);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('sameAsPrevious marks exactly the rows repeating the previous Total, and realPct is Total over the Working Total (ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
+        const { rows } = plan(rig, t, u, steps);
+        const work = rows[rows.length - 1].total;
+        rows.forEach((row, i) => {
+          const repeats = i > 0 && Math.abs(row.total - rows[i - 1].total) <= EPS;
+          expect(row.sameAsPrevious).toBe(repeats);
+          expect(row.realPct).toBeCloseTo((row.total / work) * 100, 9);
+        });
       }),
       opts,
     );
