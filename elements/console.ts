@@ -45,6 +45,7 @@ import { format, shownIn, displayCeilingKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
+import type { LinkState } from '../lib/link.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import { planEasyRamp } from '../lib/moves.ts';
 import type { Ramp, RampRow } from '../lib/plan.ts';
@@ -78,6 +79,12 @@ type Warmup = HTMLElement & { view: WarmupView | null };
 type Mode = 'decode' | 'encode' | 'warmup';
 const isMode = (m: string | undefined): m is Mode =>
   m === 'decode' || m === 'encode' || m === 'warmup';
+// The load half of an opened share link (RBAR-50, ADR-0014): the app applies the rig
+// half (set, Bar, Collar) first, then hands this to applyLink. Split on mode like
+// LinkState, so only By Weight carries a Target.
+export type LinkLoad =
+  | Pick<Extract<LinkState, { mode: 'decode' }>, 'mode' | 'side' | 'targetKg' | 'unit'>
+  | Pick<Extract<LinkState, { mode: 'encode' }>, 'mode' | 'side' | 'unit'>;
 
 // The Recent Targets history persists shell-side under its own key (ADR-0007/0009),
 // canonically in kg (ADR-0006); the row renders it in the active unit (RBAR-17).
@@ -91,6 +98,19 @@ const SECONDARY_KEY = 'rackbar.secondary';
 // console-owned like the By Weight display state. Absent = never set (Warm up seeds it
 // from the By Weight Target on first open); '' = the lifter cleared it.
 const WORKING_KEY = 'rackbar.working';
+
+/** The lifter's persisted Primary unit (ADR-0010); a missing/blocked/garbage value is
+ * kg (the app's default and canonical unit). Exported so <rack-app> can hand the
+ * recipient's own unit to parseLink (ADR-0014) without a second copy of the key. */
+export function persistedPrimaryUnit(): Unit {
+  return readPersisted(UNIT_KEY) === 'lb' ? 'lb' : 'kg';
+}
+
+// Same Plates in the same order. Both sides are drawn from the active set's Inventory
+// objects (parseLink and the solver alike), so identity is the comparison.
+function sameSide(a: readonly Plate[], b: readonly Plate[]): boolean {
+  return a.length === b.length && a.every((p, i) => p === b[i]);
+}
 
 // The bar block's fixed parts (RBAR-67, re-cut by RBAR-75): the label row sits in flow
 // INSIDE the handoff's 204px block (prototype L97) -- VIZ_PAD_PX down, LABEL_PX tall --
@@ -889,10 +909,58 @@ class RackConsole extends HTMLElement {
     }
   }
 
+  /**
+   * Show an opened share link's load (RBAR-50, ADR-0014). The app has already pushed the
+   * link's rig (set, Bar, Collar). Transient: the unit is applied for this view and NOT
+   * persisted (a later toggle tap persists as today). Plates win over a re-solve:
+   *  - By Weight with a Target: decode it; if the linked Plates are the round-up, show
+   *    the round-up (as if the lifter tapped it); if they are neither the primary nor
+   *    the round-up (a solver change since the link was made), fall back to the ADR-0005
+   *    carry -- the linked Plates with their Total in the entry, no live decode. The
+   *    Target joins Recents through the normal push (Caitlin, 2026-10-16).
+   *  - By Weight without a Target, or By Plates: the linked Plates as the carried Side.
+   */
+  applyLink(link: LinkLoad): void {
+    this.unitPref = link.unit;
+    // The entry seeds below read in the link's unit, so hand it over first (a later
+    // render-time unit change would re-dress a seed as a lifter reformat, RBAR-38).
+    this.entry.unit = link.unit;
+    this.recentsRow.unit = link.unit;
+    this.mode = link.mode;
+    this.decoded = null;
+    this.showingOver = false;
+    this.side = link.side;
+    if (link.mode === 'encode') {
+      this.render();
+      return;
+    }
+    const target = link.targetKg;
+    if (target === undefined) {
+      this.entry.display(link.side.length > 0 ? encode(link.side, this.baselineKg()) : null);
+      this.render();
+      return;
+    }
+    this.entry.display(target);
+    this.decodeTo(target);
+    const { primary, over } = this.decoded!;
+    if (!sameSide(link.side, primary.side)) {
+      if (over && sameSide(link.side, over.side)) {
+        this.showingOver = true;
+        this.side = over.side;
+      } else {
+        this.decoded = null; // drift: the carry, not a decode that disagrees with the Plates
+        this.side = link.side;
+        this.entry.display(encode(link.side, this.baselineKg()));
+      }
+      this.render();
+    }
+    this.rememberTarget(target);
+  }
+
   // Restore the persisted Primary-unit choice; a missing/blocked/garbage value -> kg
   // (the app's default and canonical unit). Validated so a corrupt key can't strand it.
   private loadUnit(): Unit {
-    return readPersisted(UNIT_KEY) === 'lb' ? 'lb' : 'kg';
+    return persistedPrimaryUnit();
   }
 
   // Restore whether the Secondary readout shows; default true (show it). Only an explicit

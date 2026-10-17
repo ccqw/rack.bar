@@ -17,10 +17,13 @@
 //                              default Bar
 //   sheet `barrestore`      -> Undo a removal, re-selecting the Bar if it was chosen
 //   sheet `close`           -> drop the pill's open state
+//   a share link (#v=1&...) -> on boot or `hashchange`: apply its rig and load for this
+//                              view only, persisting nothing (RBAR-50, ADR-0014)
 //
 // Each config concern persists shell-side under its own localStorage key (ADR-0007);
 // the core stays pure and only ever sees these as function arguments (ADR-0001/0002).
-import './console.ts';
+import { persistedPrimaryUnit } from './console.ts';
+import type { LinkLoad } from './console.ts';
 import './setup.ts';
 import './help.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
@@ -43,8 +46,15 @@ import {
 } from '../lib/custombars.ts';
 import type { BarStamp } from '../lib/custombars.ts';
 import { format, isUnit } from '../lib/units.ts';
+import { parseLink } from '../lib/link.ts';
+import type { LinkState } from '../lib/link.ts';
 
-type Console = HTMLElement & { barKg: number; collarKg: number; plateSet: string };
+type Console = HTMLElement & {
+  barKg: number;
+  collarKg: number;
+  plateSet: string;
+  applyLink(link: LinkLoad): void;
+};
 type Setup = HTMLElement & {
   barKg: number;
   customBars: readonly BarStamp[];
@@ -88,6 +98,10 @@ class RackApp extends HTMLElement {
   private customBars: readonly BarStamp[] = [];
 
   connectedCallback(): void {
+    // A share link in the URL (RBAR-50, ADR-0014) is read FIRST and the fragment cleared,
+    // so a reload returns to the lifter's own rig. The persisted rig still loads and seeds
+    // as usual; the link then overrides it for this view (applyLink), writing nothing.
+    const link = this.takeLink();
     this.plateSetKey = this.loadPlateSet();
     this.customBars = parseCustomBars(readPersisted(CUSTOM_BARS_STORAGE_KEY));
     this.barKg = this.loadBar();
@@ -227,6 +241,54 @@ class RackApp extends HTMLElement {
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
     );
+
+    // A link pasted into an already-open tab changes only the hash (no reload). Listen
+    // before applying, so a throw in the boot-time apply cannot also cost the listener.
+    window.addEventListener('hashchange', this.onHashChange);
+    if (link) this.applyLink(link);
+  }
+
+  disconnectedCallback(): void {
+    window.removeEventListener('hashchange', this.onHashChange);
+  }
+
+  private onHashChange = (): void => {
+    const link = this.takeLink();
+    if (link) this.applyLink(link);
+  };
+
+  // Parse a share link out of the URL fragment against the lifter's own persisted
+  // Primary unit (a link without `u` reads in it), then clear the fragment either way:
+  // a malformed link is a silent normal boot (ADR-0014), and a reload or a later share
+  // never re-applies a stale one. replaceState fires no hashchange, so this cannot loop.
+  private takeLink(): LinkState | null {
+    if (location.hash === '') return null;
+    const link = parseLink(location.hash, persistedPrimaryUnit());
+    history.replaceState(null, '', location.pathname + location.search);
+    return link;
+  }
+
+  // Apply an opened share link (RBAR-50, ADR-0014): the rig half here, the load half in
+  // the console. Transient -- the set, Bar and Collar override the persisted rig for this
+  // view and NO save runs (a later Setup tap persists that one key, as today). Pushed in
+  // adoptPlateSet's order (Bar before set) so a re-solve never sees a stale Bar, then
+  // the console shows the linked Plates (plates win over a re-solve).
+  private applyLink(link: LinkState): void {
+    this.plateSetKey = link.set;
+    this.barKg = link.barKg;
+    this.collarKg = link.collarKg;
+    this.console.barKg = link.barKg;
+    this.setup.barKg = link.barKg;
+    this.console.plateSet = link.set;
+    this.setup.plateSet = link.set;
+    this.console.collarKg = link.collarKg;
+    this.setup.collarKg = link.collarKg;
+    this.relabel();
+    this.console.applyLink(
+      link.mode === 'decode'
+        ? { mode: 'decode', side: link.side, targetKg: link.targetKg, unit: link.unit }
+        : { mode: 'encode', side: link.side, unit: link.unit },
+    );
   }
 
   // The Bars the active plate set offers -- the set the persisted/chosen Bar validates
@@ -289,6 +351,10 @@ class RackApp extends HTMLElement {
   private adopt(kg: number): void {
     if (!this.offeredBars().includes(kg)) return;
     this.barKg = kg;
+    // A Bar only exists within its set (ADR-0010). After a share link put another set on
+    // screen (ADR-0014), picking a Bar adopts that set too, or the next boot would reject
+    // the saved Bar against the old saved set and silently fall back to its default.
+    if (this.loadPlateSet() !== this.plateSetKey) this.savePlateSet(this.plateSetKey);
     this.saveBar(kg);
     this.console.barKg = kg;
     this.setup.barKg = kg;
