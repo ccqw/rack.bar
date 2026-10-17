@@ -26,7 +26,14 @@ import {
   stepFor,
 } from './units.ts';
 import type { Unit } from './units.ts';
-import { pushRecent, parseRecents, MAX_RECENTS, isRememberable } from './recents.ts';
+import {
+  pushRecent,
+  parseRecents,
+  removeRecent,
+  restoreRecent,
+  MAX_RECENTS,
+  isRememberable,
+} from './recents.ts';
 import { plateSetFor, PLATE_SET_KEYS, isOfferedPlateSet, PLATE_SETS } from './platesets.ts';
 import {
   RIGS,
@@ -507,6 +514,75 @@ describe('Recents properties (ADR-0009)', () => {
       fc.property(fc.array(targetLikeArb, { maxLength: 30 }), (pushes) => {
         const list = pushes.reduce<readonly number[]>((l, t) => pushRecent(l, t), []);
         expect(parseRecents(JSON.stringify(list))).toEqual(list);
+      }),
+      opts,
+    );
+  });
+
+  // A reachable row: any push sequence (the only way the live row is ever built).
+  const rowArb = fc
+    .array(targetLikeArb, { maxLength: 30 })
+    .map((pushes) => pushes.reduce<readonly number[]>((l, t) => pushRecent(l, t), []));
+  const isValidRow = (list: readonly number[]): void => {
+    expect(list.length).toBeLessThanOrEqual(MAX_RECENTS);
+    expect(new Set(list).size).toBe(list.length);
+    for (const v of list) {
+      expect(isRememberable(v)).toBe(true);
+      expect(Number(v.toFixed(2))).toBe(v);
+    }
+  };
+
+  it('removing a Target drops exactly that chip, keeps the rest in order, and leaves a valid row (ADR-0009 RBAR-73)', () => {
+    // Half the time a held Target (by its index), so the "found it" path is exercised as
+    // hard as the "not held" one.
+    const caseArb = rowArb.chain((list) =>
+      fc.oneof(
+        targetLikeArb.map((t) => ({ list, t })),
+        list.length > 0
+          ? fc.nat({ max: list.length - 1 }).map((i) => ({ list, t: list[i] }))
+          : fc.constant({ list, t: 100 }),
+      ),
+    );
+    fc.assert(
+      fc.property(caseArb, ({ list, t }) => {
+        const next = removeRecent(list, t);
+        const stored = Number(t.toFixed(2));
+        expect(next).toEqual(list.filter((v) => v !== stored));
+        expect(next).not.toContain(stored);
+        isValidRow(next);
+      }),
+      opts,
+    );
+  });
+
+  it('Undo restores a removed chip in place: restore(remove(row, t), t, i) is the row (ADR-0009 RBAR-73)', () => {
+    fc.assert(
+      fc.property(rowArb, fc.nat(), (list, n) => {
+        fc.pre(list.length > 0);
+        const i = n % list.length;
+        const t = list[i];
+        expect(restoreRecent(removeRecent(list, t), t, i)).toEqual(list);
+      }),
+      opts,
+    );
+  });
+
+  it('a restore never duplicates, never passes the cap, and never admits a non-loadable Target (ADR-0009 RBAR-73)', () => {
+    fc.assert(
+      fc.property(rowArb, targetLikeArb, fc.integer({ min: -10, max: 20 }), (list, t, i) => {
+        const next = restoreRecent(list, t, i);
+        isValidRow(next);
+        const stored = Number(t.toFixed(2));
+        if (!isRememberable(stored) || list.includes(stored)) {
+          expect(next).toEqual(list);
+          return;
+        }
+        // Below the cap the Target always comes back; at the cap at most one entry (the
+        // oldest, or the restored one itself when placed last) falls off the end.
+        if (list.length < MAX_RECENTS) expect(next).toContain(stored);
+        const others = next.filter((v) => v !== stored);
+        expect(others).toEqual(list.slice(0, others.length));
+        expect(others.length).toBeGreaterThanOrEqual(list.length - 1);
       }),
       opts,
     );

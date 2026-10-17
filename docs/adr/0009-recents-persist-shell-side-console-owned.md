@@ -61,3 +61,32 @@ later addition, not a rewrite:
 Overflow nudge gradients are CSS edge fades on the scroll viewport (a thin
 affordance); scroll-position-aware fades are deferred polish, folded with the
 RBAR-10 visual treatment.
+
+## 2026-10-17 -- removing a Recent: a second event up, Undo in the chip's slot (RBAR-73)
+
+Opening a shared link (RBAR-50) will add its Target to Recents, so a lifter needs to
+remove a chip they don't want. An x on every chip would eat the rail's width, so the
+removal is a long-press. Ownership does not change: the console still owns the list.
+
+- **Core.** `lib/recents.ts` gains `removeRecent(list, target)` (drop that Target at
+  stored precision, keep the rest in order) and `restoreRecent(list, target, index)`
+  (its inverse for Undo: put it back at its old slot, clamped; never duplicate, never
+  admit a non-loadable Target, still capped). Both are pure, like `pushRecent`.
+- **Shell contract.** `<rack-recents>` keeps one property down (`targets`) and now
+  has three events up: `recentapply` (as before), `recentremove` and `recentrestore`,
+  each `{ target, index }`. The console applies them with the core and persists to
+  `rackbar.recents` straight away, so a removal survives a reload even if the Undo is
+  never used.
+- **Gesture.** A still press of 500 ms (8 px slop on either axis) opens a one-item
+  "Remove" popover over the chip. Moving past the slop, a `pointercancel` (the browser
+  took the touch as a pan) or the rail scrolling drops the hold, so scrolling never
+  removes. A short tap still loads the Target. The non-gesture routes are
+  `contextmenu` (the context-menu key, Shift+F10, right-click) for the same popover,
+  and Delete/Backspace on a focused chip, which removes it at once. Each chip carries
+  an `aria-describedby` hint and `aria-keyshortcuts="Delete"`.
+- **Undo.** For 5 s the removed chip's slot holds an Undo chip, inside the rail. It
+  adds no row to the column (ADR-0013). That pending Undo is the one piece of state
+  the row keeps for itself, and it is UI state, not history. A new history from
+  anywhere else (a fresh commit or a chip re-apply) makes the removal final, because
+  the old slot index no longer means anything. The console keeps the row visible
+  while an Undo is pending, even when the list is empty.

@@ -85,6 +85,54 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
     );
   });
 
+  it('removing Recents (Delete on a chip) and their Undo survive a reload; Undo restores in place (ADR-0009 RBAR-73)', () => {
+    // A stored row (distinct, loadable, 2 dp, capped), then a script of removals and
+    // Undos through the real chip paths. The expected row is modelled from the rule,
+    // not the core: a removal drops that chip; an Undo puts the LAST removal back in
+    // its old slot, and only while it is the pending one (one Undo at a time).
+    const rowArb = fc.uniqueArray(
+      fc.integer({ min: 1, max: 50_000 }).map((c) => c / 100),
+      { minLength: 1, maxLength: MAX_RECENTS },
+    );
+    const opArb = fc.oneof(
+      fc.nat({ max: MAX_RECENTS - 1 }).map((i) => ({ op: 'del' as const, i })),
+      fc.constant({ op: 'undo' as const, i: 0 }),
+    );
+    const recentsRoot = (app: App) => sr(q(sr(appConsole(app)), 'rack-recents'));
+    fc.assert(
+      fc.property(rowArb, fc.array(opArb, { maxLength: 6 }), (row, ops) => {
+        localStorage.clear();
+        localStorage.setItem('rackbar.recents', JSON.stringify(row));
+        const app = mountApp();
+        let expected = [...row].map(String);
+        let pending: { kg: string; at: number } | null = null;
+        for (const { op, i } of ops) {
+          if (op === 'del') {
+            const chips = [...recentsRoot(app).querySelectorAll<HTMLElement>('.chip')];
+            if (chips.length === 0) continue;
+            const chip = chips[i % chips.length];
+            chip.dispatchEvent(
+              new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, composed: true }),
+            );
+            const at = expected.indexOf(chip.dataset.target!);
+            pending = { kg: expected[at], at };
+            expected = expected.filter((_, j) => j !== at);
+          } else {
+            const undo = recentsRoot(app).querySelector<HTMLElement>('[data-undo]');
+            expect(undo !== null).toBe(pending !== null);
+            if (!undo || !pending) continue;
+            undo.click();
+            expected.splice(pending.at, 0, pending.kg);
+            pending = null;
+          }
+          expect(recentChips(app)).toEqual(expected);
+        }
+        expect(recentChips(mountApp())).toEqual(expected); // the reload
+      }),
+      APP_RUNS(10),
+    );
+  });
+
   it('any corrupt persisted value loads as a valid default, never throws (ADR-0007 validate-at-boundary)', () => {
     const junk = fc.oneof(
       fc.string(),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_RECENTS, pushRecent, parseRecents } from './recents.ts';
+import { MAX_RECENTS, pushRecent, parseRecents, removeRecent, restoreRecent } from './recents.ts';
 
 describe('pushRecent', () => {
   it('adds a Target to the front (most-recent-first)', () => {
@@ -97,5 +97,56 @@ describe('parseRecents', () => {
     const parsed = parseRecents(raw);
     expect(parsed).toEqual([10, 9, 8, 7, 6, 5]);
     expect(parsed).toHaveLength(MAX_RECENTS);
+  });
+});
+
+describe('removeRecent (RBAR-73)', () => {
+  it('drops just that Target, keeping the rest in order', () => {
+    expect(removeRecent([120, 100, 80], 100)).toEqual([120, 80]);
+  });
+
+  it('matches at stored precision (the chip data value finds its entry)', () => {
+    expect(removeRecent([60.55, 40], 60.554)).toEqual([40]);
+  });
+
+  it('returns an equal list when the Target is not held, and never mutates', () => {
+    const list = Object.freeze([120, 100]);
+    expect(removeRecent(list, 90)).toEqual([120, 100]);
+    expect(list).toEqual([120, 100]);
+  });
+
+  it('removing the only Target leaves an empty history', () => {
+    expect(removeRecent([100], 100)).toEqual([]);
+  });
+});
+
+describe('restoreRecent (RBAR-73 Undo)', () => {
+  it('puts a removed Target back in place', () => {
+    const list = [120, 100, 80];
+    expect(restoreRecent(removeRecent(list, 100), 100, 1)).toEqual(list);
+    expect(restoreRecent(removeRecent(list, 120), 120, 0)).toEqual(list);
+    expect(restoreRecent(removeRecent(list, 80), 80, 2)).toEqual(list);
+  });
+
+  it('clamps an out-of-range index to the front or back', () => {
+    expect(restoreRecent([120, 80], 100, -3)).toEqual([100, 120, 80]);
+    expect(restoreRecent([120, 80], 100, 99)).toEqual([120, 80, 100]);
+    expect(restoreRecent([], 100, 4)).toEqual([100]);
+  });
+
+  it('never duplicates a Target the row already holds', () => {
+    expect(restoreRecent([100, 120], 100, 1)).toEqual([100, 120]);
+  });
+
+  it('ignores a non-loadable Target', () => {
+    expect(restoreRecent([100], NaN, 0)).toEqual([100]);
+    expect(restoreRecent([100], 0, 0)).toEqual([100]);
+    expect(restoreRecent([100], 0.004, 0)).toEqual([100]);
+  });
+
+  it('keeps the cap', () => {
+    const full = [60, 50, 40, 30, 20, 10];
+    expect(restoreRecent(full, 70, 0)).toEqual([70, 60, 50, 40, 30, 20]);
+    expect(restoreRecent(full, 70, 0)).toHaveLength(MAX_RECENTS);
   });
 });

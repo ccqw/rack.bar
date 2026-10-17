@@ -26,7 +26,13 @@ import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
-import { parseRecents, pushRecent, isRememberable } from '../lib/recents.ts';
+import {
+  parseRecents,
+  pushRecent,
+  removeRecent,
+  restoreRecent,
+  isRememberable,
+} from '../lib/recents.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
@@ -56,6 +62,7 @@ type Recents = HTMLElement & {
   targets: readonly number[];
   unit: Unit;
   target: number | null;
+  readonly undoPending: boolean;
 };
 type Loaded = HTMLElement & { side: readonly Plate[] };
 type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
@@ -631,6 +638,18 @@ class RackConsole extends HTMLElement {
       this.decodeTo(target);
       this.rememberTarget(target);
     });
+    // Removing a Recent (RBAR-73): the row emits the intent (long-press -> Remove, or
+    // Delete on a focused chip) and its Undo; the console applies both with the pure
+    // core and persists, so a removal survives a reload and an Undo puts it back in its
+    // old slot (ADR-0009). The current Target and the Bar are untouched -- only history.
+    this.recentsRow.addEventListener('recentremove', (e) => {
+      const { target } = (e as CustomEvent<{ target: number }>).detail;
+      this.setRecents(removeRecent(this.recents, target));
+    });
+    this.recentsRow.addEventListener('recentrestore', (e) => {
+      const { target, index } = (e as CustomEvent<{ target: number; index: number }>).detail;
+      this.setRecents(restoreRecent(this.recents, target, index));
+    });
     // Encode: palette taps add, sleeve disc taps remove -- both pure transforms.
     this.palette.addEventListener('addplate', (e) => {
       if (this.mode !== 'encode') return;
@@ -763,10 +782,16 @@ class RackConsole extends HTMLElement {
     // Skip a null (empty-field / pristine close) or non-loadable Target up front: pushRecent
     // would no-op on it anyway, and bailing here avoids a pointless re-render + storage write.
     if (target === null || !isRememberable(target)) return;
-    this.recents = pushRecent(this.recents, target);
-    this.recentsRow.targets = this.recents;
+    this.setRecents(pushRecent(this.recents, target));
+  }
+
+  // Adopt a new Recent history (a push, a removal or an Undo): feed the row, re-render
+  // for its mode visibility, and persist best-effort (ADR-0009).
+  private setRecents(list: readonly number[]): void {
+    this.recents = list;
+    this.recentsRow.targets = list;
     this.render(); // keep the row's mode visibility in sync
-    writePersisted(RECENTS_KEY, JSON.stringify(this.recents));
+    writePersisted(RECENTS_KEY, JSON.stringify(list));
   }
 
   // Open the loading card (RBAR-19, ADR-0011): snapshot the current load -- the achieved
@@ -879,8 +904,10 @@ class RackConsole extends HTMLElement {
     // so the wrapper goes inert there (its look never changes -- see .totaltap).
     this.totalTap.disabled = this.mode !== 'decode';
     // The Recent row is a By-Weight (Decode) affordance: shown only there, and only once
-    // there is something to show (the row also self-hides when empty -- ADR-0009).
-    this.recentsRow.hidden = this.mode !== 'decode' || this.recents.length === 0;
+    // there is something to show (the row also self-hides when empty -- ADR-0009). A
+    // pending Undo counts (RBAR-73): removing the last chip leaves its Undo on screen.
+    this.recentsRow.hidden =
+      this.mode !== 'decode' || (this.recents.length === 0 && !this.recentsRow.undoPending);
     this.palette.hidden = this.mode !== 'encode';
     // Feed the palette the Side's used sleeve width so it can disable the keys that
     // no longer fit (RBAR-31, ADR-0012) -- the visible face of addPlate's refusal.

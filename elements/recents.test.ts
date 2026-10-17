@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
-import './recents.ts';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { LONG_PRESS_MS, MOVE_SLOP_PX, UNDO_MS } from './recents.ts';
+import { removeRecent, restoreRecent } from '../lib/recents.ts';
 import { lbToKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 
@@ -7,6 +8,7 @@ type Recents = HTMLElement & {
   targets: readonly number[];
   unit: Unit;
   target: number | null;
+  readonly undoPending: boolean;
 };
 
 function mountRecents(): { el: Recents; root: ShadowRoot } {
@@ -191,5 +193,254 @@ describe('<rack-recents> (overflow nudge arrows, RBAR-37)', () => {
     Object.defineProperty(rail, 'clientWidth', { value: 400, configurable: true });
     root.querySelector<HTMLButtonElement>('[data-nudge="left"]')!.click();
     expect(rail.scrollBy).toHaveBeenLastCalledWith({ left: -240, behavior: 'smooth' });
+  });
+});
+
+// RBAR-73: remove a Recent without an x. A long-press (or the context-menu key / a
+// right-click) opens a one-item "Remove" popover on the chip; Delete/Backspace on a
+// focused chip removes it at once. The removed chip's slot turns into an Undo chip for
+// UNDO_MS, in place -- no new row (ADR-0013). The element emits the intent; the console
+// owns the list (ADR-0009), so these tests echo it back the way the console does.
+describe('<rack-recents> (remove + undo, RBAR-73)', () => {
+  type Ev = { target: number; index: number };
+  // Mount with a console-like owner: recentremove / recentrestore are applied with the
+  // pure core and fed straight back, synchronously, as <rack-console> does.
+  function owned(list: number[]) {
+    const { el, root } = mountRecents();
+    el.targets = list;
+    const removed: Ev[] = [];
+    const restored: Ev[] = [];
+    el.addEventListener('recentremove', (e) => {
+      const d = (e as CustomEvent<Ev>).detail;
+      removed.push(d);
+      el.targets = removeRecent(el.targets, d.target);
+    });
+    el.addEventListener('recentrestore', (e) => {
+      const d = (e as CustomEvent<Ev>).detail;
+      restored.push(d);
+      el.targets = restoreRecent(el.targets, d.target, d.index);
+    });
+    return { el, root, removed, restored };
+  }
+  const faces = (root: ShadowRoot) => chips(root).map((c) => c.textContent!.trim());
+  const undoBtn = (root: ShadowRoot) => root.querySelector<HTMLButtonElement>('[data-undo]');
+  const menu = (root: ShadowRoot) => root.querySelector<HTMLElement>('[data-menu]')!;
+  const removeItem = (root: ShadowRoot) =>
+    root.querySelector<HTMLButtonElement>('[data-menu-remove]')!;
+  const pointer = (type: string, x = 10, y = 10) =>
+    new PointerEvent(type, {
+      bubbles: true,
+      composed: true,
+      clientX: x,
+      clientY: y,
+      button: 0,
+      pointerId: 1,
+    });
+  const del = (key = 'Delete') =>
+    new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = '';
+  });
+
+  it('a long-press (>= LONG_PRESS_MS, still) opens the Remove popover and does not load the Target', () => {
+    const { el, root } = owned([120, 100, 80]);
+    const applied = vi.fn();
+    el.addEventListener('recentapply', applied);
+    const chip = chips(root)[1];
+    chip.dispatchEvent(pointer('pointerdown'));
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    expect(menu(root).hidden).toBe(false);
+    expect(menu(root).getAttribute('aria-label')).toBe('Recent 100 kg');
+    chip.dispatchEvent(pointer('pointerup'));
+    chip.click(); // the click a release fires after a long-press is swallowed
+    expect(applied).not.toHaveBeenCalled();
+  });
+
+  it('a short tap still loads the Target and opens no popover', () => {
+    const { el, root } = owned([120, 100]);
+    const applied = vi.fn();
+    el.addEventListener('recentapply', applied);
+    const chip = chips(root)[0];
+    chip.dispatchEvent(pointer('pointerdown'));
+    vi.advanceTimersByTime(LONG_PRESS_MS / 3);
+    chip.dispatchEvent(pointer('pointerup'));
+    chip.click();
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
+    expect(applied).toHaveBeenCalledTimes(1);
+    expect(menu(root).hidden).toBe(true);
+  });
+
+  it('a press that moves past the slop (a rail scroll) never opens the popover', () => {
+    const { root } = owned([120, 100]);
+    const chip = chips(root)[0];
+    chip.dispatchEvent(pointer('pointerdown', 10, 10));
+    chip.dispatchEvent(pointer('pointermove', 10 + MOVE_SLOP_PX + 1, 10));
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
+    expect(menu(root).hidden).toBe(true);
+  });
+
+  it('a jitter inside the slop still counts as holding still', () => {
+    const { root } = owned([120, 100]);
+    const chip = chips(root)[0];
+    chip.dispatchEvent(pointer('pointerdown', 10, 10));
+    chip.dispatchEvent(pointer('pointermove', 13, 12));
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    expect(menu(root).hidden).toBe(false);
+  });
+
+  it('a pointercancel (the browser took the gesture as a scroll) or a rail scroll cancels the hold', () => {
+    const { root } = owned([120, 100]);
+    const chip = chips(root)[0];
+    chip.dispatchEvent(pointer('pointerdown'));
+    chip.dispatchEvent(pointer('pointercancel'));
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
+    expect(menu(root).hidden).toBe(true);
+
+    chip.dispatchEvent(pointer('pointerdown'));
+    root.querySelector('[data-rail]')!.dispatchEvent(new Event('scroll'));
+    vi.advanceTimersByTime(LONG_PRESS_MS * 2);
+    expect(menu(root).hidden).toBe(true);
+  });
+
+  it('shows the press-and-hold fill while held, and drops it on release', () => {
+    const { root } = owned([120]);
+    const chip = chips(root)[0];
+    chip.dispatchEvent(pointer('pointerdown'));
+    vi.advanceTimersByTime(LONG_PRESS_MS / 2);
+    expect(chip.classList.contains('holding')).toBe(true);
+    chip.dispatchEvent(pointer('pointerup'));
+    expect(chip.classList.contains('holding')).toBe(false);
+  });
+
+  it('Remove drops the chip, leaves an Undo in its slot, and Undo restores it in place', () => {
+    const { root, removed, restored } = owned([120, 100, 80]);
+    chips(root)[1].dispatchEvent(pointer('pointerdown'));
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    removeItem(root).click();
+    expect(removed).toEqual([{ target: 100, index: 1 }]);
+    expect(faces(root)).toEqual(['120', '80']);
+    expect(menu(root).hidden).toBe(true);
+    // The Undo sits where the chip was: between 120 and 80 in the rail.
+    const rail = [...root.querySelector('[data-rail]')!.children].map(
+      (c) => (c as HTMLElement).dataset.target ?? 'undo',
+    );
+    expect(rail).toEqual(['120', 'undo', '80']);
+    expect(undoBtn(root)!.getAttribute('aria-label')).toBe('Undo remove 100 kg');
+    undoBtn(root)!.click();
+    expect(restored).toEqual([{ target: 100, index: 1 }]);
+    expect(faces(root)).toEqual(['120', '100', '80']);
+    expect(undoBtn(root)).toBeNull();
+    expect(root.activeElement).toBe(chips(root)[1]); // focus lands on the restored chip
+  });
+
+  it('the Undo lapses after UNDO_MS, leaving the removal final', () => {
+    const { root, restored } = owned([120, 100]);
+    chips(root)[0].dispatchEvent(del());
+    expect(undoBtn(root)).not.toBeNull();
+    vi.advanceTimersByTime(UNDO_MS - 1);
+    expect(undoBtn(root)).not.toBeNull();
+    vi.advanceTimersByTime(1);
+    expect(undoBtn(root)).toBeNull();
+    expect(faces(root)).toEqual(['100']);
+    expect(restored).toEqual([]);
+  });
+
+  it('Delete or Backspace on a focused chip removes it, and focus moves to the Undo', () => {
+    for (const key of ['Delete', 'Backspace']) {
+      const { root, removed } = owned([120, 100]);
+      const docKeys = vi.fn();
+      document.addEventListener('keydown', docKeys);
+      chips(root)[0].focus();
+      const ev = del(key);
+      chips(root)[0].dispatchEvent(ev);
+      document.removeEventListener('keydown', docKeys);
+      expect(removed).toEqual([{ target: 120, index: 0 }]);
+      expect(ev.defaultPrevented).toBe(true);
+      // Claimed: an open keypad's document listener never also sees it as a digit delete.
+      expect(docKeys).not.toHaveBeenCalled();
+      expect(root.activeElement).toBe(undoBtn(root));
+      document.body.innerHTML = '';
+    }
+  });
+
+  it('the context-menu key / right-click opens the popover with focus on Remove; Escape closes it back to the chip', () => {
+    const { root } = owned([120, 100]);
+    const chip = chips(root)[1];
+    chip.focus();
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    chip.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true); // no native menu / iOS callout
+    expect(menu(root).hidden).toBe(false);
+    expect(root.activeElement).toBe(removeItem(root));
+    removeItem(root).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    expect(menu(root).hidden).toBe(true);
+    expect(root.activeElement).toBe(chip);
+  });
+
+  it('a tap outside closes the popover without removing anything', () => {
+    const { root, removed } = owned([120, 100]);
+    chips(root)[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(menu(root).hidden).toBe(false);
+    document.body.dispatchEvent(pointer('pointerdown'));
+    expect(menu(root).hidden).toBe(true);
+    expect(removed).toEqual([]);
+  });
+
+  it('removing the last chip keeps the row up for its Undo, then hides it', () => {
+    const { el, root } = owned([100]);
+    chips(root)[0].dispatchEvent(del());
+    expect(chips(root)).toHaveLength(0);
+    expect(el.hidden).toBe(false);
+    expect(el.undoPending).toBe(true);
+    vi.advanceTimersByTime(UNDO_MS);
+    expect(el.hidden).toBe(true);
+    expect(el.undoPending).toBe(false);
+  });
+
+  it('a lapsing Undo never un-hides a row its owner hid (By Plates)', () => {
+    const { el, root } = owned([120, 100]);
+    chips(root)[0].dispatchEvent(del());
+    el.hidden = true; // the console switched to By Plates
+    vi.advanceTimersByTime(UNDO_MS);
+    expect(el.hidden).toBe(true);
+  });
+
+  it('a new history (a fresh commit) retires a pending Undo', () => {
+    const { el, root } = owned([120, 100]);
+    chips(root)[0].dispatchEvent(del());
+    expect(undoBtn(root)).not.toBeNull();
+    el.targets = [90, 100];
+    expect(undoBtn(root)).toBeNull();
+  });
+
+  it('a second removal replaces the first Undo', () => {
+    const { root, removed } = owned([120, 100, 80]);
+    chips(root)[0].dispatchEvent(del());
+    chips(root)[1].dispatchEvent(del());
+    expect(removed.map((r) => r.target)).toEqual([120, 80]);
+    expect(root.querySelectorAll('[data-undo]')).toHaveLength(1);
+    expect(undoBtn(root)!.getAttribute('aria-label')).toBe('Undo remove 80 kg');
+  });
+
+  it('tells screen readers how to remove, and announces a removal and its undo', () => {
+    const { root } = owned([120]);
+    const chip = chips(root)[0];
+    const hint = root.getElementById(chip.getAttribute('aria-describedby')!)!;
+    expect(hint.textContent).toMatch(/hold/i);
+    expect(hint.textContent).toMatch(/Delete/);
+    expect(chip.getAttribute('aria-keyshortcuts')).toBe('Delete');
+    chip.dispatchEvent(del());
+    const live = root.querySelector('[data-recents-announce]')!;
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent).toBe('Removed 120 kg');
+    undoBtn(root)!.click();
+    expect(live.textContent).toBe('Restored 120 kg');
   });
 });
