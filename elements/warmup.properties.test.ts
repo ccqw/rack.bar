@@ -3,10 +3,12 @@
 // and mode toggles, Share, and a reload -- and judged from what is on screen. Each `it`
 // is named after the rule it guards, with its ADR. Expected Totals come from the
 // ADR-derived oracle (rampTotalsOracle, lib/properties.oracle.ts), never from the
-// planner under test. Drivers + generators are in properties.drivers.ts.
+// planner under test; Warm-up sets are judged against the fewest-moves band
+// (ADR-0015 as amended), since the screen loads planEasyRamp. Drivers + generators are in properties.drivers.ts.
 import { describe, it, expect, beforeEach } from 'vitest';
 import fc from 'fast-check';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
+import { RAMP_TOLERANCE } from '../lib/moves.ts';
 import { pushRecent } from '../lib/recents.ts';
 import { draftToKg, displayCeilingKg, format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
@@ -42,6 +44,22 @@ function oracleTotals(rig: Rig, u: Unit, draft: string): number[] {
   return rampTotalsOracle(rig, t, displayCeilingKg(t, u), DEFAULT_RAMP);
 }
 
+// Whether `shown` is a Total the fewest-moves Ramp may load on row `i` (ADR-0015 as
+// amended): the bare-Bar row is the Bar, the Working set is the oracle's Total exactly,
+// and a Warm-up set is its nearest Total or any Total within the tolerance of its raw
+// target (pct x Working Total) between the loaded bare rig and the Working Total.
+function allowedRowKg(rig: Rig, want: readonly number[], i: number, shown: number): boolean {
+  const last = want.length - 1;
+  const step = DEFAULT_RAMP[i];
+  if (i === last || step.kind === 'bar') return Math.abs(shown - want[i]) < 1e-6;
+  if (Math.abs(shown - want[i]) < 1e-6) return true;
+  const working = want[last];
+  const grid = Math.min(...rig.inventory.map((p) => p.kg));
+  const tol = Math.max(RAMP_TOLERANCE * working, grid);
+  return Math.abs(shown - (working * step.pct) / 100) <= tol + 1e-6
+    && shown >= rig.baselineKg - 1e-6 && shown <= working + 1e-6;
+}
+
 // The Total the sleeve's discs add up to for Ramp row `i`: the bare-Bar row carries no
 // Collars (ADR-0015 Q5), every other row sits on the effective Bar (ADR-0008).
 function drawnRowKg(el: HTMLElement, rig: Rig, i: number): number {
@@ -62,10 +80,11 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
         const want = oracleTotals(rig, u, draft);
         stairs(el)[i].click();
         expect(selected(el)).toBe(i);
-        expect(Math.abs(drawnRowKg(el, rig, i) - want[i])).toBeLessThan(1e-6);
-        expect(totalText(el)).toBe(format(want[i], u));
+        const shown = drawnRowKg(el, rig, i);
+        expect(allowedRowKg(rig, want, i, shown)).toBe(true);
+        expect(totalText(el)).toBe(format(shown, u));
         // The stair itself names the same Total, with its unit.
-        expect(stairTotals(el)[i]).toBe(format(want[i], u));
+        expect(stairTotals(el)[i]).toBe(format(shown, u));
       }),
       { seed: SEED, numRuns: 30 },
     );
@@ -79,10 +98,15 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
         stairs(el)[i].click();
         const last = want.length - 1;
         expect(nextBtn(el).disabled).toBe(i === last);
+        const before = drawnRowKg(el, rig, i);
         nextBtn(el).click();
         const j = Math.min(i + 1, last);
         expect(selected(el)).toBe(j);
-        expect(totalText(el)).toBe(format(want[j], u));
+        const after = drawnRowKg(el, rig, j);
+        expect(allowedRowKg(rig, want, j, after)).toBe(true);
+        expect(totalText(el)).toBe(format(after, u));
+        // The Ramp never steps down (ADR-0015 as amended).
+        if (j > i && i > 0) expect(after).toBeGreaterThanOrEqual(before - 1e-6);
       }),
       { seed: SEED, numRuns: 25 },
     );

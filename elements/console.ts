@@ -45,7 +45,8 @@ import { format, shownIn, displayCeilingKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
-import { planRamp, DEFAULT_RAMP } from '../lib/plan.ts';
+import { DEFAULT_RAMP } from '../lib/plan.ts';
+import { planEasyRamp } from '../lib/moves.ts';
 import type { Ramp, RampRow } from '../lib/plan.ts';
 import { parseWorking, warmStatus, warmupView } from '../lib/warmup.ts';
 import type { WarmupView } from '../lib/warmup.ts';
@@ -1004,8 +1005,8 @@ class RackConsole extends HTMLElement {
     this.render();
   }
 
-  // Plan the Ramp for the Working set on the current rig (lib/plan.ts, ADR-0015) and
-  // load the selected row. The Working set solves at or under its reading in the
+  // Plan the Ramp for the Working set on the current rig, picked for fewest Plate moves
+  // (lib/moves.ts, ADR-0015 as amended), and load the selected row. The Working set solves at or under its reading in the
   // display unit (displayCeilingKg, RBAR-60), exactly as By Weight would. The template
   // is DEFAULT_RAMP (editing it is slice 3). The selection is kept across re-plans,
   // clamped into the rows.
@@ -1015,7 +1016,7 @@ class RackConsole extends HTMLElement {
       this.side = [];
       return;
     }
-    this.ramp = planRamp(
+    this.ramp = planEasyRamp(
       this.working,
       DEFAULT_RAMP,
       { barKg: this._barKg, collarKg: this._collarKg, inventory: this.inventory() },
