@@ -65,29 +65,43 @@ claiming a copy that did not happen. The entrance animation (the `rack-card` and
 `rack-fade` keyframes, the handoff's `cardIn`) and the final colour/spacing
 treatment fold from the RBAR-10 handoff; the structure ships thin here.
 
-## Amended 2026-10-16 (RBAR-64): the copied text is a Wordle-style emoji plan
+## Amended 2026-10-16 (RBAR-64): the shared text is an emoji Plate list, sent by Web Share
 
-The Copy button's text grows from three lines to five, still one pure function
-(`loadingSummary`) in `lib/summary.ts`:
+The summary text (still one pure function, `loadingSummary` in `lib/summary.ts`)
+becomes the "D. Plate list" format Caitlin picked. Below, `.` stands for the middle
+dot, `x` for the multiplication sign, and `[...]` for an emoji:
 
-    rack.bar - 100 kg
-    (one emoji per Plate on a Side, heaviest first)
-    Per side: 2x 25  1x 15
-    20 kg / 44 lb bar - Competition
+    rack.bar . 142 kg . per side
+    [red square] 25 x 2
+    [green square] 10 x 1
+    [green circle] 1 x 1
+    [lock] collars 2.5 kg        <- only when Collars are fitted
     https://rack.bar
 
+- **One line per Plate group**, heaviest first, built from `groupSide` (whose groups
+  now carry their `emoji`), so the text and the card chips cannot drift. Faces are
+  the Plate's stamp: kg on Eleiko even under an lb Total, lb on iron.
 - **One map.** `plateEmoji` reads a single `PLATE_EMOJI` table keyed by Plate colour:
   a coloured square for a bumper, the same colour as a circle for a change Plate
   (under 5 kg; the 5 kg white stays a square). Iron has no colour, so it is a black
   large square (45 / 35 / 25 lb) or a black medium-small square (10 / 5 / 2.5 lb).
-  The source stays ASCII: every glyph is a `\u{...}` escape named in a comment.
-- **The count line stays.** It is the real instruction and the fallback for screen
-  readers and colour-blind readers; the emoji row is the flourish. Both read the same
-  Side Load, so the row's order and counts match `groupSide` (tested).
-- **Bare Bar:** no emoji row; the "Bare bar - no plates" line stays.
-- **Collars** stay on the config line only (they are not Plates); no glyph in the row.
+  The source stays ASCII: every glyph, the middot and the multiplication sign are
+  `\u{...}` escapes named in a comment.
+- **Bare Bar:** a single `Bare bar` line in place of the Plate lines.
+- **Collars** get their own lock line after the Plates (collar mass in kg, as the
+  config caption writes it).
+- **The Bar and plate set are no longer named** in the shared text (the old config
+  line is gone): the Total includes the Bar, and the lines say what to load. The
+  card caption still names both.
 - **Closing link** `https://rack.bar`, so a paste advertises the app and links in
   every chat app (a bare `rack.bar` may not autolink on a newer TLD).
-- The card's visible chips are unchanged. There is no separate plain-text summary
-  any more: the count and config lines inside the new text are that plain version.
-- Web Share (`navigator.share`) is not part of this change.
+- The card's visible chips are unchanged.
+
+**Sending it.** Where the Web Share API exists (`navigator.share`), the card's
+primary button reads **Share** and opens the native share sheet with the text (the
+sheet has its own Copy action, so there is no second button). A cancelled sheet
+(`AbortError`) does nothing; any other share failure falls back to the clipboard.
+Without Web Share the button reads **Copy summary** and writes the clipboard. The
+"Copied" confirmation still flips only on a successful clipboard write; a completed
+share shows no confirmation (the sheet is its own feedback). Both APIs need a secure
+context (https or localhost).

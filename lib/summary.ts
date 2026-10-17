@@ -1,8 +1,8 @@
 // Loading summary -- the share card's text (RBAR-19, ADR-0011). Pure core (ADR-0001):
 // it folds a snapshot of the current load into the per-Side Plate groups the card
-// renders as colour chips and the short Wordle-style text the Copy button writes to
-// the clipboard (an emoji row per Side plus the plain count line, RBAR-64). Both the
-// visible chips and the copied text derive from here, so they cannot drift. No DOM, no clipboard -- the element wires those.
+// renders as colour chips and the short emoji Plate list the share button sends
+// (RBAR-64). Both the visible chips and the shared text fold via `groupSide`, so
+// they cannot drift. No DOM, no clipboard, no share sheet -- the element wires those.
 //
 // Plate faces stay the Plate's own stamp (`label ?? kg`): kg on the Eleiko set even
 // when the display Unit is lb (the same kg-face-under-an-lb-readout convention the
@@ -34,7 +34,7 @@ export const BARE_BAR = 'Bare bar - no plates';
 /**
  * The achieved Total for a snapshot: Bar + 2 x Collar + 2 x Side Load, via the
  * existing core (ADR-0002/0008). The single place the card's Total is computed --
- * the element and the plain text both read it, so they cannot disagree.
+ * the element and the shared text both read it, so they cannot disagree.
  */
 export function loadTotalKg(s: LoadSummary): number {
   return totalKg(s.side, barWithCollars(s.barKg, s.collarKg));
@@ -46,6 +46,8 @@ export interface PlateGroup {
   readonly face: string;
   /** The Plate's colour, for the chip fill. */
   readonly color: PlateColor;
+  /** The Plate's emoji for the shared Plate list (`plateEmoji`, RBAR-64). */
+  readonly emoji: string;
   /** How many of this Plate sit on the Side. */
   readonly count: number;
 }
@@ -68,7 +70,7 @@ export function groupSide(side: readonly Plate[]): readonly PlateGroup[] {
     if (last && last.face === face && last.color === p.color) {
       groups[groups.length - 1] = { ...last, count: last.count + 1 };
     } else {
-      groups.push({ face, color: p.color, count: 1 });
+      groups.push({ face, color: p.color, emoji: plateEmoji(p), count: 1 });
     }
   }
   return groups;
@@ -77,9 +79,9 @@ export function groupSide(side: readonly Plate[]): readonly PlateGroup[] {
 /**
  * One per-Side group as `N x face` -- the count ALWAYS shows, singles included
  * (`1x 25`), so a glance never has to infer whether a bare face means one Plate
- * (RBAR-44, prototype L888). Exported so the card's chips and the plain text render
- * the group label from ONE place -- the "cannot drift" guarantee (ADR-0011) covers
- * the rendered label, not just the fold.
+ * (RBAR-44, prototype L888). The card's chip label. Since RBAR-64 the shared text
+ * renders each group as its own `emoji face x count` line instead; both fold via
+ * `groupSide`, so the faces, order and counts cannot drift (ADR-0011).
  *
  * 2026-06-29 (RBAR-27): this is the share/fullscreen card's flat label format. The
  * "On the bar" loaded chips (<rack-loaded>) deliberately do NOT use it -- they render a
@@ -96,8 +98,9 @@ export function groupText(g: PlateGroup): string {
  * plate-set name -- `20 kg / 44 lb bar - Competition` -- with the Collars appended
  * when fitted (an in-house addition the prototype lacks; the caption would otherwise
  * hide rig weight). Dual-unit is fixed kg-then-lb, so the line no longer takes a
- * display Unit. Shared by the plain text, the card caption (which appends "per
- * side"), and the fullscreen caption, so the config wording cannot drift.
+ * display Unit. Shared by the card caption (which appends "per side") and the
+ * fullscreen caption, so the config wording cannot drift. (The shared text dropped
+ * this line in RBAR-64.)
  */
 export function configText(barKg: number, collarKg: number, setLabel: string): string {
   const bar = `${shownIn(barKg, 'kg')} kg / ${toLbWhole(barKg)} lb bar`;
@@ -105,7 +108,7 @@ export function configText(barKg: number, collarKg: number, setLabel: string): s
   return `${rig} - ${setLabel}`;
 }
 
-/** The closing link line of the copied text, so a paste advertises the app (RBAR-64). */
+/** The closing link line of the shared text, so a paste advertises the app (RBAR-64). */
 export const SHARE_LINK = 'https://rack.bar';
 
 /**
@@ -124,7 +127,7 @@ const PLATE_EMOJI: Record<PlateColor, { readonly big: string; readonly small: st
   iron: { big: '\u{2B1B}', small: '\u{25FE}' }, // black large square / black medium-small square
 };
 
-// A Plate lighter than this is "small" in the emoji row: the Eleiko change Plates
+// A Plate lighter than this is "small" in the shared Plate list: the Eleiko change Plates
 // (2.5 kg and down; the 5 kg white stays a square) and the iron 10 / 5 / 2.5 lb.
 const SMALL_PLATE_BELOW_KG = 5;
 
@@ -134,40 +137,38 @@ export function plateEmoji(p: Plate): string {
   return p.kg < SMALL_PLATE_BELOW_KG ? glyphs.small : glyphs.big;
 }
 
-/**
- * The Wordle-style emoji row (RBAR-64): one emoji per Plate on a Side, in loading
- * order (heaviest first), so the colour run shows the plan at a glance. It reads the
- * same Side Load `groupSide` folds, so its order and counts match the count line
- * (asserted in summary.test.ts). An empty Side is an empty row.
- */
-export function emojiRow(side: readonly Plate[]): string {
-  return side.map(plateEmoji).join('');
-}
+// The shared text's punctuation, escaped like the emoji so the source stays ASCII.
+const MIDDOT = '\u{00B7}'; // middle dot (heading separator)
+const TIMES = '\u{00D7}'; // multiplication sign (group count)
+const LOCK = '\u{1F512}'; // lock (the Collars line)
+
+/** The shared text's stand-in for the Plate lines when nothing is loaded. */
+const BARE_BAR_LINE = 'Bare bar';
 
 /**
- * The loading summary the Copy button writes (RBAR-19/44, ADR-0011; reshaped into a
- * Wordle-style paste by RBAR-64):
+ * The loading summary the share button sends (RBAR-19/44, ADR-0011; reshaped by
+ * RBAR-64 into the "D. Plate list" format Caitlin picked):
  *
- *   rack.bar - 100 kg                       <- wordmark + Total (display Unit)
- *   (emoji row)                             <- one glyph per Plate on a Side
- *   Per side: 2x 25  1x 15                  <- groups, counts always, two-space join
- *   20 kg / 44 lb bar - Competition         <- the config caption the card shows
+ *   rack.bar . 142 kg . per side            <- wordmark + Total (display Unit); "."
+ *                                              stands in for the middot here
+ *   (red square) 25 x 2                     <- one line per Plate group, heaviest
+ *   (green square) 10 x 1                      first: emoji, stamped face, count
+ *   (green circle) 1 x 1                       ("x" is the multiplication sign)
+ *   (lock) collars 2.5 kg                   <- only when Collars are fitted
  *   https://rack.bar                        <- closing link
  *
- * The emoji row is the flourish; the count line is the instruction (and what a
- * screen reader or colour-blind reader relies on), so both always ship together. A
- * bare Bar has no emoji row and keeps the "Bare bar - no plates" line. Collars stay
- * on the config line only -- they are not Plates. The Total reads in `unit`; the
- * config line is dual-unit by construction. The Total is derived from the rig + Side
- * Load (`loadTotalKg`), and the group label, bare-bar text, and config all come from
- * the shared helpers -- so the text and the card cannot diverge. `setLabel` is the
- * active plate set's lifter-facing name (the element resolves it).
+ * A bare Bar has a single "Bare bar" line in place of the Plate lines. The Plate
+ * lines fold via `groupSide`, the same fold the card's chips render, so the faces,
+ * order and counts cannot drift. Faces are the Plate's stamp (kg on Eleiko even under
+ * an lb Total, lb on iron). The Bar and plate set are deliberately not named: the
+ * Total already includes the Bar, and the lines say what to load on each Side.
  */
-export function loadingSummary(s: LoadSummary, setLabel: string): string {
-  const head = `rack.bar - ${format(loadTotalKg(s), s.unit)}`;
-  const plan =
+export function loadingSummary(s: LoadSummary): string {
+  const head = `rack.bar ${MIDDOT} ${format(loadTotalKg(s), s.unit)} ${MIDDOT} per side`;
+  const plates =
     s.side.length === 0
-      ? [BARE_BAR]
-      : [emojiRow(s.side), `Per side: ${groupSide(s.side).map(groupText).join('  ')}`];
-  return [head, ...plan, configText(s.barKg, s.collarKg, setLabel), SHARE_LINK].join('\n');
+      ? [BARE_BAR_LINE]
+      : groupSide(s.side).map((g) => `${g.emoji} ${g.face} ${TIMES} ${g.count}`);
+  const collars = s.collarKg > 0 ? [`${LOCK} collars ${format(s.collarKg, 'kg')}`] : [];
+  return [head, ...plates, ...collars, SHARE_LINK].join('\n');
 }

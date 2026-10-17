@@ -113,27 +113,99 @@ describe('<rack-share>', () => {
     await Promise.resolve();
     await Promise.resolve();
     // The copied text carries the same set name the caption shows (ADR-0011 no-drift).
-    expect(writeText).toHaveBeenCalledWith(loadingSummary(LOADED, 'Competition'));
+    expect(writeText).toHaveBeenCalledWith(loadingSummary(LOADED));
     expect(copy.textContent).toContain('Copied');
     vi.unstubAllGlobals();
   });
 
-  it('Copy writes the emoji loading plan with the count line beside it (RBAR-64)', async () => {
+  it('Copy writes the emoji Plate list (RBAR-64 format D)', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     const { el, root } = mount();
     el.open();
     (root.querySelector('[data-copy]') as HTMLButtonElement).click();
     await Promise.resolve();
-    const lines = (writeText.mock.calls[0]![0] as string).split('\n');
-    // 25, 25, 15, 2.5: red square x2, yellow square, red circle.
-    expect(lines[1]).toBe('\u{1F7E5}\u{1F7E5}\u{1F7E8}\u{1F534}');
-    expect(lines[2]).toBe('Per side: 2x 25  1x 15  1x 2.5');
-    expect(lines.at(-1)).toBe('https://rack.bar');
+    // 25, 25, 15, 2.5 on a 20 kg Bar = 155 kg. Glyphs: red square, yellow square,
+    // red circle; middot and multiplication sign as escapes.
+    expect((writeText.mock.calls[0]![0] as string).split('\n')).toEqual([
+      'rack.bar \u{00B7} 155 kg \u{00B7} per side',
+      '\u{1F7E5} 25 \u{00D7} 2',
+      '\u{1F7E8} 15 \u{00D7} 1',
+      '\u{1F534} 2.5 \u{00D7} 1',
+      'https://rack.bar',
+    ]);
     // The visible chips are unchanged: plain count labels, no emoji.
     const chips = [...root.querySelectorAll('[data-chip]')].map((c) => c.textContent);
     expect(chips).toEqual(['2x 25', '1x 15', '1x 2.5']);
     vi.unstubAllGlobals();
+  });
+
+  describe('native share sheet (Web Share API, RBAR-64)', () => {
+    const abort = () => Object.assign(new Error('cancelled'), { name: 'AbortError' });
+
+    function openWith(nav: object) {
+      vi.stubGlobal('navigator', nav);
+      const { el, root } = mount();
+      el.open();
+      return root.querySelector('[data-copy]') as HTMLButtonElement;
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('reads "Share" and opens the share sheet with the summary text when available', async () => {
+      const share = vi.fn().mockResolvedValue(undefined);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const btn = openWith({ share, clipboard: { writeText } });
+      expect(btn.textContent).toBe('Share');
+      btn.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(share).toHaveBeenCalledWith({ text: loadingSummary(LOADED) });
+      expect(writeText).not.toHaveBeenCalled();
+      // The sheet is its own feedback; the button never claims a copy.
+      expect(btn.textContent).toBe('Share');
+    });
+
+    it('a cancelled sheet (AbortError) is silent: no clipboard write, no label change', async () => {
+      const share = vi.fn().mockRejectedValue(abort());
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const btn = openWith({ share, clipboard: { writeText } });
+      btn.click();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(share).toHaveBeenCalledTimes(1);
+      expect(writeText).not.toHaveBeenCalled();
+      expect(btn.textContent).toBe('Share');
+    });
+
+    it('any other share error falls back to the clipboard and confirms the copy', async () => {
+      const share = vi.fn().mockRejectedValue(new Error('NotAllowedError'));
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const btn = openWith({ share, clipboard: { writeText } });
+      btn.click();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(writeText).toHaveBeenCalledWith(loadingSummary(LOADED));
+      expect(btn.textContent).toBe('Copied');
+    });
+
+    it('a share error with a failing clipboard claims nothing', async () => {
+      const share = vi.fn().mockRejectedValue(new Error('NotAllowedError'));
+      const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+      const btn = openWith({ share, clipboard: { writeText } });
+      btn.click();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(btn.textContent).toBe('Share');
+    });
+
+    it('without navigator.share it reads "Copy summary" and writes the clipboard', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const btn = openWith({ clipboard: { writeText } });
+      expect(btn.textContent).toBe('Copy summary');
+      btn.click();
+      for (let i = 0; i < 2; i++) await Promise.resolve();
+      expect(writeText).toHaveBeenCalledWith(loadingSummary(LOADED));
+      expect(btn.textContent).toBe('Copied');
+    });
   });
 
   it('does not falsely claim a copy when the clipboard write fails', async () => {
