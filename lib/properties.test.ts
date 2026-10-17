@@ -25,6 +25,7 @@ import {
   isOfferedCollar,
 } from './plates.ts';
 import type { Plate } from './plates.ts';
+import { SLEEVE_PAD_PX, sleeveLayout } from './sleevefit.ts';
 import {
   draftToKg,
   displayCeilingKg,
@@ -1596,6 +1597,34 @@ describe('Share link properties (ADR-0014)', () => {
         expect(parseLink(x, 'kg')).toEqual(t === undefined ? rest : { ...rest, targetKg: t });
       }),
       { ...opts, numRuns: 1000 },
+    );
+  });
+});
+
+describe('Sleeve layout properties (ADR-0004, ADR-0013; shared with the share picture, RBAR-70)', () => {
+  const hostArb = fc.record({ w: fc.integer({ min: 200, max: 500 }), h: fc.integer({ min: 84, max: 204 }) });
+
+  it('one scale for the whole row: centred, inside the host, disc height tracks diameter (ADR-0004)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, hostArb, ({ rig, t }, host) => {
+        const { side } = decode(t, rig.baselineKg, rig.inventory).primary;
+        const parts = sleeveLayout(side, host.w, host.h);
+        const first = parts[0]!;
+        const last = parts[parts.length - 1]!;
+        // Centred on both axes, like the element's flex row.
+        expect(first.x).toBeCloseTo(host.w - (last.x + last.w), 6);
+        for (const p of parts) expect(p.y + p.h / 2).toBeCloseTo(host.h / 2, 6);
+        // A real Side Load never runs past the host (the fit zooms out instead).
+        expect(first.x).toBeGreaterThanOrEqual(-1e-6);
+        // Every disc stands within the host's padded height, and height / diameter is
+        // one constant: the same scale for every Plate.
+        const discs = parts.filter((p) => p.kind === 'disc');
+        expect(discs.map((d) => d.plate)).toEqual([...side]);
+        const ratios = discs.map((d) => d.h / d.plate!.diameterMm);
+        for (const r of ratios) expect(r).toBeCloseTo(ratios[0]!, 9);
+        for (const d of discs) expect(d.h).toBeLessThanOrEqual(host.h - SLEEVE_PAD_PX + 1e-6);
+      }),
+      opts,
     );
   });
 });

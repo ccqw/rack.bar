@@ -23,6 +23,10 @@ import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
+import { FULLSCREEN as FS } from '../lib/fullscreenframe.ts';
+
+// A tracking value in the handoff's CSS spelling: -0.025 -> "-.025em".
+const em = (n: number): string => `${String(n).replace(/^(-?)0\./, '$1.')}em`;
 
 type Sleeve = HTMLElement & { sideLoad: readonly Plate[]; interactive: boolean };
 
@@ -92,10 +96,11 @@ class RackFullscreen extends HTMLElement {
            on it to exit -- the whole surface is the dismiss target (handoff section 8). */
         .overlay {
           position: fixed; inset: 0; z-index: 70;
-          background: radial-gradient(120% 90% at 50% 30%, #16181c, #0a0b0d);
+          background: radial-gradient(120% 90% at 50% 30%,
+                      var(--rack-fullscreen-glow), var(--rack-fullscreen-deep));
           display: flex; flex-direction: column; align-items: center;
-          padding: calc(48px + env(safe-area-inset-top)) 24px
-                   calc(32px + env(safe-area-inset-bottom));
+          padding: calc(${FS.padTop}px + env(safe-area-inset-top)) ${FS.padX}px
+                   calc(${FS.padBottom}px + env(safe-area-inset-bottom));
           cursor: pointer; overflow: hidden;
           animation: rack-fade .16s ease-out;
         }
@@ -113,33 +118,33 @@ class RackFullscreen extends HTMLElement {
         /* The head: wordmark, huge Total, config caption -- centered above the bar. */
         .head { flex: none; display: flex; flex-direction: column; align-items: center; text-align: center; }
         .wordmark {
-          font-family: var(--rack-font); font-weight: 800; font-size: 19px;
-          letter-spacing: -.025em; color: var(--rack-fg);
+          font-family: var(--rack-font); font-weight: 800; font-size: ${FS.wordmarkPx}px;
+          letter-spacing: ${em(FS.wordmarkTrackEm)}; color: var(--rack-fg);
         }
         .wordmark .dot { color: var(--rack-accent); }
         /* The huge Total: Hanken 800 with tabular figures (handoff section 8). Hanken is
            proportional, so tnum must be explicit -- without it the glance jitters as the
            digits change width (the same carry-forward the console Total carries). */
         .total {
-          margin-top: 12px; font-family: var(--rack-font); font-weight: 800;
-          font-size: clamp(40px, 16vw, 58px); line-height: 1;
-          letter-spacing: -.03em; color: var(--rack-fg);
+          margin-top: ${FS.totalMarginTop}px; font-family: var(--rack-font); font-weight: 800;
+          font-size: clamp(${FS.totalMinPx}px, ${FS.totalVw}vw, ${FS.totalMaxPx}px); line-height: 1;
+          letter-spacing: ${em(FS.totalTrackEm)}; color: var(--rack-fg);
           font-variant-numeric: tabular-nums;
         }
         /* The unit rides the huge Total as a small dim suffix (RBAR-39, prototype
            L321: 22px/600 text-dim). Only the value span rolls. */
-        .total .tu { font-size: 22px; font-weight: 600; color: var(--rack-text-dim); }
+        .total .tu { font-size: ${FS.unitPx}px; font-weight: ${FS.unitWeight}; color: var(--rack-text-dim); }
         /* The secondary line: the same Total, plain, in the OTHER Unit (RBAR-55: it is
            a whole-bar number, so no "per side" may ride it). */
         .secondary {
-          margin-top: 8px; font-family: var(--rack-font); font-weight: 500;
-          font-size: 14px; color: var(--rack-muted);
+          margin-top: ${FS.secondaryMarginTop}px; font-family: var(--rack-font); font-weight: 500;
+          font-size: ${FS.secondaryPx}px; color: var(--rack-muted);
         }
         /* The config line: the plate-set name + the Bar (+ Collars when fitted) + the
            per-side note -- the caption the share card shows (RBAR-55). */
         .caption {
-          margin-top: 16px; font-family: var(--rack-font-num); font-size: 11px;
-          font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+          margin-top: ${FS.captionMarginTop}px; font-family: var(--rack-font-num); font-size: ${FS.captionPx}px;
+          font-weight: 600; letter-spacing: ${em(FS.captionTrackEm)}; text-transform: uppercase;
           color: var(--rack-muted);
         }
         /* The stage: the leftover space the blown-up bar fills. The bar lays out
@@ -155,8 +160,8 @@ class RackFullscreen extends HTMLElement {
           display: flex; align-items: center; justify-content: center;
         }
         .rot {
-          width: min(360px, 62vh);
-          transform: rotate(90deg) scale(1.5);
+          width: min(${FS.rotMaxPx}px, ${FS.rotVh}vh);
+          transform: rotate(90deg) scale(${FS.blowUp});
           display: flex; align-items: center; justify-content: center;
         }
         .rot rack-sleeve { width: 100%; }
