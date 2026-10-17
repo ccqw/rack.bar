@@ -146,7 +146,7 @@ export function serializeLink(state: LinkState): string | null {
   const set = PLATE_SETS[state.set];
   const bar = set.bars.find((b) => b.kg === state.barKg);
   if (!bar || !isOfferedCollar(state.collarKg)) return null;
-  if (!isUnit(state.unit)) return null;
+  if (!isUnit(state.unit) || !Object.hasOwn(MODE_TOKEN, state.mode)) return null;
   if (!isLinkableSide(state.side, set)) return null;
   const plates = groupSide(state.side)
     .map((g) => (g.count > 1 ? `${g.count}x${g.face}` : g.face))
@@ -160,7 +160,9 @@ export function serializeLink(state: LinkState): string | null {
     `u=${state.unit}`,
     `p=${plates}`,
   ];
-  if (state.mode === 'decode' && state.targetKg !== undefined) {
+  // `!= null`: a console Target of null (no Target) that slips through a cast reads as
+  // absent rather than throwing on null.toFixed.
+  if (state.mode === 'decode' && state.targetKg != null) {
     const t = linkTargetKg(state.targetKg);
     if (t === null) return null;
     pairs.push(`t=${t}`);
@@ -239,7 +241,7 @@ function parseTarget(value: string): number | null {
  * `m=p`, not a plain decimal, <= 0 at 2 dp, or over MAX_TARGET_KG. Unknown keys are
  * ignored; Plates are re-sorted heaviest-first. A missing `c` is None, a missing `p`
  * the bare Bar, and a missing `u` is `primaryUnit` -- the recipient's own Primary unit, which
- * the shell must pass in. Never throws.
+ * the shell must pass in (an invalid one reads as kg). Never throws.
  */
 export function parseLink(fragment: string, primaryUnit: Unit): LinkState | null {
   const raw = fragment.startsWith('#') ? fragment.slice(1) : fragment;
@@ -266,7 +268,8 @@ export function parseLink(fragment: string, primaryUnit: Unit): LinkState | null
   }
 
   const unitToken = pairs.get('u');
-  let unit: Unit = primaryUnit;
+  // The shell owns validating its Primary unit; a bad one still never leaks out.
+  let unit: Unit = isUnit(primaryUnit) ? primaryUnit : 'kg';
   if (unitToken !== undefined) {
     if (!isUnit(unitToken)) return null;
     unit = unitToken;

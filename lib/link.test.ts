@@ -320,7 +320,17 @@ describe('serializeLink: refuses a load it cannot represent exactly (ADR-0014)',
     ['a Target over the cap', { ...ok, targetKg: 1200 }],
     ['an unknown Unit', { ...ok, unit: 'st' as unknown as 'kg' }],
     ['an unoffered set', { ...ok, set: 'bumper' as unknown as 'comp' }],
+    ['an unknown mode', { ...ok, mode: 'toString' as unknown as 'decode' }],
   ];
+  it('reads a null Target (the console has no Target) as absent, never throwing', () => {
+    const s = { ...ok, targetKg: null as unknown as number };
+    expect(serializeLink(s)).toBe('v=1&s=training&b=45lb&m=w&c=0&u=lb&p=45');
+  });
+
+  it('never leaks an invalid Primary unit into a parsed load', () => {
+    expect(parseLink('v=1&s=comp&b=20kg&m=p', 'stone' as unknown as 'kg')!.unit).toBe('kg');
+  });
+
   for (const [name, state] of refusals) {
     it(`refuses: ${name}`, () => {
       expect(serializeLink(state)).toBeNull();
