@@ -9,6 +9,7 @@ import {
   sideWidthMm,
   atSleeveCapacity,
   barWithCollars,
+  withLimits,
 } from './plates.ts';
 import { lbToKg, toLbWhole } from './units.ts';
 
@@ -476,5 +477,39 @@ describe('decodeWithin (RBAR-60)', () => {
       const { primary } = decodeWithin(read, ceiling, ironBar, IRON_LB);
       expect(primary.total, `${lb} lb read as ${read} kg`).toBeCloseTo(real, 9);
     }
+  });
+});
+
+describe('decode with Plate limits (RBAR-72, ADR-0016)', () => {
+  const kgs = (side: readonly { kg: number }[]) => side.map((p) => p.kg);
+  const every = (n: number) => Object.fromEntries(ELEIKO_KG.map((p) => [String(p.kg), n]));
+
+  it('only one pair of 25s: 140 kg is still exact, as 25 + 20 + 15 per Side', () => {
+    const { primary, over } = decode(140, 20, withLimits(ELEIKO_KG, { '25': 1 }));
+    expect(kgs(primary.side)).toEqual([25, 20, 15]);
+    expect(primary.total).toBe(140);
+    expect(over).toBeUndefined();
+  });
+
+  it('smallest Plate 2.5 kg: 142 kg falls back to 140, with 145 as the opt-in round-up (ADR-0003)', () => {
+    const inv = withLimits(ELEIKO_KG, { '2': 0, '1.5': 0, '1': 0, '0.5': 0 });
+    const { primary, over } = decode(142, 20, inv);
+    expect(kgs(primary.side)).toEqual([25, 25, 10]);
+    expect(primary.delta).toBe(-2);
+    expect(kgs(over!.side)).toEqual([25, 25, 10, 2.5]);
+    expect(over!.total).toBe(145);
+  });
+
+  it('past every pair on hand: the heaviest load the pairs make, and no round-up', () => {
+    const all = ELEIKO_KG.reduce((kg, p) => kg + p.kg, 0); // 82.5 kg per Side
+    const { primary, over } = decode(400, 20, withLimits(ELEIKO_KG, every(1)));
+    expect(primary.total).toBe(20 + 2 * all);
+    expect(over).toBeUndefined();
+  });
+
+  it('every size none: the bare Bar, with no round-up', () => {
+    const { primary, over } = decode(100, 20, withLimits(ELEIKO_KG, every(0)));
+    expect(primary).toEqual({ side: [], total: 20, delta: -80 });
+    expect(over).toBeUndefined();
   });
 });

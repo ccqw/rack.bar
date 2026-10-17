@@ -19,7 +19,7 @@
 // loading (RBAR-65 slice 4) will be a later pass that may swap a warm-up's Side for a
 // near one; rows carry the Side and Total separately from the nominal step so it can.
 import { SLEEVE_MM, barWithCollars, totalKg } from './plates.ts';
-import type { Plate } from './plates.ts';
+import type { InventoryEntry, Plate } from './plates.ts';
 import { decodeWithin } from './decode.ts';
 import type { Decoded } from './decode.ts';
 import { sideAtOrUnder, sideAbove } from './sideloads.ts';
@@ -52,7 +52,8 @@ export interface RampRig {
   readonly barKg: number;
   /** One Collar's weight, kg (0 = None). Folds into the baseline, ADR-0008. */
   readonly collarKg: number;
-  readonly inventory: readonly Plate[];
+  /** The Plates on hand; entries may carry Plate limits (ADR-0016, `withLimits`). */
+  readonly inventory: readonly InventoryEntry[];
   /** The Sleeve, mm (ADR-0012); defaults to SLEEVE_MM. */
   readonly sleeveMm?: number;
 }
@@ -175,7 +176,7 @@ function nearestSide(
   loKg: number,
   hiKg: number,
   baselineKg: number,
-  inventory: readonly Plate[],
+  inventory: readonly InventoryEntry[],
   sleeveMm: number,
 ): readonly Plate[] {
   const r = Math.min(Math.max(rawKg, loKg), hiKg);

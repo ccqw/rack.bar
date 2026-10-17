@@ -87,6 +87,64 @@ export const IRON_LB: readonly Plate[] = (
   widthMm,
 }));
 
+/**
+ * One size in an Inventory (ADR-0002 as amended by ADR-0016): a Plate, plus an
+ * optional Plate limit -- the most of it that can go on one Side, i.e. the PAIRS the
+ * lifter has (2 plates = 1 per Side; an odd plate is useless). Undefined or Infinity
+ * means unlimited (the v1 default), 0 means none. A bare Plate is an unlimited entry,
+ * so `readonly Plate[]` is still an Inventory. The solver (sideloads.ts) honours the
+ * cap; every stack it returns holds these same entry objects.
+ */
+export interface InventoryEntry extends Plate {
+  /** The most of this size on one Side: a whole count >= 0, or Infinity; absent = unlimited. */
+  readonly maxPerSide?: number;
+}
+
+/**
+ * A Plate's face stamp: its lb `label` when it has one (iron), else its kg. The one
+ * definition the card, the summary, the share link (ADR-0014) and the Plate limit key
+ * (ADR-0016, `withLimits`) all read -- a storage contract, so never redefine it.
+ */
+export function plateFace(p: Plate): string {
+  return p.label ?? String(p.kg);
+}
+
+/** A valid Plate limit: a whole count of pairs, 0 or more, or Infinity (unlimited). */
+export function isPlateLimit(n: number): boolean {
+  return n === Infinity || (Number.isInteger(n) && n >= 0);
+}
+
+/**
+ * Apply Plate limits to an Inventory (ADR-0016). `limits` maps a size's face -- its
+ * stamped `label`, else its kg as a string ("25", "0.5", "45") -- to the pairs on hand.
+ * A size with no entry keeps its current limit (and its very object); a limited size
+ * becomes a copy carrying the TIGHTER of its current cap and the new one, so a "today"
+ * limit applied over a "this gym" Inventory can only narrow it. A 0 entry stays in the
+ * list (the solver skips it), so the result is index-for-index the input.
+ *
+ * Throws a RangeError for a face no size in `inventory` has, or a limit that is not a
+ * whole count >= 0 (or Infinity): the shell validates what it reads from storage before
+ * calling (ADR-0007), so a bad key here is a bug, not data to drop silently.
+ */
+export function withLimits(
+  inventory: readonly InventoryEntry[],
+  limits: Readonly<Record<string, number>>,
+): InventoryEntry[] {
+  for (const [key, n] of Object.entries(limits)) {
+    if (!inventory.some((p) => plateFace(p) === key)) {
+      throw new RangeError(`withLimits: no ${key} Plate in this Inventory`);
+    }
+    if (!isPlateLimit(n)) {
+      throw new RangeError(`withLimits: ${n} is not a whole number of pairs (${key})`);
+    }
+  }
+  return inventory.map((p) => {
+    const key = plateFace(p);
+    if (!Object.hasOwn(limits, key)) return p;
+    return { ...p, maxPerSide: Math.min(p.maxPerSide ?? Infinity, limits[key]) };
+  });
+}
+
 /** Default Bar weight (men's, kg). Swappable later (ADR-0002, ROADMAP). */
 export const DEFAULT_BAR_KG = 20;
 

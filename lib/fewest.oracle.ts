@@ -16,7 +16,7 @@
 // denomination that still leaves a completable, fitting rest. The solver is a pruned
 // depth-first search; the two share nothing but the Plate data.
 import { SLEEVE_MM } from './plates.ts';
-import type { Plate } from './plates.ts';
+import type { InventoryEntry, Plate } from './plates.ts';
 import { lbToKg } from './units.ts';
 import type { PlateSetKey } from './platesets.ts';
 
@@ -149,4 +149,111 @@ export function greatestSumAtOrUnder(o: FewestOracle, budgetUnits: number): numb
 export function show(side: readonly Plate[] | null): string {
   if (side === null) return 'none';
   return side.length === 0 ? '(bare)' : side.map((p) => p.label ?? String(p.kg)).join('+');
+}
+
+const cappedCache = new WeakMap<readonly InventoryEntry[], Map<string, FewestOracle>>();
+
+/**
+ * The same oracle for a CAPPED Inventory (RBAR-72, ADR-0016): each entry's
+ * `maxPerSide` bounds how many of that size one Side may take (undefined = unlimited,
+ * 0 = none). A bounded-knapsack DP, independent of the solver and of `fewestOracle`'s
+ * one-at-a-time recurrence:
+ *
+ *   B[i][c][s] = min over k = 0..min(cap_i, c) of B[i+1][c-k][s-k*u_i] + k*w_i,
+ *
+ * the narrowest stack of exactly c Plates from sizes i..n-1 (heaviest first), at most
+ * cap_i of size i, summing to s grid units. The heaviest-first stack is read off size
+ * by size: of each size in turn take the MOST that still leaves a completable, fitting
+ * rest -- which is the lexicographically heaviest stack among the fewest (any stack
+ * with fewer of the heaviest size it could have taken diverges there with a lighter
+ * Plate). Cached like `fewestOracle`, per Inventory array.
+ */
+export function cappedFewestOracle(
+  inventory: readonly InventoryEntry[],
+  gridKg: number,
+  sleeveMm: number = SLEEVE_MM,
+): FewestOracle {
+  const byInventory = cappedCache.get(inventory) ?? new Map<string, FewestOracle>();
+  cappedCache.set(inventory, byInventory);
+  const key = `${gridKg}@${sleeveMm}`;
+  const hit = byInventory.get(key);
+  if (hit) return hit;
+
+  const plates = inventory
+    .filter((p) => p.maxPerSide !== 0)
+    .sort((a, b) => b.kg - a.kg || a.widthMm - b.widthMm);
+  const n = plates.length;
+  const units = plates.map((p) => {
+    const u = Math.round(p.kg / gridKg);
+    if (u < 1 || Math.abs(u * gridKg - p.kg) > 1e-9) {
+      throw new Error(`capped oracle: Plate ${p.kg} kg is off the ${gridKg} kg grid`);
+    }
+    return u;
+  });
+  const widths = plates.map((p) => p.widthMm);
+  const caps = plates.map((p) => p.maxPerSide ?? Infinity);
+  const byWidth = n === 0 ? 0 : Math.floor(sleeveMm / Math.min(...widths));
+  const maxCount = Math.min(byWidth, caps.reduce((a, b) => a + b, 0));
+  const maxUnits = n === 0 ? 0 : maxCount * Math.max(...units);
+  const size = (maxCount + 1) * (maxUnits + 1);
+  const at = (c: number, s: number) => c * (maxUnits + 1) + s;
+
+  const B: Float64Array[] = new Array(n + 1);
+  B[n] = new Float64Array(size).fill(Infinity);
+  B[n][at(0, 0)] = 0;
+  for (let i = n - 1; i >= 0; i--) {
+    const next = B[i + 1];
+    const row = new Float64Array(size).fill(Infinity);
+    for (let c = 0; c <= maxCount; c++) {
+      for (let s = 0; s <= maxUnits; s++) {
+        let best = Infinity;
+        for (let k = 0; k <= Math.min(caps[i], c) && k * units[i] <= s; k++) {
+          const w = next[at(c - k, s - k * units[i])] + k * widths[i];
+          if (w < best) best = w;
+        }
+        row[at(c, s)] = best;
+      }
+    }
+    B[i] = row;
+  }
+
+  const fewestIn = (s: number, limitMm: number): number | null => {
+    if (s < 0 || s > maxUnits) return null;
+    for (let c = 0; c <= maxCount; c++) if (B[0][at(c, s)] <= limitMm + 1e-9) return c;
+    return null;
+  };
+  const sums: number[] = [];
+  for (let s = 0; s <= maxUnits; s++) if (fewestIn(s, sleeveMm) !== null) sums.push(s);
+
+  const oracle: FewestOracle = {
+    plates,
+    gridKg,
+    sums,
+    fewest: (s) => fewestIn(s, sleeveMm),
+    fewestUncapped: (s) => fewestIn(s, Infinity),
+    pick(target) {
+      const count = fewestIn(target, sleeveMm);
+      if (count === null) return null;
+      const out: InventoryEntry[] = [];
+      let c = count;
+      let left = target;
+      let usedMm = 0;
+      for (let i = 0; i < n; i++) {
+        for (let k = Math.min(caps[i], c, Math.floor(left / units[i])); k >= 0; k--) {
+          const rest = B[i + 1][at(c - k, left - k * units[i])];
+          if (usedMm + k * widths[i] + rest <= sleeveMm + 1e-9) {
+            for (let m = 0; m < k; m++) out.push(plates[i]);
+            c -= k;
+            left -= k * units[i];
+            usedMm += k * widths[i];
+            break;
+          }
+        }
+      }
+      if (c !== 0 || left !== 0) throw new Error('capped oracle: table and read-off disagree');
+      return out;
+    },
+  };
+  byInventory.set(key, oracle);
+  return oracle;
 }

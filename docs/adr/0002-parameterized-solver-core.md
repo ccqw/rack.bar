@@ -28,3 +28,12 @@ only the name `solve` is superseded by `decode` for the Decode direction.
 The unlimited Inventory contract narrowed: pair COUNTS stay unlimited, but the
 solver now stops at the Bar's loadable sleeve length (`decode`/`addPlate` gained an
 optional trailing `sleeveMm` parameter, default `SLEEVE_MM`). See ADR-0012.
+
+## 2026-10-17 -- Inventory entries carry a Plate limit (RBAR-72, ADR-0016)
+
+The finite Inventory this ADR anticipated has landed in the core. An Inventory entry is
+a Plate plus an optional `maxPerSide` (pairs on hand: undefined = unlimited, 0 = none),
+applied with `withLimits`. The exact search honours it. A bare Plate is still an
+unlimited entry, so the v1 default and every existing caller are unchanged. The limits
+UI, its scopes and persistence remain deferred, as this ADR's principle intends. See
+ADR-0016.
