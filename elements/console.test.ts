@@ -129,10 +129,10 @@ function tapDisc(el: HTMLElement, index: number): void {
 }
 
 // Identify a .stack child block by a short token, so the console's vertical order can be
-// asserted as a list. modes/viz/readout/over/share carry a class; the editor blocks are
+// asserted as a list. modes/viz/readout/over carry a class; the editor blocks are
 // custom elements named by tag (rack-entry / rack-recents / rack-palette).
 function blockToken(child: Element): string {
-  for (const cls of ['modes', 'viz', 'readout', 'over', 'share']) {
+  for (const cls of ['modes', 'viz', 'readout', 'over']) {
     if (child.classList.contains(cls)) return cls;
   }
   return child.tagName.toLowerCase();
@@ -155,7 +155,7 @@ function visibleBlockOrder(el: HTMLElement): string[] {
 }
 
 describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
-  it('orders the column bar -> Total -> round-up -> Target -> Recent -> palette -> Share', () => {
+  it('orders the column bar -> Total -> round-up -> Target -> Recent -> palette', () => {
     // The static block order (handoff "Screens / views": bar always directly under the
     // mode toggle, then the Total region, then the editors). One DOM order serves both
     // modes -- the palette sits where the Target/Recent editors do, all toggled by hidden.
@@ -169,11 +169,10 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
       'rack-recents',
       'rack-loaded',
       'rack-palette',
-      'share',
     ]);
   });
 
-  it('By Weight reads mode -> bar -> Total -> round-up -> Target -> Recent -> Share (4a)', () => {
+  it('By Weight reads mode -> bar -> Total -> round-up -> Target -> Recent (4a)', () => {
     const el = mountConsole();
     commit(el, '100.5'); // off-grid: a Recent chip exists and the round-up is offered
     expect(visibleBlockOrder(el)).toEqual([
@@ -183,11 +182,10 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
       'over',
       'rack-entry',
       'rack-recents',
-      'share',
     ]);
   });
 
-  it('By Plates reads mode -> bar -> Total -> On the bar -> Add palette -> Share (4b)', () => {
+  it('By Plates reads mode -> bar -> Total -> On the bar -> Add palette (4b)', () => {
     const el = mountConsole();
     modeBtn(el, 'encode').click();
     expect(visibleBlockOrder(el)).toEqual([
@@ -196,7 +194,6 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
       'readout',
       'rack-loaded',
       'rack-palette',
-      'share',
     ]);
   });
 
@@ -250,20 +247,68 @@ describe('<rack-console> (bar visualizer contextual label, RBAR-35)', () => {
     expect(vizLabel(el).textContent).toBe('Tap a plate to load');
   });
 
-  it('shares one head row with the fullscreen control, label first, above the sleeve', () => {
+  it('shares one head row with Share and fullscreen, label first, above the sleeve', () => {
     const el = mountConsole();
     const viz = el.shadowRoot!.querySelector('.viz')!;
     const head = viz.querySelector('.vizhead')!;
-    // The row holds exactly the label then the fullscreen button (right-aligned by
-    // the row's space-between), and sits before the sleeve in the viz block.
-    expect([...head.children]).toEqual([
-      vizLabel(el),
+    // The row holds the label, then the icon buttons (right-aligned by the row's
+    // space-between): Share immediately LEFT of fullscreen (RBAR-61). The row sits
+    // before the sleeve in the viz block.
+    const icons = head.querySelector('.icons')!;
+    expect([...head.children]).toEqual([vizLabel(el), icons]);
+    expect([...icons.children]).toEqual([
+      el.shadowRoot!.querySelector('[data-share]'),
       el.shadowRoot!.querySelector('[data-fullscreen]'),
     ]);
     const vizChildren = [...viz.children];
     expect(vizChildren.indexOf(head)).toBeLessThan(
       vizChildren.indexOf(viz.querySelector('rack-sleeve')!),
     );
+  });
+});
+
+// RBAR-61: Share moved from a full-width bottom bar to a glyph-only button in the viz
+// head, the same box as fullscreen (one shared .iconbtn rule), so the column is shorter
+// and the control sits by the Bar it shares. A deliberate divergence from the handoff's
+// bottom Share row (Caitlin, 2026-10-15).
+describe('<rack-console> (Share glyph beside fullscreen, RBAR-61)', () => {
+  const share = (el: HTMLElement) =>
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-share]')!;
+  const full = (el: HTMLElement) =>
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-fullscreen]')!;
+
+  it('is the only Share control, and it lives in the viz head', () => {
+    const el = mountConsole();
+    expect(el.shadowRoot!.querySelectorAll('[data-share]')).toHaveLength(1);
+    expect(share(el).closest('.vizhead')).not.toBeNull();
+  });
+
+  it('is glyph-only with an accessible name "Share"', () => {
+    const el = mountConsole();
+    expect(share(el).getAttribute('aria-label')).toBe('Share');
+    expect(share(el).type).toBe('button');
+    expect(share(el).textContent!.trim()).toBe('');
+    expect(share(el).querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('wears exactly the same box class as fullscreen (one shared rule)', () => {
+    const el = mountConsole();
+    expect(share(el).className).toBe('iconbtn');
+    expect(full(el).className).toBe('iconbtn');
+    const css = el.shadowRoot!.querySelector('style')!.textContent!;
+    expect(css).toMatch(/\.iconbtn\s*\{/);
+    // no leftover per-control box rules that could drift apart
+    expect(css).not.toMatch(/\.share\s*[{:]/);
+    expect(css).not.toMatch(/\.fullscreen\s*[{:]/);
+  });
+
+  it('shows in both modes', () => {
+    const el = mountConsole();
+    const visible = (b: HTMLElement) => !b.closest('[hidden]');
+    expect(visible(share(el))).toBe(true);
+    modeBtn(el, 'encode').click();
+    expect(visible(share(el))).toBe(true);
+    expect(visible(full(el))).toBe(true);
   });
 });
 

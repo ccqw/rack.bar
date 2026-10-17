@@ -247,8 +247,8 @@ class RackConsole extends HTMLElement {
         .modes button:focus-visible { outline: 2px solid var(--rack-accent); }
         rack-entry[hidden], rack-palette[hidden] { display: none; }
         /* The bar visualizer block (handoff section 3, prototype L98): a head row --
-           the contextual label top-left, the fullscreen control top-right (RBAR-18/35)
-           -- then the sleeve, 10px apart (the prototype column's gap). */
+           the contextual label top-left, the Share and fullscreen controls top-right
+           (RBAR-18/35/61) -- then the sleeve, 10px apart (the prototype column's gap). */
         .viz { display: flex; flex-direction: column; gap: 10px; }
         .vizhead {
           display: flex; align-items: center; justify-content: space-between;
@@ -258,14 +258,17 @@ class RackConsole extends HTMLElement {
            The shared section-label recipe; uppercase comes from it, so the copy stays
            plain-cased in the DOM exactly like the prototype's vm. */
         .vizlabel { ${SECTION_LABEL} }
-        .fullscreen {
+        /* The head's icon buttons: Share then fullscreen (RBAR-61). One shared box rule
+           so the two can never drift apart -- a metric respec (RBAR-48) is one edit. */
+        .icons { display: flex; gap: 8px; flex: none; }
+        .iconbtn {
           width: 36px; height: 36px; display: flex; align-items: center;
           justify-content: center; padding: 0; flex: none;
           color: var(--rack-muted); background: transparent;
           border: 1px solid var(--rack-line); border-radius: 10px; cursor: pointer;
         }
-        .fullscreen:hover { color: var(--rack-fg); }
-        .fullscreen:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        .iconbtn:hover { color: var(--rack-fg); }
+        .iconbtn:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .readout { text-align: center; }
         /* The readout head (prototype L131): the Total section label at the left edge,
            the kg|lb unit toggle at the right -- space-between, not a centered cluster. */
@@ -437,17 +440,6 @@ class RackConsole extends HTMLElement {
           width: 5px; height: 5px; border-radius: 999px; flex: none;
           background: var(--rack-accent);
         }
-        /* The Share control: a quiet pill that opens the loading card (RBAR-19). Always
-           available -- the card reflects whatever is on the Bar, bare or loaded. */
-        .share {
-          align-self: center;
-          display: inline-flex; align-items: center; gap: 7px;
-          font: inherit; font-size: 14px; font-weight: 600; color: var(--rack-muted);
-          background: transparent; border: 1px solid var(--rack-line);
-          border-radius: 999px; padding: 8px 16px; min-height: 44px; cursor: pointer;
-        }
-        .share:hover { color: var(--rack-fg); }
-        .share:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
       </style>
       <div class="stack">
         <!-- The user-facing labels name the INPUT you work from ("By Weight" =
@@ -464,18 +456,30 @@ class RackConsole extends HTMLElement {
              the Add palette in By Plates). One DOM order serves both modes -- the editors
              toggle by the hidden attribute, so the visible column reads right either way. -->
         <div class="viz">
-          <!-- The head row (RBAR-35): the contextual label at the left edge, the
-               existing fullscreen control right-aligned on the same row (it used to
-               float alone). The label's text is state-driven (see render). -->
+          <!-- The head row (RBAR-35): the contextual label at the left edge, the icon
+               controls right-aligned on the same row. The label's text is state-driven
+               (see render). Share sits immediately left of fullscreen as a glyph-only
+               button (RBAR-61) -- a deliberate divergence from the handoff's full-width
+               bottom Share row, which cost a phone screen its vertical room. Always
+               available: the card reflects whatever is on the Bar, bare or loaded. -->
           <div class="vizhead">
             <span class="vizlabel" data-viz-label></span>
-            <button type="button" class="fullscreen" data-fullscreen aria-label="Full screen">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
-                      stroke="currentColor" stroke-width="1.6"
-                      stroke-linecap="round" stroke-linejoin="round"></path>
-              </svg>
-            </button>
+            <div class="icons">
+              <button type="button" class="iconbtn" data-share aria-label="Share">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 10V2M8 2L5 5M8 2l3 3M3 9v3a2 2 0 002 2h6a2 2 0 002-2V9"
+                        stroke="currentColor" stroke-width="1.6"
+                        stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </button>
+              <button type="button" class="iconbtn" data-fullscreen aria-label="Full screen">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
+                        stroke="currentColor" stroke-width="1.6"
+                        stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </button>
+            </div>
           </div>
           <rack-sleeve></rack-sleeve>
         </div>
@@ -522,14 +526,6 @@ class RackConsole extends HTMLElement {
              with the By-Weight Target/Recent blocks, toggled by hidden. -->
         <rack-loaded hidden></rack-loaded>
         <rack-palette hidden></rack-palette>
-        <button type="button" class="share" data-share>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 10V2M8 2L5 5M8 2l3 3M3 9v3a2 2 0 002 2h6a2 2 0 002-2V9"
-                  stroke="currentColor" stroke-width="1.6"
-                  stroke-linecap="round" stroke-linejoin="round"></path>
-          </svg>
-          Share
-        </button>
       </div>
       <rack-share></rack-share>
       <rack-fullscreen></rack-fullscreen>
