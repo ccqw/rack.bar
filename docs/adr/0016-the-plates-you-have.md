@@ -121,7 +121,10 @@ on the row when a set drifts from its percentage. The Working set stays exact or
    pairs on hand. The 2-per-size station cap and its raise for a heavy Working set both
    stay within the pairs on hand. There is no separate "limited" ranking. Taking a big
    Plate off stays a cost (2 per Plate), not a ban: Caitlin's own 100 kg load with no
-   more 10s is 15 / 15+10 / 15+20, which takes a 10 off. On her six Targets, "1 pair
+   more 10s is 15 / 15+10 / 15+20, which takes a 10 off. With one pair of 10s the
+   planner does NOT reproduce that load: it plans 15 / 25 / 25+10, which is one Plate
+   lighter on the Ramp under the station cost. This is a deliberate miss, like the two
+   in ADR-0015's table, and is pinned in `lib/moves.test.ts`. On her six Targets, "1 pair
    of 25s, no 2.5s" plans the same Ramps as the full set except where a 2.5 was: it
    becomes 2+1, 2+1.5 or 1.5+1.
 2. **The band widens only as far as the Plates force it.** Band excess still ranks
@@ -134,8 +137,19 @@ on the row when a set drifts from its percentage. The Working set stays exact or
    percentage reading more than 5 points off the step's. The bare-Bar and Working rows
    never drift. The threshold is RAMP_BAND alone, without the planner's one-grid-step
    floor, so a row that drifts because the plates on hand coarsen the grid (no change
-   Plates: 5 kg per Side) is still labelled. The bare-Bar floor can force a drift on a
-   full set too: a 30 kg Working set's 50% set is the 20 kg Bar. It is labelled as well.
+   Plates: 5 kg per Side) is still labelled.
+
+   **A Warm-up set on the bare rig never drifts** (review of PR #123). The Bar cannot be
+   lighter, so a tilde there tells the lifter nothing. Labelling the floor made stairs
+   with the same 20 kg read differently. On a full Comp set:
+   - 27 kg read "~74%" next to "70%";
+   - 22 kg read "~91%", "~91%", "90%";
+   - any Working set at or under the Bar read "~100%" three times.
+
+   Those stairs now keep their step names. They already show the floor through the Bar's
+   height and `sameAsPrevious`. This is the default until Caitlin answers whether a tilde
+   should ever show with no limits set. Removing the one bare-rig check in `drifted`
+   reverses it. On the full sets, no Working Total of 40 kg or more drifts, in kg or lb.
 4. **The label** is the stair's name. A drifted stair reads its real percentage with a
    tilde, "~83%", in place of "90%". The Next button names it the same way
    ("Next: ~83% - 50 kg"). The status pill already reads the real percentage ("83% of 60 kg").
@@ -144,14 +158,31 @@ on the row when a set drifts from its percentage. The Working set stays exact or
    pairs on hand cannot reach the Target it reads "N kg short", from slice 2's
    `sleeveBinds` rule ("Bar at capacity" only when the Sleeve is full).
 
-Tests: `lib/moves.test.ts` ("under Plate limits") and `lib/warmup.test.ts` ("a drifted
-row"). The "under Plate limits" properties in `lib/properties.test.ts` cover pairs on
-hand, the Working row as the capped Decode, `drift` exactly past the band, the station
-rule's stack and moves, and the band widening only when forced. They also check that the
-planner's cost equals `stationRampOracle`, which now honours `maxPerSide`, on small
-limited Inventories. `elements/onhand.properties.test.ts` drives Setup's tiles into Warm
-up and checks each stair's name and the short Working set. `scripts/fit-check.js` adds a
-drifted-stair state; it fits at all four viewports with no name clipped.
+Tests:
+- **Examples.** `lib/moves.test.ts` ("under Plate limits") and `lib/warmup.test.ts`
+  cover a drifted row, the bare rig (Comp 22 / 27 / 30 kg, Training 60 lb), and the
+  exact 5% edge. On the edge, Comp's 5 kg Bar at 8 kg puts its 70% set at 6 kg, which
+  only `drifted`'s float tolerance keeps undrifted.
+- **Properties.** The "under Plate limits" properties in `lib/properties.test.ts` run
+  over named limit shapes (all none, only big Plates limited, only change Plates
+  limited or none, one size none) plus a random mix. They check:
+  - every row is buildable from the pairs on hand;
+  - the Working row is the capped Decode;
+  - `drift` holds exactly when a row's load, rebuilt from its Side, sits past the band
+    off the bare rig;
+  - the station rule's stacks and moves hold;
+  - a row leaves the planner's band, and a drifted row leaves RAMP_BAND itself, only
+    when forced;
+  - the planner's cost equals `stationRampOracle`, which now honours `maxPerSide`, on
+    small limited Inventories.
+- **Not checked.** Limited full Comp sets take the pruned (beam) search. They get the
+  structural checks above but are not compared with the oracle, which is the same as
+  for unlimited full sets.
+- **Shell.** `elements/onhand.properties.test.ts` drives Setup's tiles into Warm up in
+  kg and lb. It checks each stair's name, its spoken label, the Next label, and that
+  the pill reads "short" exactly when the Working set is short.
+- **Phone fit.** `scripts/fit-check.js` adds a drifted-stair state. It fits at all four
+  viewports with no name clipped. This is a manual check, not CI.
 
 ## Pending Caitlin's decision (not in this slice)
 

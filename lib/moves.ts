@@ -658,7 +658,7 @@ export function planEasyRamp(
       }
       const realPct = row.kind === 'working' ? 100 : (total / workingTotal) * 100;
       const sameAsPrevious = Math.abs(total - prevTotal) <= EPS;
-      const drift = row.kind === 'warmup' && drifted(total, row.targetKg, workingTotal);
+      const drift = row.kind === 'warmup' && drifted(total, row.targetKg, workingTotal, baselineKg);
       prevSide = side;
       prevTotal = total;
       return { ...row, side, total, realPct, sameAsPrevious, drift, moves } as EasyRow;

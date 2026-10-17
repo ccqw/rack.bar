@@ -10,7 +10,8 @@ import { PLATE_SETS, PLATE_SET_KEYS } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { plateFace, withLimits } from '../lib/plates.ts';
 import { GRID_KG, cappedFewestOracle, greatestSumAtOrUnder } from '../lib/fewest.oracle.ts';
-import { displayCeilingKg, shownIn } from '../lib/units.ts';
+import { displayCeilingKg, draftToKg, format, shownIn } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import {
   SEED, EPS, type Console, resetPool, q, sr, entryRoot, unitBtn, type, modeBtn, sideOnScreen,
@@ -164,23 +165,35 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
     // properties' room so a loaded CI runner cannot time it out.
   }, 30_000);
 
-  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" exactly when it drifts past the band, and a Working set out of reach reads short (ADR-0016 as amended, ADR-0015, ADR-0003)', () => {
+  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" (name, Next and spoken label) exactly when it drifts past the band off the bare Bar, and the Working set reads short exactly when it is (ADR-0016 as amended, ADR-0015, ADR-0003)', () => {
     // The band as ADR-0015 states it: a Warm-up set further than 5% of the Working Total
-    // from its percentage has drifted (RBAR-72 slice 3).
+    // from its percentage has drifted (RBAR-72 slice 3) -- unless it is the bare Bar,
+    // which cannot be lighter. In kg or lb: the working weight is typed in the display
+    // unit, and the loads are read off the sleeve in kg.
     const BAND = 0.05;
+    // Half the runs take every change Plate (under 3 kg) to none at a light working
+    // weight, where the coarse grid makes drifted rows common.
+    const noChangeArb = fc
+      .record({ set: fc.constantFrom(...PLATE_SET_KEYS), t: fc.integer({ min: 30, max: 140 }) })
+      .map(({ set, t }) => ({
+        set,
+        t,
+        ops: PLATE_SETS[set].inventory.flatMap((p, i): Op[] => (p.kg < 3 ? [{ op: 'set', i, pairs: 0 }] : [])),
+      }));
     fc.assert(
-      fc.property(caseArb, ({ set, ops, t }) => {
+      fc.property(fc.oneof(caseArb, noChangeArb), fc.constantFrom<Unit>('kg', 'lb'), ({ set, ops, t }, u) => {
         localStorage.clear();
         const app = mountApp();
         openSetup(app);
         chooseSet(app, set);
         const c = appConsole(app);
-        unitBtn(c, 'kg').click();
+        unitBtn(c, u).click();
         tapScript(app, set, ops);
         const caps = model(set, ops);
         const inv = PLATE_SETS[set].inventory;
         modeBtn(c, 'warmup').click();
         commitWorking(c, String(t));
+        const tKg = draftToKg(String(t), u)!;
 
         // Each stair's load, read off the sleeve after a tap (no Collars by default).
         const bar = PLATE_SETS[set].defaultBarKg;
@@ -194,21 +207,29 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
         const names = stairs(c).map((b) => q(b, '[data-name]').textContent ?? '');
         DEFAULT_RAMP.forEach((step, i) => {
           if (step.kind !== 'pct') return;
-          const drifted = Math.abs(loads[i] - (step.pct / 100) * work) > BAND * work + 1e-9;
-          const want = drifted ? `~${Math.round((loads[i] / work) * 100)}%` : `${step.pct}%`;
+          const real = Math.round((loads[i] / work) * 100);
+          const drifted = Math.abs(loads[i] - bar) > 1e-9 &&
+            Math.abs(loads[i] - (step.pct / 100) * work) > BAND * work + 1e-9;
+          const want = drifted ? `~${real}%` : `${step.pct}%`;
           expect(names[i]).toBe(want);
-          // Next from the row before names the same step.
+          // The spoken label says both percentages exactly when the row drifted.
+          const aria = stairs(c)[i].getAttribute('aria-label') ?? '';
+          if (drifted) expect(aria).toContain(`${step.pct} percent planned, about ${real} percent loaded`);
+          else expect(aria).not.toContain('planned');
+          // Next from the row before names the same step and its Total in the unit.
           stairs(c)[i - 1].click();
-          expect(q(nextBtn(c), '[data-next-label]').textContent).toMatch(new RegExp(`^Next: ${want.replace('~', '\\~')} - `));
+          expect(q(nextBtn(c), '[data-next-label]').textContent).toBe(`Next: ${want} - ${format(loads[i], u)}`);
         });
         expect(names[n - 1]).toBe('Work');
 
-        // The Working set is at or under the Target (ADR-0003); short reads "N kg short".
+        // The Working set is at or under the Target (ADR-0003; floored at the bare Bar
+        // for a Target under it); it reads "N short" exactly when the reading is short.
         stairs(c)[n - 1].click();
-        expect(work).toBeLessThanOrEqual(t + EPS);
-        if (shownIn(work, 'kg') < shownIn(t, 'kg')) expect(statusLabel(c)).toMatch(/ kg short$/);
+        expect(work).toBeLessThanOrEqual(Math.max(displayCeilingKg(tKg, u), bar) + EPS);
+        if (shownIn(work, u) < shownIn(tKg, u)) expect(statusLabel(c)).toMatch(new RegExp(` ${u} short$`));
+        else expect(statusLabel(c)).not.toMatch(/short$/);
       }),
-      APP_RUNS(12),
+      APP_RUNS(20),
     );
   }, 30_000);
 

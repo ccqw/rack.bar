@@ -327,8 +327,8 @@ describe('planEasyRamp under Plate limits (RBAR-72 slice 3, ADR-0016 as amended)
     expect(show(rig, 100)).toEqual(['', '15', '25', '25+10', '25+10+5']);
   });
 
-  it('a row flags drift only past the band, on a full set too (the bare-Bar floor at 30 kg)', () => {
-    expect(drifts(COMP, 30)).toEqual([false, true, false, false, false]);
+  it('a row on the bare rig never flags drift: the 30 kg 50% set is the 20 kg Bar', () => {
+    expect(drifts(COMP, 30)).toEqual([false, false, false, false, false]);
     for (const w of [60, 75, 80, 100, 120, 140]) expect(drifts(COMP, w)).not.toContain(true);
   });
 });

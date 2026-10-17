@@ -1042,10 +1042,28 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
       const inventory = withLimits(rig.inventory, Object.fromEntries(rig.inventory.map((p, i) => [plateFace(p), pairs[i]])));
       return { ...rig, inventory, name: `${rig.name} pairs ${pairs.join('/')}` };
     };
+    // The limit shapes a lifter really sets, each named, plus a random mix: every size
+    // none (the bare-rig early return); only the big Plates limited; only the change
+    // Plates limited or none; one size none and the rest all.
+    const n = (rig: Rig) => rig.inventory.length;
+    const big = (p: Plate) => p.diameterMm >= RULE.bigDiameterMm;
+    const shapeArb = (rig: Rig): fc.Arbitrary<number[]> =>
+      fc.oneof(
+        fc.constant(rig.inventory.map(() => 0)),
+        fc.array(fc.integer({ min: 0, max: 4 }), { minLength: n(rig), maxLength: n(rig) })
+          .map((c) => rig.inventory.map((p, i) => (big(p) ? c[i] : Infinity))),
+        fc.array(fc.integer({ min: 0, max: 4 }), { minLength: n(rig), maxLength: n(rig) })
+          .map((c) => rig.inventory.map((p, i) => (big(p) ? Infinity : c[i]))),
+        fc.constant(rig.inventory.map((p) => (big(p) ? Infinity : 0))),
+        fc.nat({ max: n(rig) - 1 }).map((k) => rig.inventory.map((_, i) => (i === k ? 0 : Infinity))),
+        fc.array(pairsArb, { minLength: n(rig), maxLength: n(rig) }),
+      );
     const limitedFullArb = rigArb.chain((rig) =>
       fc.record({
-        rig: fc.array(pairsArb, { minLength: rig.inventory.length, maxLength: rig.inventory.length }).map((pairs) => limitRig(rig, pairs)),
-        t: targetArb(rig),
+        rig: shapeArb(rig).map((pairs) => limitRig(rig, pairs)),
+        // Plus the Working weights whose 70% set sits exactly on the band's edge (8 kg on
+        // the 5 kg Bar, 60 lb on the 45 lb Bar), where float noise decides.
+        t: fc.oneof({ weight: 9, arbitrary: targetArb(rig) }, { weight: 1, arbitrary: fc.constantFrom(8, lbToKg(60)) }),
         u: unitArb,
         steps: fc.oneof(pctStepsArb, fc.constant([...DEFAULT_RAMP])),
       }),
@@ -1064,13 +1082,16 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
       );
     });
 
+    const knapsack = new Map<string, ReturnType<typeof cappedFewestOracle>>();
     it('the Working row is the capped Decode as read: exact or under, never over (ADR-0016, ADR-0003)', () => {
       fc.assert(
         fc.property(limitedFullArb, ({ rig, t, u, steps }) => {
           const got = easy(rig, t, u, steps);
           const ceiling = displayCeilingKg(t, u);
-          // The bounded-knapsack oracle's greatest Side sum at or under the reading.
-          const o = cappedFewestOracle(rig.inventory, GRID_KG[rig.set]);
+          // The bounded-knapsack oracle's greatest Side sum at or under the reading
+          // (cached per limited rig: building it is the slow part).
+          const o = knapsack.get(rig.name) ?? cappedFewestOracle(rig.inventory, GRID_KG[rig.set]);
+          knapsack.set(rig.name, o);
           const budget = (Math.max(ceiling, t) - rig.baselineKg) / 2;
           const best = greatestSumAtOrUnder(o, Math.floor((budget + EPS) / o.gridKg));
           const last = got.rows[got.rows.length - 1];
@@ -1082,20 +1103,26 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
       );
     });
 
-    it('a row says it drifted exactly when its Total sits more than the band from its percentage (ADR-0016 as amended, ADR-0015)', () => {
-      const check = (rows: readonly { kind: string; pct: number | null; total: number; drift: boolean }[]) => {
-        const work = rows[rows.length - 1].total;
+    it('a row says it drifted exactly when its load sits more than the band from its percentage, off the bare rig (ADR-0016 as amended, ADR-0015)', () => {
+      // Judged from the loads alone: each row's Total is rebuilt from its Side on the
+      // rig's baseline, the Working Total from the Working Side, and the percentage from
+      // the step -- never from the row's own total, targetKg or realPct. A Warm-up set
+      // with no Plates is the bare rig, which never drifts.
+      type R = { kind: string; pct: number | null; side: readonly Plate[]; drift: boolean };
+      const check = (rig: Rig, rows: readonly R[]) => {
+        const load = (side: readonly Plate[]) => rig.baselineKg + 2 * sumKg(side);
+        const work = load(rows[rows.length - 1].side);
         for (const row of rows) {
-          const want = row.kind === 'warmup' &&
-            Math.abs(row.total - (row.pct! / 100) * work) > RULE.band * work + 1e-9;
+          const want = row.kind === 'warmup' && row.side.length > 0 &&
+            Math.abs(load(row.side) - (row.pct! / 100) * work) > RULE.band * work + 1e-9;
           expect(row.drift).toBe(want);
         }
       };
-      fc.assert(fc.property(limitedFullArb, ({ rig, t, u, steps }) => check(easy(rig, t, u, steps).rows)), rampOpts);
+      fc.assert(fc.property(limitedFullArb, ({ rig, t, u, steps }) => check(rig, easy(rig, t, u, steps).rows)), rampOpts);
       // planRamp's nearest Ramp flags the same way (the floor can force a drift too).
       fc.assert(
         fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) =>
-          check(planRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
+          check(rig, planRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
             ceilingKg: displayCeilingKg(t, u),
           }).rows)),
         opts,
@@ -1140,13 +1167,21 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
             ? flat
             : (p: Plate) => Math.min(onHand(p), Math.max(RULE.cap, count(own, p)));
           const loadable = [...cappedTotals(rig, caps).values()];
-          got.rows.forEach((row, i) => {
-            if (row.kind !== 'warmup' || Math.abs(row.total - row.targetKg) <= tol + 1e-9) return;
+          // Whether no Total the row could climb to sits within `band` of its percentage.
+          const forcedAt = (i: number, band: number) => {
+            const row = got.rows[i];
             const floor = Math.max(rig.baselineKg, i > 0 ? got.rows[i - 1].total : -Infinity);
-            const forced = !loadable.some(
-              (x) => x >= floor - 1e-9 && x <= work + 1e-9 && Math.abs(x - row.targetKg) <= tol + 1e-9,
+            return !loadable.some(
+              (x) => x >= floor - 1e-9 && x <= work + 1e-9 && Math.abs(x - row.targetKg) <= band + 1e-9,
             );
-            expect(forced).toBe(true);
+          };
+          got.rows.forEach((row, i) => {
+            if (row.kind !== 'warmup') return;
+            // Outside the planner's band (floored at one grid step) only when forced...
+            if (Math.abs(row.total - row.targetKg) > tol + 1e-9) expect(forcedAt(i, tol)).toBe(true);
+            // ...and a labelled drift leaves RAMP_BAND itself only when forced (the
+            // ADR-0016 amendment's claim, without the grid floor).
+            if (row.drift) expect(forcedAt(i, RULE.band * work)).toBe(true);
           });
         }),
         rampOpts,
