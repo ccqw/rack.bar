@@ -786,7 +786,7 @@ class RackConsole extends HTMLElement {
       collarKg: this._collarKg,
       unit: this.activeUnit(),
     };
-    // The set names the caption + copied text (RBAR-44); the load snapshot stays
+    // The set names the card caption (RBAR-44); the load snapshot stays
     // set-agnostic, the same split the fullscreen card uses.
     this.share.plateSet = this._plateSetKey;
     this.share.open();

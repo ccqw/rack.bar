@@ -2,13 +2,14 @@
 // RBAR-44). A centered modal that shows the current load as a clean summary -- a
 // header row (wordmark left, 'Loading card' label right), big Total, secondary unit,
 // the per-Side Plates as wrapped colour chips (or a bare-bar state), and a config
-// caption -- then one action row: Copy summary (accent, grows; writes the plain-text
-// version to the clipboard) beside Close (quiet outline).
+// caption -- then one action row: the primary button (accent, grows; sends the emoji
+// Plate list -- "Share" opens the native share sheet where the browser has one, else
+// "Copy summary" writes the clipboard, RBAR-64) beside Close (quiet outline).
 //
 // A controlled, stateless shell (ADR-0001), the same shape as <rack-setup> / <rack-recents>:
 // one property down (`load`, a snapshot of the current load), one event up (`close`). It
 // owns no calculator state; the console snapshots its load and feeds it (ADR-0011). The
-// visible chips and the copied text both derive from lib/summary, so they cannot drift.
+// visible chips and the shared text both derive from lib/summary, so they cannot drift.
 import {
   BARE_BAR,
   configText,
@@ -37,9 +38,11 @@ class RackShare extends HTMLElement {
   private chipsEl!: HTMLElement;
   private captionEl!: HTMLElement;
   private copyBtn!: HTMLButtonElement;
-  // The pending "Copied" -> "Copy summary" revert, so a rapid re-tap or a close can
+  // The pending "Copied" -> resting-label revert, so a rapid re-tap or a close can
   // cancel it rather than letting a stale timer overwrite a fresh label.
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
+  // True while a native share sheet is open (RBAR-64), so a re-tap is ignored.
+  private sharing = false;
 
   // The load to summarise. The console sets this before open(); a bare default keeps a
   // pre-seed render harmless. Assigning re-renders while open so a live change shows.
@@ -50,13 +53,13 @@ class RackShare extends HTMLElement {
     unit: 'kg',
   };
 
-  // The active plate set KEY -- names the set on the caption + copied text (RBAR-44).
+  // The active plate set KEY -- names the set on the caption (RBAR-44).
   // Kept beside the load, not in it: the LoadSummary snapshot deliberately stays
   // set-agnostic (the same split <rack-fullscreen> uses). An unknown key falls back
   // to Competition (plateSetFor), so a pre-seed render is harmless.
   private _plateSet = 'comp';
 
-  /** The active plate set key; the caption and copied text carry its name (RBAR-44). */
+  /** The active plate set key; the caption carries its name (RBAR-44). */
   set plateSet(key: string) {
     this._plateSet = key;
     if (this.totalEl) this.render();
@@ -77,6 +80,7 @@ class RackShare extends HTMLElement {
   /** Show the card. The console snapshots the load and sets `load` first. */
   open(): void {
     this.render();
+    this.resetCopy();
     this.hidden = false;
   }
 
@@ -231,9 +235,9 @@ class RackShare extends HTMLElement {
     this.render();
   }
 
-  // Render every surface from the current load. The Total and config read in the load's
-  // Unit; the secondary reads the other. The Side Load folds into colour chips (or a
-  // bare-bar line) via the same lib/summary the copied text uses (ADR-0011).
+  // Render every surface from the current load. The Total reads in the load's Unit;
+  // the secondary reads the other, and the config caption is dual-unit. The Side Load folds into colour chips (or a
+  // bare-bar line) via the same lib/summary fold the shared text uses (ADR-0011).
   private render(): void {
     const { side, barKg, collarKg, unit } = this._load;
     const other: Unit = unit === 'kg' ? 'lb' : 'kg';
@@ -244,8 +248,8 @@ class RackShare extends HTMLElement {
     this.secondaryEl.textContent = format(total, other);
 
     // Chips (loaded) or the bare-bar line (empty) -- one assignment, no dead markup.
-    // The chip label comes from the shared `groupText`, so it can't drift from the
-    // copied text (ADR-0011); `data-chip`/`data-bare` are the test hooks.
+    // The chips fold via `groupSide`, the same fold as the shared text, so they can't
+    // drift (ADR-0011); `data-chip`/`data-bare` are the test hooks.
     const groups = groupSide(side);
     this.chipsEl.innerHTML =
       groups.length === 0
@@ -264,11 +268,43 @@ class RackShare extends HTMLElement {
     this.captionEl.textContent = `${configText(barKg, collarKg, setLabel)} - per side`;
   }
 
-  // Write the plain-text summary to the clipboard and confirm with a transient "Copied"
-  // (ADR-0011). The confirmation flips ONLY on a successful write -- a missing or denied
-  // clipboard leaves the label unchanged rather than claiming a copy that did not happen.
+  // Send the loading summary (RBAR-64). Where the Web Share API exists the button reads
+  // "Share" and opens the native share sheet (which has its own Copy action); a
+  // cancelled sheet (AbortError) is silent, and any other share failure falls back to
+  // the clipboard. Without Web Share the button reads "Copy summary" and writes the
+  // clipboard directly. Both APIs need a secure context. A tap while a sheet is still
+  // open is ignored (a second share() would reject and wrongly fall back), and a
+  // failure that lands after the card closed writes nothing.
   private copy(): void {
-    const text = loadingSummary(this._load, plateSetFor(this._plateSet).label);
+    const text = loadingSummary(this._load);
+    if (!canShare()) {
+      this.writeClipboard(text);
+      return;
+    }
+    if (this.sharing) return;
+    this.sharing = true;
+    navigator
+      .share({ text })
+      .then(
+        () => {
+          /* the sheet is its own feedback; never claim a copy */
+        },
+        (err: unknown) => {
+          // Match by name: a DOMException need not be an Error subclass everywhere.
+          if ((err as { name?: unknown } | null)?.name === 'AbortError') return; // cancelled
+          if (this.hidden) return; // the card closed meanwhile: leave the clipboard alone
+          this.writeClipboard(text);
+        },
+      )
+      .finally(() => {
+        this.sharing = false;
+      });
+  }
+
+  // Write `text` to the clipboard and confirm with a transient "Copied" (ADR-0011). The
+  // confirmation flips ONLY on a successful write -- a missing or denied clipboard
+  // leaves the label unchanged rather than claiming a copy that did not happen.
+  private writeClipboard(text: string): void {
     const clip = navigator.clipboard;
     if (!clip || typeof clip.writeText !== 'function') return; // no clipboard: say nothing
     clip.writeText(text).then(
@@ -289,20 +325,32 @@ class RackShare extends HTMLElement {
     if (this.copiedTimer !== null) clearTimeout(this.copiedTimer);
     this.copyBtn.textContent = 'Copied';
     this.copiedTimer = setTimeout(() => {
-      this.copyBtn.textContent = 'Copy summary';
+      this.copyBtn.textContent = restingLabel();
       this.copiedTimer = null;
     }, COPIED_MS);
   }
 
-  // Cancel a pending "Copied" revert and restore the resting label -- run on close so the
-  // card never reopens mid-confirmation.
+  // Cancel a pending "Copied" revert and restore the resting label -- run on open (so
+  // the label matches what this browser can do) and on close (so the card never reopens
+  // mid-confirmation).
   private resetCopy(): void {
     if (this.copiedTimer !== null) {
       clearTimeout(this.copiedTimer);
       this.copiedTimer = null;
     }
-    if (this.copyBtn) this.copyBtn.textContent = 'Copy summary';
+    if (this.copyBtn) this.copyBtn.textContent = restingLabel();
   }
+}
+
+// Whether this browser offers the native share sheet (Web Share API, RBAR-64).
+function canShare(): boolean {
+  return typeof navigator.share === 'function';
+}
+
+// The primary button's resting label: "Share" when the native sheet is available
+// (its own Copy action covers copying), else "Copy summary" (RBAR-64).
+function restingLabel(): string {
+  return canShare() ? 'Share' : 'Copy summary';
 }
 
 customElements.define('rack-share', RackShare);

@@ -64,3 +64,46 @@ write -- a failed or unavailable clipboard leaves the label unchanged rather tha
 claiming a copy that did not happen. The entrance animation (the `rack-card` and
 `rack-fade` keyframes, the handoff's `cardIn`) and the final colour/spacing
 treatment fold from the RBAR-10 handoff; the structure ships thin here.
+
+## Amended 2026-10-16 (RBAR-64): the shared text is an emoji Plate list, sent by Web Share
+
+The summary text (still one pure function, `loadingSummary` in `lib/summary.ts`)
+becomes the "D. Plate list" format Caitlin picked. Below, `.` stands for the middle
+dot, `x` for the multiplication sign, and `[...]` for an emoji:
+
+    rack.bar . 142 kg . per side
+    [red square] 25 x 2
+    [green square] 10 x 1
+    [green circle] 1 x 1
+    [lock] collars 2.5 kg        <- only when Collars are fitted
+    https://rack.bar
+
+- **One line per Plate group**, heaviest first, built from `groupSide` (whose groups
+  now carry their `emoji`), so the text and the card chips cannot drift. Faces are
+  the Plate's stamp: kg on Eleiko even under an lb Total, lb on iron.
+- **One map.** `plateEmoji` reads a single `PLATE_EMOJI` table keyed by Plate colour:
+  a coloured square for a bumper, the same colour as a circle for a change Plate
+  (under 5 kg; the 5 kg white stays a square). Iron has no colour, so it is a black
+  large square (45 / 35 / 25 lb) or a black medium-small square (10 / 5 / 2.5 lb).
+  The source stays ASCII: every glyph, the middot and the multiplication sign are
+  `\u{...}` escapes named in a comment.
+- **Bare Bar:** a single `Bare bar` line in place of the Plate lines.
+- **Collars** get their own lock line after the Plates (collar mass in kg, as the
+  config caption writes it).
+- **The Bar and plate set are no longer named** in the shared text (the old config
+  line is gone): the Total includes the Bar, and the lines say what to load. The
+  card caption still names both.
+- **Closing link** `https://rack.bar`, so a paste advertises the app and links in
+  every chat app (a bare `rack.bar` may not autolink on a newer TLD).
+- The card's visible chips are unchanged.
+
+**Sending it.** Where the Web Share API exists (`navigator.share`), the card's
+primary button reads **Share** and opens the native share sheet with the text (the
+sheet has its own Copy action, so there is no second button). A cancelled sheet
+(`AbortError`) does nothing; any other share failure falls back to the clipboard.
+Without Web Share the button reads **Copy summary** and writes the clipboard. The
+"Copied" confirmation still flips only on a successful clipboard write; a completed
+share shows no confirmation (the sheet is its own feedback). Both APIs need a secure
+context (https or localhost).
+A tap while a sheet is still open is ignored, and a share failure that lands after
+the card closed writes nothing to the clipboard.

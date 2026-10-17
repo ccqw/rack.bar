@@ -37,8 +37,8 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 - One-sleeve side-view bar graphic, plates sized by real diameter.
 - **Fullscreen rack card** -- an immersive landscape blow-up of the loaded bar,
   glanceable from across the rack (RBAR-18).
-- **Share / copy summary** -- a loading card with a plain-text summary copied to the
-  clipboard (RBAR-19).
+- **Share / copy summary** -- a loading card whose summary (an emoji Plate list since
+  RBAR-64) goes to the native share sheet, or the clipboard where there is none (RBAR-19).
 - **Recent targets** -- recent Targets persisted (deduped, most-recent-first, max 6)
   and re-applied from chips (RBAR-20).
 - **Help** -- a how-it-works popover explaining the two modes (RBAR-21).

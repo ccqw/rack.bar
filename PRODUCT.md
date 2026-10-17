@@ -47,7 +47,7 @@ assumes a sea of competitors.
 - Lifters name Plates by color ("throw a red on") -- color is domain
   vocabulary, not decoration.
 - Loading is always symmetric pairs; the lifter reasons about one Side only.
-- Sharing a loading with a training partner via copied plain-text summary.
+- Sharing a loading with a training partner via a short emoji Plate list (share sheet or clipboard).
 
 ## Capabilities and Constraints
 
