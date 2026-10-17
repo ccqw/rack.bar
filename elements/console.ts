@@ -92,11 +92,14 @@ const SECONDARY_KEY = 'rackbar.secondary';
 // from the By Weight Target on first open); '' = the lifter cleared it.
 const WORKING_KEY = 'rackbar.working';
 
-// The bar block's fixed parts (RBAR-67): the head row is one icon button tall (the
-// handoff's 30px box), and the sleeve sits VIZ_GAP_PX under it. The flex range of the
-// block is these plus the sleeve's own range (SLEEVE_MIN_PX..SLEEVE_BLOCK_PX).
+// The bar block's fixed parts (RBAR-67, re-cut by RBAR-75): the label row sits in flow
+// INSIDE the handoff's 204px block (prototype L97) -- VIZ_PAD_PX down, LABEL_PX tall --
+// and the sleeve VIZ_GAP_PX under it (its own 4px pad makes the prototype's 10px to the
+// discs). The 30px icon buttons overlap the sleeve's top-right, out of flow.
 const ICON_PX = 30;
-const VIZ_GAP_PX = 10;
+const VIZ_PAD_PX = 5;
+const LABEL_PX = 15;
+const VIZ_GAP_PX = 6;
 
 class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -307,22 +310,27 @@ class RackConsole extends HTMLElement {
         rack-entry[hidden], rack-palette[hidden], rack-warmup[hidden] { display: none; }
         /* The bar visualizer block (handoff section 3, prototype L98): a head row --
            the contextual label top-left, the Share and fullscreen controls top-right
-           (RBAR-18/35/61) -- then the sleeve, 10px apart (the prototype column's gap). */
+           (RBAR-18/35/61) -- then the sleeve (RBAR-75: the controls overlap it). */
         /* RBAR-67: the bar block is the column's one flexible piece. It takes the
-           leftover height between a floor (head row + gap + SLEEVE_MIN_PX, so the Plates
-           stay readable) and a cap (head row + gap + the handoff's SLEEVE_BLOCK_PX), and
-           the sleeve fills it under the head row; the sleeve fits its discs to that
+           leftover height between a floor (label row + gap + SLEEVE_MIN_PX, so the Plates
+           stay readable) and a cap (the handoff's SLEEVE_BLOCK_PX, label row included), and
+           the sleeve fills it under the label row; the sleeve fits its discs to that
            height. A short phone gets a shorter Bar picture; a tall one gets the full
            handoff block, never more -- spare height falls below the column. */
+        /* RBAR-75 (ADR-0013 amended): the label row is in flow inside the 204px block
+           and the icons overlap the sleeve (.icons below), so the cap is the handoff's
+           block itself and the floor is the label row + gap + SLEEVE_MIN_PX. */
         .viz {
+          position: relative; padding-top: ${VIZ_PAD_PX}px;
           display: flex; flex-direction: column; gap: ${VIZ_GAP_PX}px;
           flex: 1 1 0;
-          min-height: ${ICON_PX + VIZ_GAP_PX + SLEEVE_MIN_PX}px;
-          max-height: ${ICON_PX + VIZ_GAP_PX + SLEEVE_BLOCK_PX}px;
+          min-height: ${VIZ_PAD_PX + LABEL_PX + VIZ_GAP_PX + SLEEVE_MIN_PX}px;
+          max-height: ${SLEEVE_BLOCK_PX}px;
         }
         .viz rack-sleeve { flex: 1 1 0; min-height: 0; }
         .vizhead {
           display: flex; align-items: center; justify-content: space-between;
+          height: ${LABEL_PX}px;
         }
         /* The contextual label (RBAR-35, prototype L101): what the bar block shows
            right now -- "per side" once loaded, else the mode's empty-state prompt.
@@ -339,9 +347,15 @@ class RackConsole extends HTMLElement {
         .vizadd[hidden] { display: none; }
         /* The head's icon buttons: Share then fullscreen (RBAR-61). One shared box rule
            so the two can never drift apart. 30px is the handoff's box (prototype L98;
-           RBAR-48's respec, landed here by RBAR-67 because the head row's height is part
-           of the bar block's flex budget). */
-        .icons { display: flex; gap: 8px; flex: none; }
+           RBAR-48's respec, landed here by RBAR-67; out of the flex budget since
+           RBAR-75 overlaps them on the sleeve). */
+        /* RBAR-75: out of flow at the block's top-right over the sleeve (prototype L98:
+           absolute, top 0, right 0, z-index 2), above any disc; the opaque raised fill
+           keeps the glyphs legible over a loadout. */
+        .icons {
+          display: flex; gap: 8px; flex: none;
+          position: absolute; top: 0; right: 0; z-index: 2;
+        }
         .iconbtn {
           position: relative;
           width: ${ICON_PX}px; height: ${ICON_PX}px; display: flex; align-items: center;
@@ -559,7 +573,7 @@ class RackConsole extends HTMLElement {
              toggle by the hidden attribute, so the visible column reads right either way. -->
         <div class="viz">
           <!-- The head row (RBAR-35): the contextual label at the left edge, the icon
-               controls right-aligned on the same row. The label's text is state-driven
+               controls over the sleeve's top-right (RBAR-75). The label's text is state-driven
                (see render). Share sits immediately left of fullscreen as a glyph-only
                button (RBAR-61) -- a deliberate divergence from the handoff's full-width
                bottom Share row, which cost a phone screen its vertical room. Always

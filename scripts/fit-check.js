@@ -10,7 +10,11 @@
 // hides the overflow) and returns one line per viewport + state (the worst across both
 // plate sets and both units): the document's scrollHeight against the viewport's
 // innerHeight, `over` = how far the page would scroll (0 = it fits), and the sleeve's
-// flexed height.
+// flexed height. Since RBAR-75 the Share and fullscreen buttons overlap the sleeve's
+// top-right, so each state also hit-tests them over its loadout (bare Bar through a full
+// sleeve, both plate sets): the centre and the bottom edge of each drawn 30px box must
+// land on that button, or the line reads ICONS BLOCKED (ICONS MISSING if the selector no
+// longer finds exactly two).
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -42,7 +46,21 @@ async (shared) => {
   const measure = () =>
     page.evaluate(() => {
       const d = document.documentElement;
+      const con = document.querySelector('rack-app').shadowRoot.querySelector('rack-console')
+        .shadowRoot;
+      // Exactly Share + fullscreen: an empty match must not pass the hit-test vacuously.
+      const btns = [...con.querySelectorAll('.icons .iconbtn')];
+      const iconsMissing = btns.length !== 2;
+      const iconsHit = btns.every((b) => {
+        const r = b.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        return [r.top + r.height / 2, r.bottom - 2].every(
+          (y) => con.elementFromPoint(x, y)?.closest('button') === b,
+        );
+      });
       return {
+        iconsMissing,
+        iconsHit,
         scrollH: d.scrollHeight,
         innerH: window.innerHeight,
         over: Math.max(0, d.scrollHeight - window.innerHeight),
@@ -130,12 +148,20 @@ async (shared) => {
     const key = `${r.size} ${r.state}`;
     const prev = worst.get(key);
     if (!prev || r.over > prev.over || (r.over === prev.over && r.sleeve < prev.sleeve)) {
-      worst.set(key, r);
+      worst.set(key, {
+        ...r,
+        iconsHit: r.iconsHit && (prev?.iconsHit ?? true),
+        iconsMissing: r.iconsMissing || (prev?.iconsMissing ?? false),
+      });
+    } else {
+      if (!r.iconsHit) prev.iconsHit = false;
+      if (r.iconsMissing) prev.iconsMissing = true;
     }
   }
   return [...worst.entries()].map(
     ([key, r]) =>
       `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
-      `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px`,
+      `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
+      `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}`,
   );
 }

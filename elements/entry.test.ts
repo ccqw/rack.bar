@@ -949,6 +949,16 @@ describe('<rack-entry> metrics sweep (RBAR-74)', () => {
     return css.slice(start, css.indexOf('}', start));
   }
 
+  it('sets the Target label line at the prototype\'s 21px, the label 5px down (RBAR-75)', () => {
+    // Prototype L147: an 11px mono span inside a 16px Hanken div -- the div's strut
+    // makes the line 21px, with the label's 14.5px box 5px from its top.
+    const { root } = mountEntry();
+    const caption = rule(root, '.caption {');
+    expect(caption).toContain('height: 21px');
+    expect(caption).toContain('padding-top: 5px');
+    expect(caption).toContain('margin: 0 0 9px');
+  });
+
   it('draws the steppers as 44px circles (prototype L149/L151)', () => {
     const { root } = mountEntry();
     const step = rule(root, '.step {');
