@@ -29,7 +29,7 @@ import { LONG_PRESS_MS } from './recents.ts';
 import { decodeWithin } from '../lib/decode.ts';
 import { waysFor } from '../lib/ways.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
-import { DEFAULT_BAR_KG, DEFAULT_COLLAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, DEFAULT_COLLAR_KG, atSleeveCapacity, barWithCollars, plateFace, sideWidthMm } from '../lib/plates.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import {
   parseRecents,
@@ -1322,10 +1322,14 @@ class RackConsole extends HTMLElement {
   // with a big Plate outside a lighter one (ADR-0015 as amended) travels as the same
   // Plates restacked, never as "No link".
   private shareLink(): string | null {
-    // A Plate from outside the set would drop out of the restack, so then the Side goes
-    // as is and serializeLink refuses it ("No link"), never a lighter load.
+    // Each Plate is matched to its set's base Inventory entry by value (face and kg),
+    // not identity: a Plates on Hand limit (RBAR-72) loads a `withLimits` copy of its
+    // size, which the link must still carry. Only a Plate the set lacks (not expected)
+    // drops out; then the Side goes as is and serializeLink refuses it ("No link").
     const inventory = plateSetFor(this._plateSetKey).inventory;
-    const stacked = inventory.flatMap((p) => this.side.filter((s) => s === p));
+    const stacked = inventory.flatMap((p) =>
+      this.side.filter((s) => s.kg === p.kg && plateFace(s) === plateFace(p)).map(() => p),
+    );
     const load = {
       set: this._plateSetKey,
       barKg: this._barKg,

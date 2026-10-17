@@ -9,6 +9,10 @@ import { linkUrl } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
 import { PLATE_SETS } from '../lib/platesets.ts';
 import { draftToKg, shownIn } from '../lib/units.ts';
+import { parseLink } from '../lib/link.ts';
+import { plateFace } from '../lib/plates.ts';
+import type { PlateSetKey } from '../lib/platesets.ts';
+import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, type Console, resetPool, q, sr, modeBtn, unitBtn, sideOnScreen, linkStateArb,
   fresh, rigArb, unitArb, draftArb, type, roundUp, statusKind, totalText, entryDraft,
@@ -39,17 +43,49 @@ function open(state: LinkState): HTMLElement {
   return app;
 }
 const appConsole = (app: HTMLElement) => q<Console>(sr(app), 'rack-console');
-// Tap Copy link on an open share card and return the URL it wrote to the clipboard.
+// Tap Copy link on an open share card and return the URL it wrote to the clipboard. A
+// card with "No link" fails here, by name.
 function copyLinkUrl(card: HTMLElement): string {
+  const button = q<HTMLButtonElement>(sr(card), '[data-link]');
+  expect(button.disabled, 'the card offers a link').toBe(false);
   const writeText = vi.fn().mockResolvedValue(undefined);
   vi.stubGlobal('navigator', { clipboard: { writeText } });
   try {
-    q<HTMLButtonElement>(sr(card), '[data-link]').click();
+    button.click();
   } finally {
     vi.unstubAllGlobals();
   }
+  expect(writeText).toHaveBeenCalledTimes(1);
   return writeText.mock.calls[0]![0] as string;
 }
+// Boot a fresh app from a copied share URL, with no persisted state.
+function openUrl(url: string): Console {
+  localStorage.clear();
+  history.replaceState(null, '', `/${url.slice(url.indexOf('#'))}`);
+  document.body.innerHTML = '';
+  const app = document.createElement('rack-app');
+  document.body.append(app);
+  return appConsole(app);
+}
+// The Total the sleeve's discs add up to on Warm up row `i`: the bare-Bar row (row 0)
+// carries no Collars (ADR-0015 Q5), every other row sits on the effective Bar.
+const rowTotalKg = (el: HTMLElement, rig: Rig, i: number) =>
+  (i === 0 ? rig.barKg : rig.baselineKg) + 2 * sideOnScreen(el).reduce((t, p) => t + p.kg, 0);
+// A Plates on Hand limit map for `set` (RBAR-72, ADR-0016): each size maybe limited to
+// 0..4 pairs. The solver and the Ramp then stack `withLimits` copies of those sizes.
+const limitsArb = (set: PlateSetKey) =>
+  fc
+    .array(fc.option(fc.integer({ min: 0, max: 4 }), { nil: undefined }), {
+      minLength: PLATE_SETS[set].inventory.length,
+      maxLength: PLATE_SETS[set].inventory.length,
+    })
+    .map((ns) =>
+      Object.fromEntries(
+        PLATE_SETS[set].inventory.flatMap((p, i) =>
+          ns[i] === undefined ? [] : [[plateFace(p), ns[i]] as const],
+        ),
+      ),
+    );
 // What a share card shows: its Total and its caption (Bar, Collar, set). Its chips
 // name the Side, which is judged off the sleeve.
 const cardFace = (card: HTMLElement) => ({
@@ -242,24 +278,76 @@ describe('opening a share link, properties (ADR-0014)', () => {
         const i = pick % rows.length;
         rows[i]!.click();
         const side = sideOnScreen(sender);
+        const rowKg = rowTotalKg(sender, rig, i);
         q<HTMLButtonElement>(sr(sender), '[data-share]').click();
         const sent = q(sr(sender), 'rack-share');
         const seen = cardFace(sent);
         const url = copyLinkUrl(sent);
-        localStorage.clear();
-        history.replaceState(null, '', `/${url.slice(url.indexOf('#'))}`);
-        document.body.innerHTML = '';
-        const app = document.createElement('rack-app');
-        document.body.append(app);
-        const c = appConsole(app);
+        // The link carries the row's Total as the Target, read as the readout shows it.
+        const reading = String(shownIn(rowKg, u));
+        const linked = parseLink(url.slice(url.indexOf('#')), u);
+        expect(linked).toMatchObject({
+          mode: 'decode', targetKg: Number(rowKg.toFixed(2)), reading,
+        });
+        const c = openUrl(url);
         expect(pressedIn(c, '[data-mode]')).toEqual(['decode']);
         expect([c.plateSet, c.barKg]).toEqual([rig.set, rig.barKg]);
         // The bare-Bar row (always row 0) draws no Collars; every other row does.
         expect(c.collarKg).toBe(i === 0 ? 0 : rig.collarKg);
         expect(restacked(sideOnScreen(c))).toEqual(restacked(side));
         expect(totalText(c)).toBe(totalText(sender));
+        // The recipient's Target is the row's Total: its field reads it, and it is the
+        // one Recent remembered (a link with no Target remembers nothing).
+        expect(entryDraft(c)).toBe(reading);
+        expect(JSON.parse(localStorage.getItem('rackbar.recents') ?? '[]')).toContain(
+          Number(rowKg.toFixed(2)),
+        );
         q<HTMLButtonElement>(sr(c), '[data-share]').click();
         expect(cardFace(q(sr(c), 'rack-share'))).toEqual(seen);
+      }),
+      APP_RUNS(30),
+    );
+  }, 30_000);
+
+  // RBAR-78 review S1: a Plates on Hand limit (RBAR-72) loads `withLimits` copies of its
+  // size, which an identity match against the set's Inventory used to drop -- "No link"
+  // whenever a limited size was on the Bar. With any limits, a By Weight or Warm up
+  // share has a link, and it opens to the same Plates, Total and Collars.
+  it('with any Plates on Hand limits, a By Weight or Warm up share has a link that opens to the same Plates, Total and Collars (ADR-0014, ADR-0016)', () => {
+    const caseArb = rigDraftCaseArb
+      .filter(([, u, d]) => {
+        const kg = draftToKg(d, u) ?? 0;
+        return Number(kg.toFixed(2)) > 0 && String(shownIn(kg, u)) === d;
+      })
+      .chain(([rig, u, d]) =>
+        fc.tuple(
+          fc.constant(rig), fc.constant(u), fc.constant(d), limitsArb(rig.set),
+          fc.constantFrom<'decode' | 'warmup'>('decode', 'warmup'), fc.nat({ max: 9 }),
+        ),
+      );
+    fc.assert(
+      fc.property(caseArb, ([rig, u, draft, limits, mode, pick]) => {
+        const sender = fresh(rig, u) as Console & { platesOnHand: unknown };
+        sender.platesOnHand = { [rig.set]: limits };
+        let collarKg = rig.collarKg;
+        if (mode === 'decode') {
+          type(sender, draft);
+        } else {
+          modeBtn(sender, 'warmup').click();
+          commitWorking(sender, draft);
+          const rows = stairs(sender);
+          const i = pick % rows.length;
+          rows[i]!.click();
+          if (i === 0) collarKg = 0;
+        }
+        const side = sideOnScreen(sender);
+        q<HTMLButtonElement>(sr(sender), '[data-share]').click();
+        const url = copyLinkUrl(q(sr(sender), 'rack-share'));
+        expect(parseLink(url.slice(url.indexOf('#')), u)).not.toBeNull();
+        const c = openUrl(url);
+        expect([c.plateSet, c.barKg, c.collarKg]).toEqual([rig.set, rig.barKg, collarKg]);
+        expect(restacked(sideOnScreen(c))).toEqual(restacked(side));
+        expect(totalText(c)).toBe(totalText(sender));
       }),
       APP_RUNS(30),
     );

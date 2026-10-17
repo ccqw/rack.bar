@@ -229,7 +229,10 @@ carries the row's Collar as the card draws it (`c=0` on the bare-Bar row, the ri
 Collar on every other row), its Plates, and its Total as the Target `t`, with the
 readout of that Total as `d`. The recipient opens By Weight under the usual "Plates win"
 rule: the row's Plates with a live decode when they are a way to that Total, else the
-carry. Either way they see the card's Total, Plates and Collars. The Target joins
+carry. The carry is common, not an edge case: a Ramp stack is often not one of the
+solver's ways to its Total (a carried-over Plate, a big Plate outside a lighter one),
+and the review tallied about 1 Warm up share in 7 opening as a carry with no status
+line. Either way they see the card's Total, Plates and Collars. The Target joins
 Recents, as with any By Weight link. This is the simplest correct behaviour. A link
 that opens the whole Ramp in Warm up is RBAR-93.
 
@@ -238,10 +241,17 @@ parser re-sorts. A Warm-up stack can put a big Plate outside a lighter one (ADR-
 amended), and such a Side used to fail `serializeLink`, so its card showed "No link".
 The console now restacks the Side heaviest-first before it builds the link. The same
 Plates and the same Total travel, and the recipient's By Weight screen shows them as a
-heaviest-first stack. A Plate from outside the set would drop out of the restack, so
-then the Side goes as is and the serializer refuses it, never a lighter load.
+heaviest-first stack. The restack matches each Plate to the set's own Inventory entry
+by value (face and kg), not identity: a Plates on Hand limit (RBAR-72, ADR-0016) loads
+a `withLimits` copy of its size, and an identity match dropped those, so any limit on a
+size on the Bar used to give "No link" in By Weight as well as Warm up (review finding,
+2026-10-17). Only a Plate the set does not have (not expected) is left out of the
+restack; then the Side goes as is and the serializer refuses it.
 
 Property-tested in `elements/link.properties.test.ts`: sharing from any Ramp row on any
 rig opens By Weight on the same set and Bar, the card's Collar (none on the bare-Bar
-row), the same Plates and the same Total, and the recipient's own card reads the same
-Total and caption as the sender's.
+row), the same Plates and the same Total, with the row's Total as the Target (in the
+URL, the field and Recents), and the recipient's own card reads the same Total and
+caption as the sender's. A second property shares from By Weight and Warm up under
+random Plates on Hand limits and checks the link exists and opens to the same Plates,
+Total and Collars.
