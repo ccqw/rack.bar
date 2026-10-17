@@ -128,6 +128,16 @@ describe('favicon source', () => {
     expect(svg).not.toMatch(/xlink|<defs|\sid=/);
   });
 
+  it('keeps every jumbo edge on the 12.5-unit grid, so 16px renders pixel-exact', () => {
+    for (const cut of ['dark', 'light']) {
+      const svg = read(`assets/icons/rack-bar-favicon-jumbo-${cut}.svg`);
+      expect(svg, cut).not.toMatch(/<(?!svg|\/svg|rect|title|\/title|!--)/);
+      for (const [, attr, value] of svg.matchAll(/\s(x|y|width|height)="([^"]+)"/g)) {
+        expect(Number(value) % 12.5, `${cut} ${attr}="${value}"`).toBe(0);
+      }
+    }
+  });
+
   it('ships 16, 32 and 48 px frames in the ICO', () => {
     const buf = readFileSync(pub('/favicon.ico'));
     const n = buf.readUInt16LE(4);

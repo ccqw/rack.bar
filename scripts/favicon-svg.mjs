@@ -3,7 +3,7 @@
 // Pure string work (no rasteriser), so pwa.test.ts can check the committed file is
 // exactly what the masters produce. Used by scripts/icons.mjs.
 //
-// The masters are editor exports (Sketch): an XML prolog, a <title>, ids, and a
+// The masters may be editor exports (Sketch): an XML prolog, a <title>, ids, and a
 // <use xlink:href> that paints the ground from a <defs> path. clean() inlines each
 // <use> as the element it points at and drops the rest, so the two cuts can share
 // one document without id clashes or the xlink namespace.
@@ -37,7 +37,7 @@ export function clean(svg) {
   );
 
   return inner
-    .replace(/<title>[\s\S]*?<\/title>/g, '')
+    .replace(/<title>[\s\S]*?<\/title>|<!--[\s\S]*?-->/g, '')
     .replace(/\s(?:id|xlink:href)="[^"]*"/g, '')
     .replace(/<(\w+)\b([^>]*?)>\s*<\/\1>/g, '<$1$2/>') // empty element -> self-closing
     .replace(/>\s+</g, '><')

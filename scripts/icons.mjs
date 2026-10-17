@@ -6,7 +6,8 @@
 //   assets/icons/rack-bar-icon-dark.svg  -- the Home Screen art ("A"), 200x200, opaque
 //   assets/icons/rack-bar-favicon-jumbo-dark.svg  -- the tiny-size cut, 200x200, black
 //   assets/icons/rack-bar-favicon-jumbo-light.svg -- the same cut on white
-//     (Caitlin's simplified "jumbo" drawing: fewer, fatter shapes that survive 16px)
+//     (Caitlin's simplified "jumbo" drawing: fewer, fatter shapes that survive 16px).
+//     Edges on a 12.5-unit grid (1px at 16px) -- keep them there when editing.
 // Outputs (committed, so the build never depends on running this):
 //   public/apple-touch-icon.png       180  iOS Home Screen icon
 //   public/icons/icon-192.png         192  manifest, purpose "any"
