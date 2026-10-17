@@ -54,7 +54,7 @@ import {
   stationRampOracle,
   oracleStationCost,
   oracleMoveCost,
-  oracleCap,
+  oracleCaps,
   legalSides,
 } from './properties.oracle.ts';
 import type { StationRule } from './properties.oracle.ts';
@@ -583,25 +583,34 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
     );
   });
 
-  it('no size exceeds PLATES_PER_SIZE per Side unless the Working Total needs more, and then only as many as it needs (ADR-0015 as amended)', () => {
+  it('no size exceeds PLATES_PER_SIZE per Side unless the Working Total needs more, and then no more than Decode\'s own Side uses (ADR-0015 as amended)', () => {
     fc.assert(
       fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
         const got = easy(rig, t, u, steps);
-        const most = Math.max(...got.rows.map((r) => mostOfOne(r.side)));
-        if (most <= PLATES_PER_SIZE) return;
-        // A raised cap: 2 of each cannot reach the Working Side's load within the Sleeve.
+        if (Math.max(...got.rows.map((r) => mostOfOne(r.side))) <= PLATES_PER_SIZE) return;
+        // A raised cap: 2 of each cannot reach the Working Side's load within the Sleeve,
+        // and no Plate goes past its count in Decode's own Side.
         const work = got.rows[got.rows.length - 1];
         const twoEachKg = rig.inventory.reduce((x, p) => x + PLATES_PER_SIZE * p.kg, 0);
         const twoEachMm = rig.inventory.reduce((x, p) => x + PLATES_PER_SIZE * p.widthMm, 0);
         expect(twoEachKg < sumKg(work.side) - EPS || twoEachMm > SLEEVE_MM).toBe(true);
+        const own = got.working.primary.side;
+        for (const r of got.rows) {
+          for (const p of r.side) {
+            const n = r.side.filter((q) => q === p).length;
+            expect(n).toBeLessThanOrEqual(Math.max(PLATES_PER_SIZE, own.filter((q) => q === p).length));
+          }
+        }
       }),
       rampOpts,
     );
     fc.assert(
       fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
         const got = easy(rig, t, u, steps);
-        const cap = oracleCap(rig, got.rows[got.rows.length - 1].total, RULE);
-        for (const r of got.rows) expect(mostOfOne(r.side)).toBeLessThanOrEqual(cap);
+        const caps = oracleCaps(rig, got.rows[got.rows.length - 1].total, RULE);
+        for (const r of got.rows) {
+          for (const p of r.side) expect(r.side.filter((q) => q === p).length).toBeLessThanOrEqual(caps(p));
+        }
       }),
       { seed: SEED, numRuns: 60 },
     );
@@ -627,8 +636,8 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
         const got = easy(rig, t, u, steps);
         const work = got.rows[got.rows.length - 1].total;
         const tol = Math.max(RAMP_BAND * work, Math.min(...rig.inventory.map((p) => p.kg)));
-        const cap = oracleCap(rig, work, RULE);
-        const loadable = legalSides(rig.inventory, RULE, cap).map((s) => rig.baselineKg + 2 * sumKg(s));
+        const caps = oracleCaps(rig, work, RULE);
+        const loadable = legalSides(rig.inventory, RULE, caps).map((s) => rig.baselineKg + 2 * sumKg(s));
         got.rows.forEach((row, i) => {
           if (row.kind !== 'warmup') return;
           if (Math.abs(row.total - row.targetKg) <= tol + 1e-9) return;

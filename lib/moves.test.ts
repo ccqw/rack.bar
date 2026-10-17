@@ -202,10 +202,14 @@ describe('planEasyRamp: a 225 lb Training ramp (45 lb Bar)', () => {
     }
   });
 
-  it('a Working Total past what 2 of each size can load raises the cap only as far as it needs', () => {
+  it('a Working Total past what 2 of each size can load lets each size go up to Decode\'s count', () => {
     const easy = planEasyRamp(lbToKg(585), DEFAULT_RAMP, IRON);
     expect(Math.round(kgToLb(easy.rows[4].total))).toBe(585);
-    for (const r of easy.rows) expect(isLegalSide(r.side, 3)).toBe(true);
+    expect(easy.working.primary.side.map((p) => p.label)).toEqual(['45', '45', '45', '45', '45', '45']);
+    for (const r of easy.rows) {
+      expect(isLegalSide(r.side, 6)).toBe(true);
+      expect(r.side.filter((p) => p !== lb('45')).every((p) => r.side.filter((q) => q === p).length <= 2)).toBe(true);
+    }
     expect(easy.rows.some((r) => !isLegalSide(r.side, 2))).toBe(true);
   });
 });
@@ -268,8 +272,8 @@ describe('planEasyRamp: floors, collars and degenerate Ramps', () => {
 
 describe('planEasyRamp: speed', () => {
   // The app plans the whole Ramp on every Working-weight change, so it must stay inside
-  // a frame (about 15 ms). Measured on an M-series laptop: about 3 ms mean and 10 ms
-  // worst on Competition, under 2 ms on iron (ADR-0015). The bounds here are generous
+  // a frame (about 15 ms). Measured on an M-series laptop: about 2 ms mean and 6 ms
+  // worst on Competition, about 1 ms worst on iron (ADR-0015). The bounds here are generous
   // so a slow CI runner never flakes: each W takes the fastest of 3 runs (a GC pause
   // lands on one run, not all three), after a warm-up pass.
   it('plans any Working Total 20-300 kg on the Competition and Training sets well inside a frame', () => {

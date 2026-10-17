@@ -222,15 +222,18 @@ export interface StationRule {
 /** A Ramp's cost, compared lexicographically: [band excess, repeated Totals, weighted cost]. */
 export type StationCost = readonly [number, number, number];
 
+/** How many of each Plate a Side may carry. */
+export type Caps = (p: Plate) => number;
+
 /**
  * Every legal Side of `inventory` within `sleeveMm`, inside -> outside: big Plates
  * (diameter >= rule.bigDiameterMm) in any order, then small Plates heaviest-first, at
- * most `cap` of each Plate. Built from the Inventory's own Plate objects.
+ * most `caps(p)` of each Plate. Built from the Inventory's own Plate objects.
  */
 export function legalSides(
   inventory: readonly Plate[],
   rule: StationRule,
-  cap: number,
+  caps: Caps,
   sleeveMm: number = SLEEVE_MM,
 ): (readonly Plate[])[] {
   const bigs = inventory.filter((p) => p.diameterMm >= rule.bigDiameterMm);
@@ -240,7 +243,7 @@ export function legalSides(
   const out: (readonly Plate[])[] = [];
   const stack: Plate[] = [];
   const count = (p: Plate) => stack.filter((q) => q === p).length;
-  const fits = (p: Plate, mm: number) => mm + p.widthMm <= sleeveMm + 1e-9 && count(p) < cap;
+  const fits = (p: Plate, mm: number) => mm + p.widthMm <= sleeveMm + 1e-9 && count(p) < caps(p);
   const smallWalk = (from: number, mm: number) => {
     out.push([...stack]);
     for (let j = from; j < smalls.length; j++) {
@@ -316,14 +319,44 @@ function lessStation(a: StationCost, b: StationCost): boolean {
   return false;
 }
 
-/** The cap the station rule loads with: rule.cap, raised until `total` is loadable. */
-export function oracleCap(rig: Rig, total: number, rule: StationRule): number {
-  for (let cap = rule.cap; ; cap++) {
-    if (legalSides(rig.inventory, rule, cap).some((s) => Math.abs(rig.baselineKg + 2 * sumKg(s) - total) < 1e-6)) {
-      return cap;
-    }
-    if (cap > 50) throw new Error('oracleCap: Working Total unreachable');
+/**
+ * The caps the station rule loads with: rule.cap of each Plate when that loads
+ * `total`; otherwise each Plate's cap rises to its count in the ADR-0003 stack for
+ * `total` (fewest Plates, then heaviest-first), found here by brute force.
+ */
+export function oracleCaps(rig: Rig, total: number, rule: StationRule): Caps {
+  const flat: Caps = () => rule.cap;
+  const reaches = (s: readonly Plate[]) => Math.abs(rig.baselineKg + 2 * sumKg(s) - total) < 1e-6;
+  if (legalSides(rig.inventory, rule, flat).some(reaches)) return flat;
+  let best: readonly Plate[] | null = null;
+  for (const s of allSides(rig.inventory)) {
+    if (!reaches(s)) continue;
+    if (best === null || s.length < best.length) { best = s; continue; }
+    if (s.length > best.length) continue;
+    const i = s.findIndex((p, k) => p.kg !== best![k].kg);
+    if (i >= 0 && s[i].kg > best[i].kg) best = s;
   }
+  if (best === null) throw new Error('oracleCaps: Working Total unreachable');
+  const stack = best;
+  return (p) => Math.max(rule.cap, stack.filter((q) => q === p).length);
+}
+
+/** Every Side of `inventory` within `sleeveMm` with no cap, heaviest-first. */
+function allSides(inventory: readonly Plate[], sleeveMm: number = SLEEVE_MM): (readonly Plate[])[] {
+  const plates = [...inventory].sort((a, b) => b.kg - a.kg || a.widthMm - b.widthMm);
+  const out: (readonly Plate[])[] = [];
+  const stack: Plate[] = [];
+  const walk = (from: number, mm: number) => {
+    out.push([...stack]);
+    for (let j = from; j < plates.length; j++) {
+      if (mm + plates[j].widthMm > sleeveMm + 1e-9) continue;
+      stack.push(plates[j]);
+      walk(j, mm + plates[j].widthMm);
+      stack.pop();
+    }
+  };
+  walk(0, 0);
+  return out;
 }
 
 /**
@@ -343,13 +376,13 @@ export function stationRampOracle(
   ceiling: number,
   steps: readonly OracleStep[],
   rule: StationRule,
-): { readonly best: StationCost; readonly tol: number; readonly cap: number } {
+): { readonly best: StationCost; readonly tol: number; readonly caps: Caps } {
   const nearest = rampTotalsOracle(rig, workingTarget, ceiling, steps);
   const working = nearest[nearest.length - 1];
   const grid = Math.min(...rig.inventory.map((p) => p.kg));
   const tol = Math.max(rule.band * working, grid);
-  const cap = oracleCap(rig, working, rule);
-  const sides = legalSides(rig.inventory, rule, cap).map((side) => ({ side, total: rig.baselineKg + 2 * sumKg(side) }));
+  const caps = oracleCaps(rig, working, rule);
+  const sides = legalSides(rig.inventory, rule, caps).map((side) => ({ side, total: rig.baselineKg + 2 * sumKg(side) }));
   const raws: (number | null)[] = steps.map((s) => (s.kind === 'pct' ? (working * s.pct) / 100 : null));
   raws.push(null);
   const kinds = [...steps.map((s) => (s.kind === 'bar' ? 'bar' : 'warmup')), 'working'];
@@ -396,5 +429,5 @@ export function stationRampOracle(
   });
   let best: StationCost = [Infinity, Infinity, Infinity];
   for (const v of layer) if (lessStation(v.cost, best)) best = v.cost;
-  return { best, tol, cap };
+  return { best, tol, caps };
 }

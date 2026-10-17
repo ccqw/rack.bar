@@ -11,8 +11,9 @@
 //   - Every other Plate is small. Small Plates sit only outside every big Plate,
 //     heaviest-first.
 //   - At most PLATES_PER_SIZE of each size per Side ("I probably don't have more than 4
-//     of most things"), the default until RBAR-72 brings a real Inventory. The cap rises
-//     only as far as the Working Total needs, when 2 of each cannot load it.
+//     of most things"), the default until RBAR-72 brings a real Inventory. When 2 of
+//     each cannot load the Working Total, each size's cap rises to the count Decode's
+//     own Side uses.
 //
 // So a Side is an ordered stack, inside -> outside, and is NOT always heaviest-first.
 // Going from one set to the next takes off every Plate outside the longest common
@@ -308,21 +309,19 @@ export function planEasyRamp(
   const workUnits = unitsOf(workingTotal);
   const tol = Math.max(RAMP_BAND * workingTotal, grid);
 
-  // The cap: PLATES_PER_SIZE, raised only as far as the Working Total needs.
-  const decodeCounts = new Map<Plate, number>();
-  for (const p of nearest.working.primary.side) decodeCounts.set(p, (decodeCounts.get(p) ?? 0) + 1);
-  const decodeMost = Math.max(0, ...decodeCounts.values());
-  let cap = PLATES_PER_SIZE;
-  let loadable = loadableUnits(sizes, cap, sleeveMm, workUnits);
-  while (!loadable[workUnits] && cap < decodeMost) {
-    cap++;
-    loadable = loadableUnits(sizes, cap, sleeveMm, workUnits);
+  // The cap per size: PLATES_PER_SIZE, unless that cannot load the Working Total; then
+  // each size may go up to the count Decode's own Side uses (ADR-0003's stack).
+  let caps = sizes.map(() => PLATES_PER_SIZE);
+  let loadable = loadableUnits(sizes, caps, sleeveMm, workUnits);
+  if (!loadable[workUnits]) {
+    caps = sizes.map((s) => Math.max(PLATES_PER_SIZE, nearest.working.primary.side.filter((p) => p === s.plate).length));
+    loadable = loadableUnits(sizes, caps, sleeveMm, workUnits);
   }
-  const exhaustive = (cap + 1) ** n <= EXHAUSTIVE_LIMIT;
+  const exhaustive = caps.reduce((x, c) => x * (c + 1), 1) <= EXHAUSTIVE_LIMIT;
 
   // Suffix bounds for the multiset walk: the most units sizes[j..] can add.
   const maxFrom = new Array<number>(n + 1).fill(0);
-  for (let j = n - 1; j >= 0; j--) maxFrom[j] = maxFrom[j + 1] + cap * sizes[j].units;
+  for (let j = n - 1; j >= 0; j--) maxFrom[j] = maxFrom[j + 1] + caps[j] * sizes[j].units;
 
   const makeCand = (seq: readonly number[], kind: RampRow['kind'], raw: number): Cand => {
     const counts = new Uint8Array(n);
@@ -485,7 +484,10 @@ export function planEasyRamp(
     const counts = new Uint8Array(n);
     const bound = () => (kept.length < limit ? Infinity : kept[kept.length - 1].own);
     const walk = (j: number, units: number, plates: number, mm: number) => {
-      if (plates + missLB(units, units + maxFrom[j]) > bound() + EPS) return;
+      // Plates still needed to reach the lowest allowed Total, at the heaviest size left.
+      const short = lowU - units;
+      const more = short <= 0 ? 0 : j < n ? Math.ceil(short / sizes[j].units) : Infinity;
+      if (plates + more + missLB(units, units + maxFrom[j]) > bound() + EPS) return;
       if (j === n) {
         if (!allowed.has(units)) return;
         const own = ownOf(units, plates);
@@ -495,11 +497,12 @@ export function planEasyRamp(
         if (kept.length > limit) kept.pop();
         return;
       }
+      // Most of each size first, so good multisets turn up early and tighten the bound.
       const s = sizes[j];
-      for (let c = 0; c <= cap; c++) {
+      for (let c = caps[j]; c >= 0; c--) {
         const w = mm + c * s.plate.widthMm;
-        if (w > sleeveMm + EPS) break;
-        if (units + c * s.units > highU) break;
+        if (w > sleeveMm + EPS) continue;
+        if (units + c * s.units > highU) continue;
         counts[j] = c;
         walk(j + 1, units + c * s.units, plates + c, w);
       }
@@ -542,7 +545,7 @@ export function planEasyRamp(
               const s = sizes[j];
               if (s.big && lastSmall) continue;
               if (!s.big && lastSmall && j < last) continue;
-              if (c[j] >= cap || units + s.units > highU) continue;
+              if (c[j] >= caps[j] || units + s.units > highU) continue;
               c[j]++;
               seq.push(j);
               extend(seq, units + s.units, added + 1);
@@ -554,10 +557,10 @@ export function planEasyRamp(
         }
       }
     }
-    // The Working row always has Decode's own stack when it is legal under the cap.
+    // The Working row always has Decode's own stack when the caps allow it.
     if (kind === 'working') {
       const seq = nearest.working.primary.side.map((p) => indexOf.get(p)!);
-      if (isLegalSide(nearest.working.primary.side, cap)) add(seq);
+      if (seq.every((j) => seq.filter((x) => x === j).length <= caps[j])) add(seq);
     }
     const list = [...out.values()].filter((c) => widthOk(c.counts));
     list.sort((a, b) => a.own - b.own || a.seq.length - b.seq.length || cmpSeq(a.seq, b.seq));
@@ -654,13 +657,14 @@ function cmpSeq(a: readonly number[], b: readonly number[]): number {
 }
 
 /**
- * loadable[u] for u in 0..maxUnits: whether some multiset with at most `cap` of each
- * size sums to u grid units within the Sleeve. A DP of the narrowest such stack.
+ * loadable[u] for u in 0..maxUnits: whether some multiset with at most caps[j] of size
+ * j sums to u grid units within the Sleeve. A DP of the narrowest such stack.
  */
-function loadableUnits(sizes: readonly Size[], cap: number, sleeveMm: number, maxUnits: number): boolean[] {
+function loadableUnits(sizes: readonly Size[], caps: readonly number[], sleeveMm: number, maxUnits: number): boolean[] {
   let narrowest = new Array<number>(maxUnits + 1).fill(Infinity);
   narrowest[0] = 0;
-  for (const s of sizes) {
+  sizes.forEach((s, j) => {
+    const cap = caps[j];
     const next = [...narrowest];
     for (let u = 0; u <= maxUnits; u++) {
       if (narrowest[u] === Infinity) continue;
@@ -672,6 +676,6 @@ function loadableUnits(sizes: readonly Size[], cap: number, sleeveMm: number, ma
       }
     }
     narrowest = next;
-  }
+  });
   return narrowest.map((mm) => mm <= sleeveMm + EPS);
 }

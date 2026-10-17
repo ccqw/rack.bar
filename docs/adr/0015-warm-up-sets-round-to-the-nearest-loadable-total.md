@@ -163,8 +163,9 @@ to the point of messing up my ramp up completely."
    share text draw the order given and never re-sort it.
 2. **The Plate limit.** At most `PLATES_PER_SIZE` (2) of each size per Side, her
    "4 of most things". This is the default until RBAR-72 brings a real Inventory.
-   When 2 of each cannot load the Working Total (iron past about 535 lb), the cap
-   rises only as far as that Total needs.
+   When 2 of each cannot load the Working Total (iron past about 535 lb, Competition
+   past about 350 kg), each size may go up to the count Decode's own Side uses for
+   that Total, and no further.
 3. **The Working set** stays exactly Decode's at-or-under Total (ADR-0003). Its Side
    may be any legal stack.
 4. **Warm-up sets.** Each one sits within `RAMP_BAND` (5%) of the Working Total of
@@ -203,11 +204,13 @@ to the point of messing up my ramp up completely."
 
    | Set | Mean | Worst |
    |---|---|---|
-   | Competition | about 3 ms | about 10 ms |
-   | Training (iron) | under 0.5 ms | under 2 ms |
+   | Competition | about 2 ms | about 6 ms |
+   | Training (iron) | under 0.5 ms | about 1 ms |
 
-   A cold first call is about 12 ms. The pruned search found the same cost as a 10x
-   wider search on 1106 of 1124 Ramps. The worst gap was 1.15 cost units, at 295 kg.
+   Sleeve-capped Ramps up to 500 kg take about 4 ms. A cold first call takes about
+   5 ms. The pruned search was checked against a search about 10x wider on 1124
+   Ramps. It found the same cost on 1086 of them. The worst gap was 1.6 cost units,
+   about one extra Plate move or kg.
 7. **No Plates to load.** With an empty Inventory, or when planRamp loads nothing on
    any row, every row is planRamp's bare-rig row. In that case the planner never
    asks for a Plate grid.
