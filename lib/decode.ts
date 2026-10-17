@@ -70,9 +70,10 @@ export interface Decoded {
  * or above the Bar; a sub-Bar Target floors at the bare Bar (empty Side Load,
  * positive delta). Always returns a Loadout -- never null.
  *
- * Throws a RangeError (from sideloads.ts) only for a malformed Inventory: a Plate with
- * a non-positive or non-finite mass or width, or Plates with no common grid. No shipped
- * set or single-size reduction of one can (test-locked), so the shell never sees it.
+ * Throws a RangeError (from sideloads.ts) only for malformed rig data: a Plate with a
+ * non-positive or non-finite mass or width, Plates with no common grid, or a Sleeve
+ * that is not a positive finite length. No shipped set, single-size reduction of one,
+ * or the default Sleeve can (test-locked), so the shell never sees it.
  */
 export function decode(
   target: number,
@@ -103,18 +104,20 @@ export function decode(
   // Side budget, found by the same search and Sleeve cap, so it is the fewest Plates
   // heaviest-first too. In the sleeve-bound band that may be several grid steps up
   // (RBAR-62, ADR-0012); when the Sleeve holds nothing heavier there is no physical
-  // round-up and no `over` at all. The `> target` check is belt and braces: a Side sum
-  // above the budget always clears the Target.
+  // round-up and no `over` at all.
   if (primary.delta < -EPS && inventory.length > 0) {
     const overSide = sideAbove(sidePerHalf, inventory, sleeveMm);
     if (overSide) {
       const overTotal = totalKg(overSide, bar);
-      if (overTotal > target + EPS) {
-        return {
-          primary,
-          over: { side: overSide, total: overTotal, delta: overTotal - target },
-        };
+      // A Side sum above the budget always clears the Target by a grid step; failing
+      // that is a solver bug, so say so rather than silently dropping the round-up.
+      if (!(overTotal > target + EPS)) {
+        throw new Error(`decode: round-up ${overTotal} kg is not above the Target ${target} kg`);
       }
+      return {
+        primary,
+        over: { side: overSide, total: overTotal, delta: overTotal - target },
+      };
     }
   }
 

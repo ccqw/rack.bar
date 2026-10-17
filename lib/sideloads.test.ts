@@ -37,7 +37,27 @@ describe('plateGridKg: the step every Side sum lies on', () => {
     expect(() => plateGridKg([{ ...odd, kg: 0 }])).toThrow(RangeError);
     expect(() => plateGridKg([{ ...odd, kg: Number.NaN }])).toThrow(RangeError);
     expect(() => plateGridKg([{ ...ELEIKO_KG[0], widthMm: 0 }])).toThrow(RangeError);
-    expect(() => [...sideLoads(25, [{ ...ELEIKO_KG[0], widthMm: 0 }])]).toThrow(RangeError);
+    // Eager: the throw comes at the call, not on the first next().
+    expect(() => sideLoads(25, [{ ...ELEIKO_KG[0], widthMm: 0 }])).toThrow(RangeError);
+    // And even when the budget would short-circuit to the bare Bar.
+    expect(() => sideAtOrUnder(0, [{ ...ELEIKO_KG[0], widthMm: 0 }])).toThrow(RangeError);
+  });
+
+  it('rejects a Plate that is only NEAR the grid instead of silently skipping it', () => {
+    // 1 / 0.3333333 is within 1e-6 of 3 but 1 kg is 3e-7 kg off the grid: accepting that
+    // grid would make the walk never try a sum using the 1 kg Plate.
+    const third: Plate = { kg: 0.3333333, color: 'iron', diameterMm: 100, widthMm: 10 };
+    const one: Plate = { kg: 1, color: 'iron', diameterMm: 100, widthMm: 20 };
+    expect(() => plateGridKg([one, third])).toThrow(RangeError);
+    expect(() => sideAtOrUnder(1, [one, third])).toThrow(RangeError);
+  });
+
+  it('rejects a Sleeve that is not a positive finite length', () => {
+    for (const mm of [Number.NaN, 0, -1, Infinity]) {
+      expect(() => sideAtOrUnder(50, ELEIKO_KG, mm)).toThrow(RangeError);
+      expect(() => sideAbove(50, ELEIKO_KG, mm)).toThrow(RangeError);
+      expect(() => sideLoads(50, ELEIKO_KG, mm)).toThrow(RangeError);
+    }
   });
 
   it('every shipped set and every single-size reduction has a grid (never throws in the app)', () => {
@@ -148,6 +168,9 @@ describe('canonicalSide / sideAtOrUnder / sideAbove: the picks decode makes', ()
     expect(kgs(sideAbove(40.2, ELEIKO_KG)!)).toEqual([25, 15, 0.5]);
     expect(labels(sideAbove(lbToKg(58), IRON_LB)!)).toEqual(['35', '25']);
     expect(sideAbove(10, [])).toBeNull();
+    // The empty Side is never a round-up, even below zero.
+    expect(kgs(sideAbove(-5, ELEIKO_KG)!)).toEqual([0.5]);
+    expect(kgs(sideAbove(0, ELEIKO_KG)!)).toEqual([0.5]);
     const full = sideAtOrUnder(1000, ELEIKO_KG);
     expect(sideAbove(sideLoadKg(full), ELEIKO_KG)).toBeNull();
   });

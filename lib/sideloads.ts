@@ -36,9 +36,18 @@ const EPS = 1e-9;
 const MAX_GRID_DIVISOR = 1000;
 
 /**
- * Reject an Inventory the search cannot reason about: a Plate whose mass or width is
- * not a positive finite number (a zero width would make the Sleeve bound infinite).
+ * Reject inputs the search cannot reason about: a Sleeve or a Plate mass or width that
+ * is not a positive finite number (a zero width or an infinite Sleeve would make the
+ * Sleeve bound infinite and the grid walk endless; a NaN or non-positive Sleeve would
+ * silently load nothing).
  */
+function assertInputs(inventory: readonly Plate[], sleeveMm: number): void {
+  if (!(sleeveMm > 0) || !Number.isFinite(sleeveMm)) {
+    throw new RangeError(`sideloads: Sleeve ${sleeveMm} mm is not a positive number`);
+  }
+  assertPlates(inventory);
+}
+
 function assertPlates(inventory: readonly Plate[]): void {
   for (const p of inventory) {
     if (!(p.kg > 0) || !Number.isFinite(p.kg)) {
@@ -70,7 +79,9 @@ export function plateGridKg(inventory: readonly Plate[]): number {
   const smallest = Math.min(...inventory.map((p) => p.kg));
   for (let d = 1; d <= MAX_GRID_DIVISOR; d++) {
     const g = smallest / d;
-    if (inventory.every((p) => Math.abs(p.kg / g - Math.round(p.kg / g)) < 1e-6)) return g;
+    // Every Plate must sit on the grid to within EPS kg -- the same tolerance the search
+    // matches sums with, so a Plate the walk would treat as off-grid is never accepted.
+    if (inventory.every((p) => Math.abs(p.kg - Math.round(p.kg / g) * g) <= EPS)) return g;
   }
   throw new RangeError('plateGridKg: the Plates share no common grid');
 }
@@ -96,6 +107,7 @@ export function sideLoads(
   inventory: readonly Plate[],
   sleeveMm: number = SLEEVE_MM,
 ): IterableIterator<readonly Plate[]> {
+  assertInputs(inventory, sleeveMm); // eagerly, at the call, not on the first next()
   return walkSides(sideKg, inventory, sleeveMm);
 }
 
@@ -104,7 +116,6 @@ function* walkSides(
   inventory: readonly Plate[],
   sleeveMm: number,
 ): Generator<readonly Plate[], void, undefined> {
-  assertPlates(inventory);
   if (!Number.isFinite(sideKg) || sideKg < -EPS) return;
   if (Math.abs(sideKg) <= EPS) {
     yield [];
@@ -186,6 +197,7 @@ export function sideAtOrUnder(
   inventory: readonly Plate[],
   sleeveMm: number = SLEEVE_MM,
 ): readonly Plate[] {
+  assertInputs(inventory, sleeveMm);
   if (inventory.length === 0 || !(budgetKg > 0)) return [];
   const grid = plateGridKg(inventory);
   const cap = Math.min(budgetKg, sleeveBoundKg(inventory, sleeveMm));
@@ -208,10 +220,13 @@ export function sideAbove(
   inventory: readonly Plate[],
   sleeveMm: number = SLEEVE_MM,
 ): readonly Plate[] | null {
+  assertInputs(inventory, sleeveMm);
   if (inventory.length === 0 || Number.isNaN(budgetKg)) return null;
   const grid = plateGridKg(inventory);
   const top = Math.floor((sleeveBoundKg(inventory, sleeveMm) + EPS) / grid);
-  const from = Math.max(0, Math.floor((budgetKg + EPS) / grid) + 1);
+  // At least one grid step: the empty Side is never a round-up, even for a budget
+  // below zero.
+  const from = Math.max(1, Math.floor((budgetKg + EPS) / grid) + 1);
   for (let units = from; units <= top; units++) {
     const side = canonicalSide(units * grid, inventory, sleeveMm);
     if (side) return side;
