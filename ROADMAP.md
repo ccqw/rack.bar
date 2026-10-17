@@ -54,7 +54,9 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 - **Game / quiz mode** -- the original second half: progressively harder drills on
   the Decode/Encode skill, built on the calculator's components.
 - **Finite Inventory** -- enter how many pairs of each plate you own (home gym);
-  the solver already takes Inventory as input.
+  the solver already takes Inventory as input, and since RBAR-72 slice 1 it honours
+  per-size Plate limits (ADR-0016). The limits UI, its scopes and persistence are
+  pending Caitlin's design answers.
 - **Arithmetic on entry** -- typing an expression in the entry field. (Its other
   half, percentage-of-working-weight warm-up ramps, moved into v1 as Warm up,
   RBAR-65.)

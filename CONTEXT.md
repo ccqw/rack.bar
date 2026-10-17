@@ -64,8 +64,17 @@ _Avoid_: sum, result.
 
 **Inventory**:
 The Plates available to draw from when decoding a Target. Defaults to an unlimited
-standard Eleiko set; will later support finite pair-counts for a home gym.
+standard Eleiko set. Each size may carry a Plate limit (ADR-0016), which makes it a
+finite Inventory.
 _Avoid_: stock, supply.
+
+**Plate limit**:
+How many pairs of one size the lifter has: all (unlimited, the default), N pairs,
+or none. Counted in pairs because loading is symmetric (one per Side), so N pairs
+is at most N of that Plate on a Side. Decode never loads past a Plate limit and
+picks among the loads the limits allow by the usual rule (ADR-0003). The UI may say
+"pairs" and "none here".
+_Avoid_: stock, missing, excluded, out, unavailable.
 
 **Plate set**:
 The family of Plates (with its matching Bar and native Unit) the lifter is loading:

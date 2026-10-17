@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { sideLoads, canonicalSide, sideAtOrUnder, sideAbove, plateGridKg } from './sideloads.ts';
-import { ELEIKO_KG, IRON_LB, SLEEVE_MM, sideLoadKg, sideWidthMm } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, SLEEVE_MM, sideLoadKg, sideWidthMm, withLimits } from './plates.ts';
 import type { Plate } from './plates.ts';
 import { lbToKg } from './units.ts';
 
@@ -173,5 +173,95 @@ describe('canonicalSide / sideAtOrUnder / sideAbove: the picks decode makes', ()
     expect(kgs(sideAbove(0, ELEIKO_KG)!)).toEqual([0.5]);
     const full = sideAtOrUnder(1000, ELEIKO_KG);
     expect(sideAbove(sideLoadKg(full), ELEIKO_KG)).toBeNull();
+  });
+});
+
+describe('plate limits: a cap of pairs per Side on each size (RBAR-72, ADR-0016)', () => {
+  const byKg = (kg: number) => ELEIKO_KG.find((p) => p.kg === kg)!;
+  const everySize = (inv: readonly Plate[], n: number) =>
+    Object.fromEntries(inv.map((p) => [p.label ?? String(p.kg), n]));
+
+  it('withLimits caps the named sizes by face, keeps the rest as the same objects', () => {
+    const inv = withLimits(ELEIKO_KG, { '25': 1, '0.5': 0 });
+    expect(inv).toHaveLength(ELEIKO_KG.length);
+    expect(inv[0]).toEqual({ ...byKg(25), maxPerSide: 1 });
+    expect(inv[9]).toEqual({ ...byKg(0.5), maxPerSide: 0 });
+    for (let i = 1; i < 9; i++) expect(inv[i]).toBe(ELEIKO_KG[i]);
+    // Iron sizes are named by their stamped lb face.
+    const iron = withLimits(IRON_LB, { '45': 2 });
+    expect(iron[0]).toEqual({ ...IRON_LB[0], maxPerSide: 2 });
+    // No limits at all: the very same Inventory entries.
+    withLimits(ELEIKO_KG, {}).forEach((p, i) => expect(p).toBe(ELEIKO_KG[i]));
+  });
+
+  it('withLimits composes as the tighter of two caps (today within this gym)', () => {
+    const gym = withLimits(ELEIKO_KG, { '25': 3, '20': 1 });
+    const today = withLimits(gym, { '25': 1, '20': 2 });
+    expect(today[0].maxPerSide).toBe(1);
+    expect(today[1].maxPerSide).toBe(1);
+  });
+
+  it('withLimits rejects an unknown size or a cap that is not a whole count', () => {
+    expect(() => withLimits(ELEIKO_KG, { '30': 1 })).toThrow(RangeError);
+    for (const bad of [-1, 1.5, Number.NaN]) {
+      expect(() => withLimits(ELEIKO_KG, { '25': bad })).toThrow(RangeError);
+    }
+    expect(() => sideAtOrUnder(50, [{ ...byKg(25), maxPerSide: -1 }])).toThrow(RangeError);
+    expect(() => sideLoads(50, [{ ...byKg(25), maxPerSide: 0.5 }])).toThrow(RangeError);
+    expect(() => sideAbove(50, [{ ...byKg(25), maxPerSide: Number.NaN }])).toThrow(RangeError);
+  });
+
+  it('one pair of 25s: a 60 kg Side is 25 + 20 + 15, not 25 + 25 + 10 (the design scenario)', () => {
+    const inv = withLimits(ELEIKO_KG, { '25': 1 });
+    expect(kgs(sideAtOrUnder(60, ELEIKO_KG))).toEqual([25, 25, 10]);
+    expect(kgs(sideAtOrUnder(60, inv))).toEqual([25, 20, 15]);
+    expect(rankSides(60, inv, SLEEVE_MM, 3).map(kgs)).toEqual([
+      [25, 20, 15],
+      [20, 20, 20],
+      [25, 20, 10, 5],
+    ]);
+  });
+
+  it('a none size never loads, and the grid follows the sizes left', () => {
+    const no05 = withLimits(ELEIKO_KG, { '0.5': 0 });
+    expect(kgs(sideAtOrUnder(3, no05))).toEqual([2, 1]);
+    expect(plateGridKg(no05)).toBe(0.5);
+    const noChange = withLimits(ELEIKO_KG, { '2.5': 0, '2': 0, '1.5': 0, '1': 0, '0.5': 0 });
+    expect(plateGridKg(noChange)).toBe(5);
+    expect(kgs(sideAtOrUnder(61, noChange))).toEqual([25, 25, 10]);
+    expect(kgs(sideAbove(61, noChange)!)).toEqual([25, 25, 15]);
+  });
+
+  it('caps bound the heaviest Side: past what the pairs hold there is no round-up', () => {
+    const few = withLimits(ELEIKO_KG, {
+      ...everySize(ELEIKO_KG, 0),
+      '25': 1,
+      '20': 1,
+      '5': 1,
+    });
+    expect(kgs(sideAtOrUnder(1000, few))).toEqual([25, 20, 5]);
+    expect(sideAbove(50, few)).toBeNull();
+    expect(kgs(sideAbove(44, few)!)).toEqual([25, 20]);
+  });
+
+  it('every size none is the bare Bar, with no round-up', () => {
+    const none = withLimits(ELEIKO_KG, everySize(ELEIKO_KG, 0));
+    expect(sideAtOrUnder(60, none)).toEqual([]);
+    expect(sideAbove(60, none)).toBeNull();
+    expect(rankSides(60, none)).toEqual([]);
+    expect(rankSides(0, none)).toEqual([[]]);
+    expect(() => plateGridKg(none)).toThrow(RangeError);
+  });
+
+  it('a cap that never binds changes nothing (explicit Infinity or a large count)', () => {
+    const inf = ELEIKO_KG.map((p) => ({ ...p, maxPerSide: Infinity }));
+    const big = withLimits(ELEIKO_KG, everySize(ELEIKO_KG, 99));
+    for (const kg of [0.5, 13, 40, 60, 99.5, 150, 170]) {
+      expect(kgs(sideAtOrUnder(kg, inf))).toEqual(kgs(sideAtOrUnder(kg, ELEIKO_KG)));
+      expect(kgs(sideAtOrUnder(kg, big))).toEqual(kgs(sideAtOrUnder(kg, ELEIKO_KG)));
+      expect(rankSides(kg, big, SLEEVE_MM, 8).map(kgs)).toEqual(
+        rankSides(kg, ELEIKO_KG, SLEEVE_MM, 8).map(kgs),
+      );
+    }
   });
 });
