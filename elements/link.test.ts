@@ -5,7 +5,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './app.ts';
 import {
-  q, sr, entryDraft, modeBtn, unitBtn, roundUp, sideOnScreen, statusKind, totalText,
+  q, sr, entryDraft, entryRoot, modeBtn, unitBtn, roundUp, sideOnScreen, statusKind,
+  totalText, type,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
 
@@ -33,6 +34,13 @@ const unit = (app: HTMLElement) =>
 const sideKg = (app: HTMLElement) => sideOnScreen(appConsole(app)).map((p) => p.kg);
 const rigKeys = () => RIG_KEYS.map((k) => localStorage.getItem(k));
 const recents = () => localStorage.getItem('rackbar.recents');
+// Paste `fragment` into an already-open tab: the hash changes, no reload.
+function paste(fragment: string): void {
+  history.replaceState(null, '', `/${fragment}`);
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+}
+const valueBtn = (app: HTMLElement) =>
+  q<HTMLButtonElement>(entryRoot(appConsole(app)), '[data-value]');
 
 describe('opening a share link (RBAR-50, ADR-0014)', () => {
   beforeEach(() => {
@@ -67,7 +75,7 @@ describe('opening a share link (RBAR-50, ADR-0014)', () => {
     expect(c.barKg).toBeCloseTo(20.41165665, 6);
     expect(c.collarKg).toBe(2.5);
     expect(unit(app)).toBe('lb');
-    expect(pillLabel(app)).toBe('45 lb bar · Training');
+    expect(pillLabel(app)).toBe('45 lb bar \u00B7 Training');
     expect(pressed(app, 'data-plateset')).toEqual(['training']);
     expect(pressed(app, 'data-collar')).toEqual(['2.5']);
     expect(sideKg(app).length).toBe(2);
@@ -211,5 +219,105 @@ describe('opening a share link (RBAR-50, ADR-0014)', () => {
     history.replaceState(null, '', '/#v=1&s=comp&b=15kg&m=p&p=25');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     expect(location.hash).toBe('#v=1&s=comp&b=15kg&m=p&p=25');
+  });
+  it('drifted Plates carry their own Total in the entry while the Target joins Recents (ADR-0014, ADR-0005)', () => {
+    const app = openLink('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25&t=140');
+    const c = appConsole(app);
+    expect(sideKg(app)).toEqual([25, 25]);
+    expect(entryDraft(c)).toBe('120');
+    expect(statusKind(c)).toBe('');
+    expect(JSON.parse(recents()!)).toEqual([140]);
+  });
+
+  it('a bare-Bar By Weight link with a Target is the carry of the bare Bar (ADR-0014, ADR-0005)', () => {
+    const app = openLink('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=&t=140');
+    expect(sideKg(app)).toEqual([]);
+    expect(entryDraft(appConsole(app))).toBe('20');
+    expect(JSON.parse(recents()!)).toEqual([140]);
+  });
+
+  it('after a cross-set link Setup shows the linked Bar, and a Bar tap saves that Bar with its set (ADR-0014, ADR-0010)', () => {
+    localStorage.setItem('rackbar.plateSet', 'comp');
+    localStorage.setItem('rackbar.barKg', '15');
+    const app = openLink('#v=1&s=training&b=20kg&m=p&c=0&u=kg&p=25');
+    expect(pressed(app, 'data-bar')).toEqual(['20']);
+    const ironBar = [...setupRoot(app).querySelectorAll<HTMLButtonElement>('[data-bar]')]
+      .find((t) => Number(t.dataset.bar) !== 20)!;
+    ironBar.click();
+    const c = appConsole(app);
+    expect(c.barKg).toBeCloseTo(20.41165665, 6);
+    expect(c.plateSet).toBe('training');
+    expect(localStorage.getItem('rackbar.plateSet')).toBe('training');
+    expect(Number(localStorage.getItem('rackbar.barKg'))).toBeCloseTo(20.41165665, 6);
+    // The saved Bar survives a reload: it is saved alongside the set that offers it.
+    const rc = appConsole(openLink(''));
+    expect([rc.plateSet, rc.barKg]).toEqual(['training', c.barKg]);
+  });
+
+  it('a Bar tap after a same-set link saves only the Bar (ADR-0014, ADR-0007)', () => {
+    const app = openLink('#v=1&s=comp&b=15kg&m=p&c=0&u=kg&p=20');
+    q<HTMLButtonElement>(setupRoot(app), '[data-bar="5"]').click();
+    expect(rigKeys()).toEqual([null, '5', null, null]);
+  });
+
+  it('a By Weight link pasted over a typed Target replaces it and pushes only its own Target (ADR-0014)', () => {
+    const app = openLink('');
+    const c = appConsole(app);
+    valueBtn(app).click(); // open the keypad
+    type(c, '100');
+    valueBtn(app).click(); // commit 100
+    paste('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
+    expect(sideKg(app)).toEqual([25, 25, 10]);
+    expect(entryDraft(c)).toBe('140');
+    expect(statusKind(c)).toBe('exact');
+    expect(JSON.parse(recents()!)).toEqual([140, 100]);
+  });
+
+  it('a link pasted while the keypad is open commits nothing extra on Done (ADR-0014, ADR-0009)', () => {
+    const app = openLink('');
+    const c = appConsole(app);
+    valueBtn(app).click(); // open
+    type(c, '9');
+    paste('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
+    valueBtn(app).click(); // close: the link's Target is a seed, not a new commit
+    expect(JSON.parse(recents()!)).toEqual([140]);
+    expect(sideKg(app)).toEqual([25, 25, 10]);
+  });
+
+  it('a link replacing a round-up link lands on its own primary (ADR-0014, ADR-0003)', () => {
+    const app = openLink('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10,0.5&t=140.3');
+    paste('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
+    const c = appConsole(app);
+    expect(statusKind(c)).toBe('exact');
+    expect(roundUp(c).hidden).toBe(true);
+    expect(sideKg(app)).toEqual([25, 25, 10]);
+  });
+
+  it('opening the same link twice keeps one Recent (ADR-0014, ADR-0009)', () => {
+    openLink('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
+    paste('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
+    expect(JSON.parse(recents()!)).toEqual([140]);
+  });
+
+  it('a By Plates link over a By Weight Target, then By Weight, seeds the linked Total (ADR-0014, ADR-0005)', () => {
+    const app = openLink('#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=2x25,10&t=140');
+    paste('#v=1&s=comp&b=20kg&m=p&c=0&u=kg&p=20');
+    const c = appConsole(app);
+    modeBtn(c, 'decode').click();
+    expect(entryDraft(c)).toBe('60');
+    expect(sideKg(app)).toEqual([20]);
+  });
+
+  it('a malformed link pasted over a shown link changes nothing but the URL (ADR-0014)', () => {
+    const errors = vi.spyOn(console, 'error');
+    const app = openLink('#v=1&s=comp&b=15kg&m=p&c=2.5&u=lb&p=20,5');
+    paste('#garbage');
+    const c = appConsole(app);
+    expect([c.plateSet, c.barKg, c.collarKg, mode(app), unit(app)]).toEqual([
+      'comp', 15, 2.5, 'encode', 'lb',
+    ]);
+    expect(sideKg(app)).toEqual([20, 5]);
+    expect(location.hash).toBe('');
+    expect(errors).not.toHaveBeenCalled();
   });
 });

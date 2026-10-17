@@ -156,9 +156,16 @@ Built as decided above; these are the details settled during the build.
   travels as kg at 2 dp, which reads back exactly for any kg Target and for an lb Target
   to 1 dp (the rounding is at most 0.011 lb). A 2 dp lb Target (677.51 lb -> 307.31 kg
   -> 677.5 lb) can re-solve to a different load; the Plates still win via the carry.
+- **A Bar tap after a cross-set link saves the set too.** "A later change persists that
+  one key" holds for the Collar, the unit and the set; but a Bar only exists within its
+  set (ADR-0010), so saving the Bar alone under a different saved set would be rejected
+  on the next boot and silently replaced by that set's default. Picking a Bar therefore
+  also saves the on-screen set when it differs from the saved one (review finding,
+  2026-10-17).
 - **Malformed links** are a silent normal boot: nothing applied, nothing written, no
   console output, the fragment cleared.
 
-Property-tested in `elements/link.properties.test.ts`: opening any link shows exactly
-its Side, Bar, Collar, unit and mode and persists no rig key; a By Weight link built
+Property-tested in `elements/link.properties.test.ts`: opening any link over any
+persisted rig shows exactly its Side, Bar, Collar, unit and mode (Setup included) and
+changes no rig key; a By Weight link built
 from a sender's screen opens to the same Total, Target and status.

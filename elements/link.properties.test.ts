@@ -37,10 +37,15 @@ const pressedIn = (el: HTMLElement, sel: string) =>
     .map((b) => b.dataset.mode ?? b.dataset.unit);
 
 describe('opening a share link, properties (ADR-0014)', () => {
-  it('opening any link shows exactly its Side, Bar, Collar, unit and mode and persists no rig key (ADR-0014)', () => {
+  it('opening any link over any persisted rig shows exactly its Side, Bar, Collar, unit and mode and changes no rig key (ADR-0014)', () => {
     fc.assert(
-      fc.property(linkStateArb, (s) => {
+      fc.property(linkStateArb, rigArb, unitArb, (s, own, ownUnit) => {
         localStorage.clear();
+        localStorage.setItem('rackbar.plateSet', own.set);
+        localStorage.setItem('rackbar.barKg', String(own.barKg));
+        localStorage.setItem('rackbar.collarKg', String(own.collarKg));
+        localStorage.setItem('rackbar.unit', ownUnit);
+        const before = RIG_KEYS.map((k) => localStorage.getItem(k));
         const app = open(s);
         const c = appConsole(app);
         expect(sideOnScreen(c)).toEqual(s.side.map((p) => ({ kg: p.kg, color: p.color })));
@@ -49,8 +54,17 @@ describe('opening a share link, properties (ADR-0014)', () => {
         expect(c.collarKg).toBe(s.collarKg);
         expect(pressedIn(c, '[data-unit]')).toEqual([s.unit]);
         expect(pressedIn(c, '[data-mode]')).toEqual([s.mode]);
+        // The Setup sheet mirrors the linked rig, not the persisted one.
+        const setup = q(sr(app), 'rack-setup');
+        const tiles = (attr: string) =>
+          [...sr(setup).querySelectorAll<HTMLElement>(`[${attr}]`)]
+            .filter((b) => b.getAttribute('aria-pressed') === 'true')
+            .map((b) => b.getAttribute(attr));
+        expect(tiles('data-plateset')).toEqual([s.set]);
+        expect(tiles('data-bar')).toEqual([String(s.barKg)]);
+        expect(tiles('data-collar')).toEqual([String(s.collarKg)]);
         expect(location.hash).toBe('');
-        expect(RIG_KEYS.map((k) => localStorage.getItem(k))).toEqual([null, null, null, null]);
+        expect(RIG_KEYS.map((k) => localStorage.getItem(k))).toEqual(before);
         // Only a By Weight link with a Target is remembered (Caitlin, 2026-10-16).
         const t = s.mode === 'decode' ? s.targetKg : undefined;
         expect(localStorage.getItem('rackbar.recents')).toBe(

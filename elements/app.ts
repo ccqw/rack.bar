@@ -201,9 +201,10 @@ class RackApp extends HTMLElement {
       this.pill.setAttribute('aria-expanded', 'false'),
     );
 
-    if (link) this.applyLink(link);
-    // A link pasted into an already-open tab changes only the hash (no reload).
+    // A link pasted into an already-open tab changes only the hash (no reload). Listen
+    // before applying, so a throw in the boot-time apply cannot also cost the listener.
     window.addEventListener('hashchange', this.onHashChange);
+    if (link) this.applyLink(link);
   }
 
   disconnectedCallback(): void {
@@ -262,6 +263,10 @@ class RackApp extends HTMLElement {
   private adopt(kg: number): void {
     if (!this.offeredBars().includes(kg)) return;
     this.barKg = kg;
+    // A Bar only exists within its set (ADR-0010). After a share link put another set on
+    // screen (ADR-0014), picking a Bar adopts that set too, or the next boot would reject
+    // the saved Bar against the old saved set and silently fall back to its default.
+    if (this.loadPlateSet() !== this.plateSetKey) this.savePlateSet(this.plateSetKey);
     this.saveBar(kg);
     this.console.barKg = kg;
     this.setup.barKg = kg;
