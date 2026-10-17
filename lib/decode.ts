@@ -13,7 +13,7 @@
 // wherever greedy was already fewest-Plate.
 import { ELEIKO_KG, DEFAULT_BAR_KG, SLEEVE_MM, totalKg } from './plates.ts';
 import type { InventoryEntry, Plate } from './plates.ts';
-import { sideAtOrUnder, sideAbove } from './sideloads.ts';
+import { hasUsablePlates, sideAtOrUnder, sideAbove } from './sideloads.ts';
 
 // Our denominations are exact binary fractions, but keep a hair of tolerance so a
 // future fractional Plate can't be defeated by floating-point drift.
@@ -105,13 +105,14 @@ export function decode(
   // The opt-in over-target alternative (ADR-0003, RBAR-11): only when `primary`
   // lands strictly under the Target (the solve ceiling, when called from
   // decodeWithin -- RBAR-60) -- an exact (delta 0) or sub-Bar (delta > 0) Target has
-  // nothing to round up to, and an empty Inventory has nothing to round up with. The
+  // nothing to round up to, and an empty Inventory (or one of all-none sizes,
+  // ADR-0016) has nothing to round up with. The
   // least achievable Total above the Target is the least loadable Side sum above the
   // Side budget, found by the same search and Sleeve cap, so it is the fewest Plates
   // heaviest-first too. In the sleeve-bound band that may be several grid steps up
   // (RBAR-62, ADR-0012); when the Sleeve holds nothing heavier there is no physical
   // round-up and no `over` at all.
-  if (primary.delta < -EPS && inventory.length > 0) {
+  if (primary.delta < -EPS && hasUsablePlates(inventory)) {
     const overSide = sideAbove(sidePerHalf, inventory, sleeveMm);
     if (overSide) {
       const overTotal = totalKg(overSide, bar);

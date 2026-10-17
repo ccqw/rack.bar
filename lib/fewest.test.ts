@@ -5,8 +5,8 @@
 // tie-break is pinned along with the count.
 import { describe, it, expect } from 'vitest';
 import { decode, decodeWithin } from './decode.ts';
-import { ELEIKO_KG, IRON_LB, SLEEVE_MM, withLimits } from './plates.ts';
-import type { Plate } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, SLEEVE_MM, plateFace, withLimits } from './plates.ts';
+import type { InventoryEntry, Plate } from './plates.ts';
 import { PLATE_SETS, PLATE_SET_KEYS } from './platesets.ts';
 import type { PlateSetKey } from './platesets.ts';
 import { displayCeilingKg, draftToKg, lbToKg, shownIn } from './units.ts';
@@ -66,22 +66,41 @@ function rigSweep(rigs: readonly Rig[]): string[] {
   return rigs.flatMap((rig) => sweep(rig.name, rig.baselineKg, rig.inventory, oracleFor(rig.set)));
 }
 
-/** The console's solve: at or under the top of the reading the lifter typed (RBAR-60). */
-function readBackSweep(rigs: readonly Rig[]): string[] {
+/**
+ * The console's solve: at or under the top of the reading the lifter typed (RBAR-60).
+ * `solveWith` swaps in another Inventory and its oracle (a capped one, RBAR-72); the
+ * default is the rig's own set. Every load, round-up included, must also stay within
+ * each entry's Plate limit (ADR-0016; a no-op for unlimited entries).
+ */
+function readBackSweep(
+  rigs: readonly Rig[],
+  solveWith: (rig: Rig) => { inventory: readonly InventoryEntry[]; oracle: FewestOracle } = (rig) => ({
+    inventory: rig.inventory,
+    oracle: oracleFor(rig.set),
+  }),
+  label = '',
+): string[] {
   const misses: string[] = [];
   for (const rig of rigs) {
-    const o = oracleFor(rig.set);
+    const { inventory, oracle: o } = solveWith(rig);
     for (const u of UNITS) {
       for (const s of o.sums) {
         const total = rig.baselineKg + 2 * s * o.gridKg;
         const typed = draftToKg(String(shownIn(total, u)), u)!;
-        const { primary } = decodeWithin(typed, displayCeilingKg(typed, u), rig.baselineKg, rig.inventory);
+        const { primary, over } = decodeWithin(typed, displayCeilingKg(typed, u), rig.baselineKg, inventory);
+        const where = `${rig.name}${label} ${u} ${shownIn(total, u)}`;
         // The as-read solve may land on a neighbouring Total that shares the reading; the
         // Plates must still be the oracle's pick for whatever Side it landed on.
         const landed = Math.round((primary.total - rig.baselineKg) / 2 / o.gridKg);
         const want = o.pick(landed);
         if (want === null || !sameStack(primary.side, want)) {
-          misses.push(`${rig.name} ${u} ${shownIn(total, u)}: got ${show(primary.side)}, want ${show(want)}`);
+          misses.push(`${where}: got ${show(primary.side)}, want ${show(want)}`);
+        }
+        for (const side of over ? [primary.side, over.side] : [primary.side]) {
+          for (const p of inventory) {
+            const n = side.filter((q) => q === p).length;
+            if (n > (p.maxPerSide ?? Infinity)) misses.push(`${where}: ${n} x ${show([p])} over its limit`);
+          }
         }
       }
     }
@@ -186,7 +205,7 @@ describe('reduced Inventories: each single Plate size removed (RBAR-69; RBAR-66 
 });
 
 describe('capped Inventories: Plate limits per size (RBAR-72, ADR-0016)', () => {
-  const face = (p: Plate) => p.label ?? String(p.kg);
+  const face = plateFace;
 
   it('the bounded oracle with no caps agrees with the unbounded one (two DPs, one answer)', () => {
     for (const set of PLATE_SET_KEYS) {
@@ -229,6 +248,31 @@ describe('capped Inventories: Plate limits per size (RBAR-72, ADR-0016)', () => 
       expect(misses).toEqual([]);
     });
   }
+
+  it('as read: decodeWithin on home-gym counts picks the oracle stack, within every limit, kg and lb (RBAR-60)', () => {
+    // The console solves through decodeWithin, so the limits must reach it: a refactor
+    // that dropped its `inventory` argument would fall back to the unlimited default.
+    const misses: string[] = [];
+    let binding = 0;
+    for (const counts of [[1], [2, 1], [1, 2, 0], [3, 1, 2, 1]]) {
+      misses.push(
+        ...readBackSweep(
+          RIGS,
+          (rig) => {
+            const inv = rig.inventory;
+            const capped = withLimits(inv, Object.fromEntries(inv.map((p, i) => [face(p), counts[i % counts.length]])));
+            const oracle = cappedFewestOracle(capped, GRID_KG[rig.set]);
+            if (oracle.sums.length !== oracleFor(rig.set).sums.length) binding++;
+            return { inventory: capped, oracle };
+          },
+          ` caps ${counts.join(',')}`,
+        ),
+      );
+    }
+    expect(misses).toEqual([]);
+    // Not vacuous: on every rig and pattern the caps shrink what can be loaded.
+    expect(binding).toBe(4 * RIGS.length);
+  });
 });
 
 describe('runtime budget (RBAR-69: the exhaustive suites stay fast)', () => {
@@ -249,7 +293,7 @@ describe('runtime budget (RBAR-69: the exhaustive suites stay fast)', () => {
     // The limit-bound band is where the search works hardest: sums past what the pairs
     // hold walk every count before giving up. One pair of each big size, none of a
     // change Plate, and a single pair of everything.
-    const face = (p: Plate) => p.label ?? String(p.kg);
+    const face = plateFace;
     const inventories = PLATE_SET_KEYS.flatMap((set) => {
       const inv = PLATE_SETS[set].inventory;
       return [

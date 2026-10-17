@@ -9,7 +9,7 @@
 // sleeve and palette use). The Total carries the display Unit via `format`; the
 // config caption is dual-unit.
 import type { Plate, PlateColor } from './plates.ts';
-import { barWithCollars, totalKg } from './plates.ts';
+import { barWithCollars, plateFace, totalKg } from './plates.ts';
 import { format, shownIn, toLbWhole } from './units.ts';
 import type { Unit } from './units.ts';
 
@@ -53,11 +53,9 @@ export interface PlateGroup {
   readonly count: number;
 }
 
-/** A Plate's face stamp: its lb `label` when it has one (iron), else its kg. The one
- * definition the card, the summary and the share link (ADR-0014) all read. */
-export function plateFace(p: Plate): string {
-  return p.label ?? String(p.kg);
-}
+// plateFace moved to plates.ts (RBAR-72: it is also the Plate limit key, ADR-0016);
+// re-exported here so the card, the summary and the share link keep importing it.
+export { plateFace };
 
 /**
  * Fold a heaviest-first Side Load into `count x face` groups (ADR-0011). Identical

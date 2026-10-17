@@ -100,6 +100,15 @@ export interface InventoryEntry extends Plate {
   readonly maxPerSide?: number;
 }
 
+/**
+ * A Plate's face stamp: its lb `label` when it has one (iron), else its kg. The one
+ * definition the card, the summary, the share link (ADR-0014) and the Plate limit key
+ * (ADR-0016, `withLimits`) all read -- a storage contract, so never redefine it.
+ */
+export function plateFace(p: Plate): string {
+  return p.label ?? String(p.kg);
+}
+
 /** A valid Plate limit: a whole count of pairs, 0 or more, or Infinity (unlimited). */
 export function isPlateLimit(n: number): boolean {
   return n === Infinity || (Number.isInteger(n) && n >= 0);
@@ -121,9 +130,8 @@ export function withLimits(
   inventory: readonly InventoryEntry[],
   limits: Readonly<Record<string, number>>,
 ): InventoryEntry[] {
-  const face = (p: Plate) => p.label ?? String(p.kg);
   for (const [key, n] of Object.entries(limits)) {
-    if (!inventory.some((p) => face(p) === key)) {
+    if (!inventory.some((p) => plateFace(p) === key)) {
       throw new RangeError(`withLimits: no ${key} Plate in this Inventory`);
     }
     if (!isPlateLimit(n)) {
@@ -131,7 +139,7 @@ export function withLimits(
     }
   }
   return inventory.map((p) => {
-    const key = face(p);
+    const key = plateFace(p);
     if (!Object.hasOwn(limits, key)) return p;
     return { ...p, maxPerSide: Math.min(p.maxPerSide ?? Infinity, limits[key]) };
   });

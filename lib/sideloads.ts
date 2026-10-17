@@ -65,6 +65,15 @@ function assertPlates(inventory: readonly InventoryEntry[]): void {
   }
 }
 
+/**
+ * Whether `inventory` has any size the lifter can load: one whose Plate limit is not
+ * 0 (ADR-0016). The guard for "nothing to load with" -- use it, not `length > 0`, which
+ * an Inventory of all-none sizes passes (and plateGridKg then throws on).
+ */
+export function hasUsablePlates(inventory: readonly InventoryEntry[]): boolean {
+  return inventory.some((p) => p.maxPerSide !== 0);
+}
+
 // The sizes the search may draw from: every entry whose limit is not 0 ("none").
 function usable(inventory: readonly InventoryEntry[]): readonly InventoryEntry[] {
   return inventory.some((p) => p.maxPerSide === 0)

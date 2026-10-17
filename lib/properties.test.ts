@@ -43,9 +43,10 @@ import {
   isRememberable,
 } from './recents.ts';
 import { plateSetFor, PLATE_SET_KEYS, isOfferedPlateSet, PLATE_SETS } from './platesets.ts';
-import { withLimits } from './plates.ts';
+import { plateFace, withLimits } from './plates.ts';
 import type { InventoryEntry } from './plates.ts';
 import { cappedFewestOracle, greatestSumAtOrUnder } from './fewest.oracle.ts';
+import { sideLoads } from './sideloads.ts';
 import {
   RIGS,
   achievableTotals,
@@ -352,7 +353,7 @@ describe('Decode as read: decodeWithin + displayCeilingKg (ADR-0010 RBAR-60, ADR
 describe('Plate limit properties (ADR-0016, ADR-0003)', () => {
   // A Plate limit per size, as the pairs on hand: mostly small counts (where the caps
   // bite), sometimes unlimited. One entry per size of the rig's set, in set order.
-  const face = (p: Plate) => p.label ?? String(p.kg);
+  const face = plateFace;
   const capArb = fc.oneof(
     fc.integer({ min: 0, max: 4 }),
     fc.constant(Infinity),
@@ -452,6 +453,103 @@ describe('Plate limit properties (ADR-0016, ADR-0003)', () => {
         }
       }),
       { seed: SEED, numRuns: 80 },
+    );
+  });
+
+  it('caps only remove candidate stacks, the rank order is unchanged (ADR-0016, ADR-0003)', () => {
+    // The uncapped ranking is oracle-locked (RBAR-69), so it is the reference: the capped
+    // enumeration must be exactly its within-cap stacks, in the same order. The reference
+    // scan is bounded; whatever prefix of it was scanned pins a prefix of the capped list.
+    const LIMIT = 20;
+    const SCAN = 5000;
+    const caseArb = rigArb.chain((rig) =>
+      fc.record({
+        rig: fc.constant(rig),
+        caps: fc.array(fc.oneof(fc.integer({ min: 0, max: 3 }), fc.constant(Infinity)), {
+          minLength: rig.inventory.length,
+          maxLength: rig.inventory.length,
+        }),
+        units: fc.integer({ min: 0, max: Math.floor(150 / GRID_KG[rig.set]) }),
+      }),
+    );
+    const key = (side: readonly Plate[]) => side.map(face).join('+');
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, units }) => {
+        const sideKg = units * GRID_KG[rig.set];
+        const within = (side: readonly Plate[]) => rig.inventory.every((p, i) => countOf(side, p) <= caps[i]);
+        const got: string[] = [];
+        for (const side of sideLoads(sideKg, limited(rig, caps))) {
+          got.push(key(side));
+          if (got.length >= LIMIT) break;
+        }
+        const want: string[] = [];
+        let scanned = 0;
+        let complete = true;
+        for (const side of sideLoads(sideKg, rig.inventory)) {
+          if (++scanned > SCAN) {
+            complete = false;
+            break;
+          }
+          if (within(side)) want.push(key(side));
+          if (want.length >= LIMIT) break;
+        }
+        if (complete || want.length >= LIMIT) expect(got).toEqual(want);
+        else expect(got.slice(0, want.length)).toEqual(want);
+      }),
+      { seed: SEED, numRuns: 150 },
+    );
+  });
+
+  it('withLimits composes as the tighter cap, in either order (ADR-0016)', () => {
+    // Absent (no key) counts as unlimited; an explicit All (Infinity) over a finite cap
+    // must stay finite -- "today: All" never resets "this gym".
+    const optCapArb = fc.oneof(fc.integer({ min: 0, max: 4 }), fc.constant(Infinity), fc.constant(undefined));
+    const caseArb = rigArb.chain((rig) => {
+      const arr = fc.array(optCapArb, { minLength: rig.inventory.length, maxLength: rig.inventory.length });
+      return fc.record({ rig: fc.constant(rig), a: arr, b: arr, t: targetArb(rig) });
+    });
+    const record = (rig: Rig, caps: readonly (number | undefined)[]) =>
+      Object.fromEntries(
+        rig.inventory.flatMap((p, i) => (caps[i] === undefined ? [] : [[face(p), caps[i] as number]])),
+      );
+    fc.assert(
+      fc.property(caseArb, ({ rig, a, b, t }) => {
+        const min = rig.inventory.map((_, i) =>
+          a[i] === undefined && b[i] === undefined ? undefined : Math.min(a[i] ?? Infinity, b[i] ?? Infinity),
+        );
+        const direct = withLimits(rig.inventory, record(rig, min));
+        const want = JSON.stringify(shape(decode(t, rig.baselineKg, direct)));
+        for (const composed of [
+          withLimits(withLimits(rig.inventory, record(rig, a)), record(rig, b)),
+          withLimits(withLimits(rig.inventory, record(rig, b)), record(rig, a)),
+        ]) {
+          rig.inventory.forEach((p, i) => {
+            if (min[i] === undefined) expect(composed[i]).toBe(p);
+            else expect(composed[i].maxPerSide).toBe(min[i]);
+          });
+          expect(JSON.stringify(shape(decode(t, rig.baselineKg, composed)))).toBe(want);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('every size none: Decode is the bare rig and planRamp gives bare-rig rows (ADR-0016)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, ({ rig, t }) => {
+        const none = limited(rig, rig.inventory.map(() => 0));
+        const { primary, over } = decode(t, rig.baselineKg, none);
+        expect(primary.side).toEqual([]);
+        expect(primary.total).toBe(rig.baselineKg);
+        expect(over).toBeUndefined();
+        fc.pre(t > 0);
+        const ramp = planRamp(t, DEFAULT_RAMP, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: none });
+        for (const row of ramp.rows) {
+          expect(row.side).toEqual([]);
+          expect(row.total).toBeCloseTo(rig.barKg + (row.collars ? 2 * rig.collarKg : 0), 9);
+        }
+      }),
+      opts,
     );
   });
 });

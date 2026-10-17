@@ -70,12 +70,13 @@ persistence wait on Caitlin's answers to that pass's open questions.
 - **UI:** the entry point (tap the Bar, one sheet, or this-lift / this-gym), the
   pair counts offered (0..4 plus All), By Plates behaviour (dim and badge, never
   block), and how a limit is shown and restored.
-- **Warm up under caps** (RBAR-65): `planRamp` / `planEasyRamp` still type their
-  Inventory as `readonly Plate[]`, and nothing passes them a capped one yet. They
-  reach Side Loads only through `lib/sideloads.ts`, so each row would respect the
-  caps. But `planEasyRamp` guards an empty Inventory by its length, so an Inventory
-  of all-none sizes would throw from `plateGridKg` there. That follow-up needs the
-  usable-size guard and its own properties. Whether add-only Ramps keep their shape
-  under caps is open question 8.
+- **Warm up under caps** (RBAR-65): `RampRig.inventory` takes `InventoryEntry`s, and
+  `planRamp` reaches Side Loads only through `lib/sideloads.ts`, so each row respects
+  the caps; an all-none Inventory gives bare-rig rows (property-locked). The guard for
+  "nothing to load with" is `hasUsablePlates` (sideloads.ts), never `length > 0`,
+  which an all-none Inventory passes. `planEasyRamp` (lib/moves.ts) still guards by
+  length and so throws from `plateGridKg` on an all-none Inventory; it switches to
+  `hasUsablePlates` with the RBAR-65 slice 4b rewrite. Whether add-only Ramps keep
+  their shape under caps is open question 8.
 - **Share links** (ADR-0014): the proposal is that links carry the load, not the
   lifter's limits. Not touched here.
