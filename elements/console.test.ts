@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import './console.ts';
+import { COLLAPSE_MS, LONG_PRESS_MS, UNDO_MS } from './recents.ts';
 import { statusPill, onBarLine, belowBarNote, announceLine } from './console.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
 import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
@@ -968,6 +969,133 @@ describe('<rack-console> Recent Targets (RBAR-20, ADR-0009)', () => {
     expect(recentsEl(el).hidden).toBe(true); // recents are a Decode affordance
     modeBtn(el, 'decode').click();
     expect(recentsEl(el).hidden).toBe(false);
+  });
+});
+
+// -- Removing a Recent (RBAR-73, ADR-0009) -------------------------------------------
+describe('<rack-console> removing a Recent (RBAR-73, ADR-0009)', () => {
+  const recentsRoot = (el: HTMLElement) => recentsEl(el).shadowRoot!;
+  const pressDelete = (chip: HTMLButtonElement) =>
+    chip.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, composed: true, cancelable: true }),
+    );
+  const undo = (el: HTMLElement) =>
+    recentsRoot(el).querySelector<HTMLButtonElement>('[data-undo]');
+
+  it('long-press -> Remove drops the chip and it stays gone after a reload', () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100, 80]));
+      const el = mountConsole();
+      const chip = recentChips(el)[1];
+      chip.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, composed: true, button: 0 }),
+      );
+      vi.advanceTimersByTime(LONG_PRESS_MS);
+      chip.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
+      recentsRoot(el).querySelector<HTMLButtonElement>('[data-menu-remove]')!.click();
+      expect(recentLabels(el)).toEqual([120, 80]);
+      expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([120, 80]);
+      el.remove();
+      expect(recentLabels(mountConsole())).toEqual([120, 80]); // the reload
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Undo restores the chip in its old slot, and persists that too', () => {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100, 80]));
+    const el = mountConsole();
+    pressDelete(recentChips(el)[1]);
+    expect(recentLabels(el)).toEqual([120, 80]);
+    undo(el)!.click();
+    expect(recentLabels(el)).toEqual([120, 100, 80]);
+    expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([120, 100, 80]);
+  });
+
+  it('removing a Recent leaves the current Target and the Bar alone (history only)', () => {
+    const el = mountConsole();
+    commit(el, '100');
+    commit(el, '80'); // the live Target is 80
+    const before = total(el);
+    pressDelete(recentChips(el).find((c) => c.dataset.target === '80')!);
+    expect(recentLabels(el)).toEqual([100]);
+    expect(total(el)).toBe(before);
+    expect(entryAnchorText(el)).toBe('80');
+  });
+
+  it('removing the last Recent keeps the row up for its Undo, then hides it', () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify([100]));
+      const el = mountConsole();
+      pressDelete(recentChips(el)[0]);
+      expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([]);
+      expect(recentsEl(el).hidden).toBe(false);
+      expect(undo(el)).not.toBeNull();
+      vi.advanceTimersByTime(UNDO_MS + COLLAPSE_MS);
+      expect(recentsEl(el).hidden).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a lapsing Undo in By Plates never brings the Recent row back there', () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100]));
+      const el = mountConsole();
+      pressDelete(recentChips(el)[0]);
+      modeBtn(el, 'encode').click();
+      vi.advanceTimersByTime(UNDO_MS + COLLAPSE_MS);
+      expect(recentsEl(el).hidden).toBe(true);
+      modeBtn(el, 'decode').click();
+      expect(recentsEl(el).hidden).toBe(false);
+      expect(recentLabels(el)).toEqual([100]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-renders that commit nothing (a unit toggle, a keypad digit) keep the Undo alive', () => {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100]));
+    const el = mountConsole();
+    pressDelete(recentChips(el)[0]);
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="kg"]')!.click();
+    valueBtn(el).click(); // open the keypad
+    type(el, '5'); // a digit: renders, does not commit
+    expect(undo(el)).not.toBeNull();
+    undo(el)!.click();
+    expect(recentLabels(el)).toEqual([120, 100]);
+  });
+
+  it('a fresh commit during the Undo window makes the removal final (after the collapse)', () => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100]));
+      const el = mountConsole();
+      pressDelete(recentChips(el)[0]);
+      commit(el, '90');
+      vi.advanceTimersByTime(COLLAPSE_MS);
+      expect(undo(el)).toBeNull();
+      expect(recentLabels(el)).toEqual([90, 100]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('several removals in a row each persist, and undoing one restores it in place', () => {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([120, 100, 80, 60]));
+    const el = mountConsole();
+    pressDelete(recentChips(el)[0]); // 120
+    pressDelete(recentChips(el)[1]); // 80
+    expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([100, 60]);
+    recentsRoot(el).querySelector<HTMLButtonElement>('[data-undo][data-slot="2"]')!.click();
+    expect(JSON.parse(localStorage.getItem(RECENTS_KEY)!)).toEqual([100, 80, 60]);
+    expect(recentLabels(el)).toEqual([100, 80, 60]);
+    el.remove();
+    expect(recentLabels(mountConsole())).toEqual([100, 80, 60]); // a reload: 120 stays gone
   });
 });
 
