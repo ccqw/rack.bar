@@ -108,3 +108,9 @@ phone.
   app renders with both fonts; then a rebuilt `dist/` shows Update, does not reload
   on its own, and one tap reloads onto the new cache. iOS Home Screen still wants a
   human eyeball.
+
+## 2026-10-17 -- the help icon is cut (RBAR-86)
+
+The header's left side is now the wordmark alone (the Help popover and its "i" icon
+were removed in RBAR-86). The Update button's placement is unchanged: it still sits
+over the wordmark, positioned from the `.wordmark` rect.

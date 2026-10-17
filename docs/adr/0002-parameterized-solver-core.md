@@ -37,3 +37,11 @@ applied with `withLimits`. The exact search honours it. A bare Plate is still an
 unlimited entry, so the v1 default and every existing caller are unchanged. The limits
 UI, its scopes and persistence remain deferred, as this ADR's principle intends. See
 ADR-0016.
+
+## 2026-10-17 -- naming: there is no `solve()`; the shell calls `decodeWithin` (RBAR-86)
+
+The 2026-06-16 rename stands, and the Decode direction now has two entry points in
+`lib/decode.ts`: `decode(target, bar, inventory, sleeveMm)` and
+`decodeWithin(target, ceiling, bar, inventory, sleeveMm)` (RBAR-60), which solves to the
+top of the Target's displayed reading and reports deltas against the real Target. The
+shell and `lib/plan.ts` call `decodeWithin`. "`solve()`" in older docs means this pair.

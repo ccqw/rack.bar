@@ -254,9 +254,9 @@ class RackRecents extends HTMLElement {
                       margin-right ${COLLAPSE_MS}ms ease-out, opacity ${COLLAPSE_MS}ms ease-out;
         }
         .undo.collapsing .face { animation: none; }
-        /* The Remove popover: the help popover's raised card (RBAR-34 tokens), anchored
+        /* The Remove popover: a raised card on the RBAR-34 popover tokens, anchored
            above the pressed chip so it covers the entry for a moment rather than adding
-           a row. Entrance as rack-help: a fade for everyone, the lift for no-preference. */
+           a row. Entrance: a fade for everyone, the lift for no-preference. */
         @keyframes rack-pop-fade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes rack-pop-up {
           from { opacity: 0; transform: translate(-50%, 6px) scale(.97); }

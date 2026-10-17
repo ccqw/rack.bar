@@ -14,9 +14,12 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 
 ## Map
 
-- `lib/` — functional core: pure plate math (`plates.ts`); the `solve()` core lands here
-  (`decode.ts`), choosing its Plates through the exact search in `sideloads.ts`
-- `elements/` — imperative shell: Web Components (`app.ts` is a scaffold placeholder)
+- `lib/` -- functional core: pure plate math (`plates.ts`); the solver core is
+  `decode`/`decodeWithin` (`decode.ts`), choosing its Plates through the exact search in
+  `sideloads.ts`
+- `elements/` -- imperative shell: Web Components. `app.ts` (`<rack-app>`) is the app shell
+  and composition root (ADR-0007): header + Setup pill, `<rack-console>`, `<rack-setup>`,
+  and the rig config it persists and feeds down
 - `tokens.css` — design tokens (`--rack-*`)
 - `scripts/fit-check.js` -- the phone-fit layout check (ADR-0013): a Playwright snippet
   run against the dev server that asserts no vertical scroll at the visible Safari viewports
@@ -43,7 +46,8 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 
 - Core/shell split (ADR-0001): plate logic goes in `lib/` as pure, tested functions;
   elements only wire DOM to it.
-- The solver is `solve(target, bar, inventory)` (ADR-0002): Bar and Inventory are
+- The solver is `decode(target, bar, inventory)` / `decodeWithin(target, ceiling, ...)`
+  (ADR-0002, which sketched it as `solve()`): Bar and Inventory are
   first-class inputs (defaults 20 kg, unlimited Eleiko set). v1 now exposes Bar
   selection, optional collars, and Pairs of Plates on Hand (per-size Plate limits per
   Plate set, ADR-0016) in Setup.

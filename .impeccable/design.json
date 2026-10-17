@@ -82,7 +82,7 @@
       { "name": "color-transition", "value": "0.16s", "purpose": "Hover/state color shifts on buttons and chips." },
       { "name": "numRoll", "value": ".26s ease-out", "purpose": "Display numbers roll up on change." },
       { "name": "sheetIn", "value": ".2s cubic-bezier(.2, .85, .25, 1)", "purpose": "Bottom sheets rise from the viewport bottom." },
-      { "name": "popIn", "value": ".16s cubic-bezier(.2, .85, .25, 1)", "purpose": "Help popover entrance." },
+      { "name": "popIn", "value": ".16s cubic-bezier(.2, .85, .25, 1)", "purpose": "Popover entrance (Recents Remove)." },
       { "name": "cardIn", "value": ".24s cubic-bezier(.2, .85, .25, 1)", "purpose": "Share card entrance." },
       { "name": "fadeIn", "value": ".16s", "purpose": "Scrims behind sheets and modals." }
     ],
