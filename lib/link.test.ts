@@ -139,7 +139,7 @@ describe('parseLink: accepted links (ADR-0014)', () => {
     expect(iron.side[0]!.kg).toBeCloseTo(11.34, 2);
   });
 
-  it('an lb Target round-trips to the same reading in the display Unit', () => {
+  it('an lb Target round-trips to the same reading in the Primary unit', () => {
     for (const lbTarget of [135, 225, 315, 405, 1]) {
       const sent: LinkState = {
         set: 'training',
@@ -156,7 +156,7 @@ describe('parseLink: accepted links (ADR-0014)', () => {
     }
   });
 
-  it('defaults a missing c to None, a missing p to the bare Bar, a missing u to the given default', () => {
+  it('defaults a missing c to None, a missing p to the bare Bar, a missing u to the recipient Primary unit', () => {
     const s = parseLink('v=1&s=comp&b=20kg&m=p', 'lb')!;
     expect(s).toEqual({ set: 'comp', barKg: 20, collarKg: 0, unit: 'lb', mode: 'encode', side: [] });
     expect(parse('v=1&s=comp&b=20kg&m=p')!.unit).toBe('kg');

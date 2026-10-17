@@ -38,7 +38,7 @@ entry and status read the same. **Plates win over a re-solve** when the two disa
 | `b` | Bar, by its stamp | `20kg` `15kg` `5kg` (comp); `45lb` `20kg` (training) | required; one the set offers |
 | `m` | mode | `w` (By Weight / Decode), `p` (By Plates / Encode) | required |
 | `c` | Collar per Side, kg | `0`, `2.5` | optional, default 0 |
-| `u` | display Unit | `kg`, `lb` | optional, default the recipient's own Unit |
+| `u` | the sender's Primary unit | `kg`, `lb` | optional, default the recipient's own Primary unit |
 | `p` | Side Load, heaviest first, by face stamp, `Nx` prefix when N > 1 | e.g. `2x25,15,2.5`; empty = bare Bar | optional, default bare Bar |
 | `t` | Target, kg, 2 dp (the Recents precision, ADR-0009) | plain decimal, > 0, <= 1000 | only with `m=w`, optional there |
 
@@ -56,7 +56,7 @@ entry and status read the same. **Plates win over a re-solve** when the two disa
 
 ## Decision: all-or-nothing parse, unknown keys ignored
 
-`parseLink(fragment, defaultUnit)` returns a fully valid load or null; it never throws
+`parseLink(fragment, primaryUnit)` returns a fully valid load or null; it never throws
 and never returns a half-valid load. A mangled link degrades to a normal boot, the
 same validate-at-the-boundary posture as the persisted rig (ADR-0007/0010). It rejects
 the whole link on:
@@ -73,7 +73,7 @@ the whole link on:
   `t` <= 0 or over 1000 kg after rounding to 2 dp.
 
 Tolerated, and canonicalized: keys in any order, missing optional keys, an explicit
-`1x`, repeated or unsorted faces (re-sorted heaviest-first), leading zeros in a
+`1x`, repeated or unsorted faces (re-sorted heaviest-first), leading or trailing zeros in a
 decimal, empty `&` segments, a leading `#`, and percent-encoded values (a messenger
 may turn `,` into `%2C`). The fragment is split on `&` and `=` BEFORE each value is
 decoded, so an encoded `%26` / `%3D` can never become a separator and smuggle in a
@@ -86,7 +86,7 @@ Plate from the other set, a Side out of order or past the Sleeve, a Target that 
 finite, rounds to <= 0, or is over the cap). Refusing beats a link that opens to a
 different load -- an off-menu 20.4 kg Bar would round onto the `45lb` stamp, and a red
 Eleiko `25` on a Training load would open as an iron 25 lb. Every link it does write
-parses back to the same load. A missing `u` takes the recipient's Unit, which the
+parses back to the same load. A missing `u` takes the recipient's Primary unit, which the
 shell must pass (`parseLink`'s second argument is required).
 
 ## Decision: the link applies transiently

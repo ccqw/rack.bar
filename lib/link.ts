@@ -10,7 +10,7 @@
 //   b  Bar, by its stamp         `20kg` `15kg` `5kg` | `45lb` `20kg`  required, one the set offers
 //   m  mode                      `w` (By Weight) | `p` (By Plates)    required
 //   c  Collar per Side, kg       `0` | `2.5`                          default 0
-//   u  display Unit              `kg` | `lb`                          default: the caller's
+//   u  sender's Primary unit     `kg` | `lb`                          default: the recipient's
 //   p  Side Load, heaviest first `2x25,10,2.5` (`Nx` when N > 1)      default: bare Bar
 //   t  Target, kg, 2 dp          finite, > 0, <= MAX_TARGET_KG        only with m=w
 //
@@ -47,7 +47,7 @@ interface LinkLoad {
   /** The bare Bar, kg -- one of `PLATE_SETS[set].bars`. */
   readonly barKg: number;
   readonly collarKg: CollarKg;
-  /** The display Unit the sender was reading in. */
+  /** The sender's Primary unit (CONTEXT.md): the Unit the load was read in. */
   readonly unit: Unit;
   /** The Side Load: the set's own Inventory objects, heaviest-first, within the Sleeve. */
   readonly side: readonly Plate[];
@@ -234,10 +234,10 @@ function parseTarget(value: string): number | null {
  * a count outside 1..99, a Side Load past the Sleeve, or a `t` that is present with
  * `m=p`, not a plain decimal, <= 0 at 2 dp, or over MAX_TARGET_KG. Unknown keys are
  * ignored; Plates are re-sorted heaviest-first. A missing `c` is None, a missing `p`
- * the bare Bar, and a missing `u` is `defaultUnit` -- the recipient's own Unit, which
+ * the bare Bar, and a missing `u` is `primaryUnit` -- the recipient's own Primary unit, which
  * the shell must pass in. Never throws.
  */
-export function parseLink(fragment: string, defaultUnit: Unit): LinkState | null {
+export function parseLink(fragment: string, primaryUnit: Unit): LinkState | null {
   const raw = fragment.startsWith('#') ? fragment.slice(1) : fragment;
   if (raw.length > MAX_LINK_LENGTH) return null;
   const pairs = splitPairs(raw);
@@ -262,7 +262,7 @@ export function parseLink(fragment: string, defaultUnit: Unit): LinkState | null
   }
 
   const unitToken = pairs.get('u');
-  let unit: Unit = defaultUnit;
+  let unit: Unit = primaryUnit;
   if (unitToken !== undefined) {
     if (!isUnit(unitToken)) return null;
     unit = unitToken;
