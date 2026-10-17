@@ -264,6 +264,72 @@ describe('<rack-entry> physical keyboard (RBAR-49)', () => {
     expect(sheet(root).hidden).toBe(false);
   });
 
+  it('drops a lone leading zero, like the tap path (0 then 5 -> 5)', () => {
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    openSheet(root);
+    typeKeys(['0', '5']);
+    expect(shown(root)).toBe('5');
+    expect(seen).toHaveBeenLastCalledWith(5);
+  });
+
+  it('a decimal typed first starts a fresh 0. draft', () => {
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    openSheet(root);
+    typeKeys(['.', '5']);
+    expect(shown(root)).toBe('0.5');
+    expect(seen).toHaveBeenLastCalledWith(0.5);
+  });
+
+  it('after a Unit switch the first digit replaces the converted draft (RBAR-38)', () => {
+    const { el, root } = mountEntry();
+    openSheet(root);
+    typeKeys(['1', '0', '0']);
+    el.unit = 'lb'; // reformats to 220
+    const seen = targetSpy(el);
+    keydown('3');
+    expect(shown(root)).toBe('3');
+    expect(seen).toHaveBeenLastCalledWith(lbToKg(3));
+  });
+
+  it('after a Unit switch Backspace discards the converted draft whole (RBAR-38)', () => {
+    const { el, root } = mountEntry();
+    openSheet(root);
+    typeKeys(['1', '0', '0']);
+    el.unit = 'lb';
+    const seen = targetSpy(el);
+    keydown('Backspace');
+    expect(seen).toHaveBeenLastCalledWith(null);
+  });
+
+  it('Enter after a Unit switch commits the canonical Target, drift-free (RBAR-38)', () => {
+    const { el, root } = mountEntry();
+    const closed = closeSpy(el);
+    openSheet(root);
+    typeKeys(['1', '0', '0']);
+    el.unit = 'lb'; // shows 220
+    keydown('Enter');
+    expect(closed).toHaveBeenLastCalledWith(100);
+  });
+
+  it('Enter on a display()-seeded value commits null (an idle peek)', () => {
+    const { el, root } = mountEntry();
+    (el as Entry & { display(v: number | null): void }).display(120);
+    const closed = closeSpy(el);
+    openSheet(root);
+    keydown('Enter');
+    expect(closed).toHaveBeenLastCalledWith(null);
+  });
+
+  it('Enter on an emptied field commits null', () => {
+    const { el, root } = mountEntry();
+    const closed = closeSpy(el);
+    openSheet(root);
+    typeKeys(['5', 'Backspace', 'Enter']);
+    expect(closed).toHaveBeenLastCalledWith(null);
+  });
+
   it('a held-key autorepeat still routes through press (Backspace repeat deletes)', () => {
     const { root } = mountEntry();
     openSheet(root);
@@ -307,6 +373,18 @@ describe('<rack-entry> physical keyboard (RBAR-49)', () => {
     expect(sheet(root).hidden).toBe(true);
     expect(closed).toHaveBeenCalledTimes(1);
     expect(closed).toHaveBeenLastCalledWith(7);
+  });
+
+  it('Enter with a stepper focused is Done, not another nudge', () => {
+    const { el, root } = mountEntry();
+    const seen = targetSpy(el);
+    const closed = closeSpy(el);
+    openSheet(root);
+    const inc = root.querySelector<HTMLButtonElement>('[data-step="inc"]')!;
+    inc.click(); // 20 -> 21, focus stays on +
+    keyOnFocused(inc, 'Enter');
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(closed).toHaveBeenLastCalledWith(21);
   });
 
   it('Space on a focused key is left to the button: exactly one press', () => {
@@ -368,5 +446,56 @@ describe('<rack-console> physical keyboard commits to Recents (RBAR-49)', () => 
     const recents = el.shadowRoot!.querySelector('rack-recents')!;
     const chips = [...recents.shadowRoot!.querySelectorAll<HTMLButtonElement>('[data-target]')];
     expect(chips.map((c) => Number(c.dataset.target))).toEqual([142.5]);
+  });
+
+  it.each(['data-share', 'data-fullscreen'])(
+    'a modal opened over the sheet ([%s]) takes the keys: the Target behind is inert',
+    (attr) => {
+      const el = document.createElement('rack-console');
+      document.body.append(el);
+      const shadow = el.shadowRoot!;
+      const entry = shadow.querySelector('rack-entry')! as HTMLElement;
+      entry.shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!.click(); // open
+      shadow.querySelector<HTMLButtonElement>(`[${attr}]`)!.click(); // modal over the pad
+      const seen = targetSpy(entry);
+      const closed = closeSpy(entry);
+      for (const k of ['5', 'Backspace', 'Escape', 'Enter']) {
+        expect(keydown(k).defaultPrevented).toBe(false);
+      }
+      expect(seen).not.toHaveBeenCalled();
+      expect(closed).not.toHaveBeenCalled();
+      expect(entry.shadowRoot!.querySelector<HTMLElement>('[data-sheet]')!.hidden).toBe(false);
+    },
+  );
+
+  it('keys reach the pad again once the modal over it closes', () => {
+    const el = document.createElement('rack-console');
+    document.body.append(el);
+    const shadow = el.shadowRoot!;
+    const entry = shadow.querySelector('rack-entry')! as HTMLElement;
+    entry.shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!.click(); // open
+    shadow.querySelector<HTMLButtonElement>('[data-fullscreen]')!.click();
+    (shadow.querySelector('rack-fullscreen') as HTMLElement & { close(): void }).close();
+    const seen = targetSpy(entry);
+    keydown('5');
+    expect(seen).toHaveBeenLastCalledWith(5);
+  });
+
+  it('a sheet left open across a switch to By Plates takes no keys there', () => {
+    // The mode toggle stays tappable above the open sheet (no scrim); By Plates hides the
+    // whole entry without closing the pad, so its listener must not edit or commit.
+    const el = document.createElement('rack-console');
+    document.body.append(el);
+    const shadow = el.shadowRoot!;
+    const entry = shadow.querySelector('rack-entry')!;
+    entry.shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!.click(); // open
+    shadow.querySelector<HTMLButtonElement>('[data-mode="encode"]')!.click();
+    const seen = targetSpy(entry as HTMLElement);
+    const closed = closeSpy(entry as HTMLElement);
+    for (const k of ['5', 'Enter']) expect(keydown(k).defaultPrevented).toBe(false);
+    expect(seen).not.toHaveBeenCalled();
+    expect(closed).not.toHaveBeenCalled();
+    const recents = shadow.querySelector('rack-recents')!;
+    expect(recents.shadowRoot!.querySelectorAll('[data-target]')).toHaveLength(0);
   });
 });

@@ -63,6 +63,26 @@ const CHECK_ICON = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"
 const TEXT_FIELD = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
 const ACTIVATABLE = 'button, a[href], summary';
 
+// True while an aria-modal dialog is showing anywhere in the composed tree (RBAR-49). The
+// app's modals (Share, Fullscreen, Setup) close by hiding their host element, so a dialog
+// counts as showing when neither it nor any ancestor, across shadow boundaries, is hidden.
+function modalOpen(root: Document | ShadowRoot): boolean {
+  for (const el of root.querySelectorAll<HTMLElement>('*')) {
+    if (el.matches('[aria-modal="true"]') && !hiddenUp(el)) return true;
+    if (el.shadowRoot && modalOpen(el.shadowRoot)) return true;
+  }
+  return false;
+}
+
+function hiddenUp(el: Element): boolean {
+  for (let n: Element | null = el; n; ) {
+    if ((n as HTMLElement).hidden) return true;
+    const root = n.getRootNode();
+    n = n.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+  }
+  return false;
+}
+
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private valueEl!: HTMLButtonElement;
@@ -483,10 +503,19 @@ class RackEntry extends HTMLElement {
   // claimed with preventDefault, which also cancels a focused on-screen key's native Enter
   // activation -- otherwise Enter would close the pad AND re-press the focused key (or
   // re-toggle the value button open). Space is not mapped, so a focused key keeps its own
-  // Space activation and enters exactly once. Enter on a focused control OUTSIDE this
+  // Space activation and enters exactly once. This holds for EVERY control inside the
+  // entry (keys, value, steppers, Clear): a mouse tap leaves focus on it in Chrome, so
+  // Enter must mean Done there too, not a repeat of the last tap; a keyboard user still
+  // activates a focused control with Space. Enter on a focused control OUTSIDE this
   // element is left to that control.
   private onKeydown = (e: KeyboardEvent): void => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+    // The console hides the whole entry in By Plates (Encode) without closing the sheet,
+    // so a pad left open across a mode switch must not take keys it cannot show. (Only
+    // the host's own flag: that is how the console hides it.) Likewise, the pad has no
+    // scrim, so Share / Fullscreen / Setup can open OVER it -- content behind an
+    // aria-modal dialog is inert, so keys must not edit or commit the Target back there.
+    if (this.hidden || modalOpen(document)) return;
     const origin = e.composedPath()[0];
     if (origin instanceof Element && origin.matches(TEXT_FIELD)) return;
     const k = e.key;
