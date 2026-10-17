@@ -13,8 +13,13 @@
 // longer fits the sleeve are disabled (RBAR-31, ADR-0012): the console feeds the used
 // width via `sideMm`, and the fit check is the same plateFitsMm the core refuses
 // with -- so the affordance and the refusal cannot disagree.
+//
+// Pairs of Plates on Hand (RBAR-72, ADR-0016): the Inventory's entries carry their
+// limits. A size limited to none is dimmed and its face struck through; a limited one
+// wears an "x1".."x4" badge. Neither ever disables a key -- the lifter may be loading
+// a bar the app does not know about, and only the sleeve refuses (ADR-0005, ADR-0012).
 import { ELEIKO_KG, plateFitsMm } from '../lib/plates.ts';
-import type { Plate } from '../lib/plates.ts';
+import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
@@ -24,15 +29,15 @@ import { SECTION_LABEL } from './sectionlabel.ts';
 class RackPalette extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private warn!: HTMLElement;
-  private _inventory: readonly Plate[] = ELEIKO_KG;
+  private _inventory: readonly InventoryEntry[] = ELEIKO_KG;
   private _sideMm = 0;
 
   /** The denominations to offer (the active set's Inventory). Assigning re-renders. */
-  set inventory(plates: readonly Plate[]) {
+  set inventory(plates: readonly InventoryEntry[]) {
     this._inventory = plates;
     if (this.isConnected) this.render();
   }
-  get inventory(): readonly Plate[] {
+  get inventory(): readonly InventoryEntry[] {
     return this._inventory;
   }
 
@@ -63,9 +68,16 @@ class RackPalette extends HTMLElement {
       .map((p) => {
         const face = p.label ?? String(p.kg);
         const name = p.label !== undefined ? `${p.label} lb iron` : `${p.kg} kg ${p.color}`;
-        return `<button type="button" class="key" data-kg="${p.kg}" data-color="${p.color}"
+        const cap = p.maxPerSide ?? Infinity;
+        const none = cap === 0;
+        const limited = cap > 0 && cap !== Infinity;
+        const onHand = none ? ', none on hand' : limited ? `, ${cap} ${cap === 1 ? 'pair' : 'pairs'} on hand` : '';
+        return `<button type="button" class="key${none ? ' none' : ''}" data-kg="${p.kg}"
+                 data-color="${p.color}"${limited ? ` data-pairs="${cap}"` : ''}
                  style="--disc: var(--rack-plate-${p.color})"
-                 aria-label="Add ${name} Plate">${face}</button>`;
+                 aria-label="Add ${name} Plate${onHand}"><span class="face">${face}</span>${
+                   limited ? `<span class="badge" aria-hidden="true">x${cap}</span>` : ''
+                 }</button>`;
       })
       .join('');
     this.root.innerHTML = `
@@ -119,6 +131,18 @@ class RackPalette extends HTMLElement {
         .key[data-color="green"],
         .key[data-color="iron"] { color: #fff; }
         .key:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* Pairs of Plates on Hand (RBAR-72): a none size is dimmed and struck, still
+           tappable; a limited one wears its pairs as a corner badge (prototype H). */
+        .key { position: relative; }
+        .key.none { opacity: .38; }
+        .key.none .face { text-decoration: line-through; }
+        .badge {
+          position: absolute; top: -6px; right: -4px;
+          font-family: var(--rack-font-num); font-size: 9px; font-weight: 700; line-height: 1;
+          padding: 2px 5px; border-radius: 999px;
+          background: var(--rack-selected); border: 1px solid var(--rack-border-active);
+          color: var(--rack-text-secondary);
+        }
         /* A key whose Plate no longer fits the sleeve (ADR-0012): visibly out of
            play, not tappable (handoff 4b: 30%, not-allowed). */
         .key:disabled { opacity: .3; cursor: not-allowed; }

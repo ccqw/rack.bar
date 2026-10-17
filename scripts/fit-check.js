@@ -16,7 +16,10 @@
 // land on that button, or the line reads ICONS BLOCKED (ICONS MISSING if the selector no
 // longer finds exactly two). The Setup states (RBAR-76) add the sheet's height, how far
 // it runs above the viewport (`over`, 0 = it fits), and how far its Bar row scrolls
-// sideways inside the sheet.
+// sideways inside the sheet. Since RBAR-72 the sheet may scroll inside itself (the Pairs
+// of Plates on Hand section), never the page: the Setup lines also give how far the
+// sheet scrolls inside (`scrolls inside`), and the RBAR-72 states open a size's
+// None..All row with limits stored.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -72,6 +75,7 @@ async (shared) => {
         sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
         sheetH: panel ? Math.round(panel.getBoundingClientRect().height) : 0,
         rowScroll: panel ? row.scrollWidth - row.clientWidth : 0,
+        sheetScroll: panel ? panel.scrollHeight - panel.clientHeight : 0,
         scrollH: d.scrollHeight,
         innerH: window.innerHeight,
         over: Math.max(0, d.scrollHeight - window.innerHeight),
@@ -176,6 +180,23 @@ async (shared) => {
         await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
         await inApp(`app.querySelector('[data-setup-pill]').click()`);
         await record('setup: 3 custom Bars');
+        // Pairs of Plates on Hand (RBAR-72): limits stored on both sets, the sheet open
+        // and scrolled to its end, with the first size's None..All row open.
+        await page.evaluate(() =>
+          localStorage.setItem(
+            'rackbar.platesOnHand',
+            JSON.stringify({ comp: { 25: 1, 15: 0, 0.5: 2 }, training: { 45: 1, 2.5: 0 } }),
+          ),
+        );
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inApp(`app.querySelector('[data-setup-pill]').click()`);
+        await record('setup: limits stored');
+        await inApp(
+          `setup.querySelector('[data-face]').click();` +
+            `const p = setup.querySelector('[data-panel]'); p.scrollTop = p.scrollHeight;`,
+        );
+        await record('setup: size row open');
       }
     }
   }
@@ -203,6 +224,9 @@ async (shared) => {
       `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
       `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
       `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}` +
-      (r.sheetH ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` : ''),
+      (r.sheetH
+        ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px,` +
+          ` scrolls inside ${r.sheetScroll}px`
+        : ''),
   );
 }

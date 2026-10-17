@@ -47,7 +47,7 @@
 // A Side is drawn in the order given here: the sleeve and the share text never
 // re-sort it (pinned in elements/sleeve.test.ts and lib/summary.test.ts).
 import { SLEEVE_MM, barWithCollars, totalKg } from './plates.ts';
-import type { Plate } from './plates.ts';
+import type { InventoryEntry, Plate } from './plates.ts';
 import { planRamp } from './plan.ts';
 import type { PlanOptions, Ramp, RampRig, RampRow, RampStep } from './plan.ts';
 import { hasUsablePlates, plateGridKg } from './sideloads.ts';
@@ -193,7 +193,7 @@ export interface EasyRamp {
 
 /** One denomination, in heaviest-first rank (equal masses narrower-first). */
 interface Size {
-  readonly plate: Plate;
+  readonly plate: InventoryEntry;
   readonly big: boolean;
   /** Its mass in grid units. */
   readonly units: number;
@@ -307,7 +307,10 @@ export function planEasyRamp(
   }
 
   const grid = plateGridKg(inventory);
-  const sizes: Size[] = [...inventory]
+  // Only the sizes the lifter has (ADR-0016): a size limited to none is no size here,
+  // and a limited one never goes past its pairs on hand (RBAR-72 slice 2).
+  const sizes: Size[] = inventory
+    .filter((p) => p.maxPerSide !== 0)
     .sort((a, b) => b.kg - a.kg || a.widthMm - b.widthMm)
     .map((plate) => ({ plate, big: isBigPlate(plate), units: Math.round(plate.kg / grid) }));
   const n = sizes.length;
@@ -319,10 +322,17 @@ export function planEasyRamp(
 
   // The cap per size: PLATES_PER_SIZE, unless that cannot load the Working Total; then
   // each size may go up to the count Decode's own Side uses (ADR-0003's stack).
-  let caps = sizes.map(() => PLATES_PER_SIZE);
+  // A size's own Plate limit caps both (Decode's Side already respects it).
+  const onHand = (s: Size) => s.plate.maxPerSide ?? Infinity;
+  let caps = sizes.map((s) => Math.min(PLATES_PER_SIZE, onHand(s)));
   let loadable = loadableUnits(sizes, caps, sleeveMm, workUnits);
   if (!loadable[workUnits]) {
-    caps = sizes.map((s) => Math.max(PLATES_PER_SIZE, nearest.working.primary.side.filter((p) => p === s.plate).length));
+    caps = sizes.map((s) =>
+      Math.min(
+        onHand(s),
+        Math.max(PLATES_PER_SIZE, nearest.working.primary.side.filter((p) => p === s.plate).length),
+      ),
+    );
     loadable = loadableUnits(sizes, caps, sleeveMm, workUnits);
   }
   const exhaustive = orderedSides(sizes, caps, EXHAUSTIVE_LIMIT) <= EXHAUSTIVE_LIMIT;

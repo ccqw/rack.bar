@@ -11,8 +11,9 @@
 // The console also owns the Target DISPLAY (RBAR-17, ADR-0010): the kg|lb Primary unit
 // and whether the Secondary readout shows, persisted console-side (rackbar.unit /
 // rackbar.secondary) -- the line ADR-0009 drew, putting Target-display state with the
-// console. The app pushes the rig config down (barKg, collarKg, plateSet); the chosen
-// plate set selects the Inventory to solve against. The unit toggle is free on every set
+// console. The app pushes the rig config down (barKg, collarKg, plateSet, platesOnHand);
+// the chosen plate set and its Pairs of Plates on Hand (RBAR-72, ADR-0016) select the
+// Inventory to solve against. The unit toggle is free on every set
 // (RBAR-60, ADR-0010 amendment): a kg lifter can load the iron set by kg Targets.
 import './entry.ts';
 import './palette.ts';
@@ -40,10 +41,12 @@ import { SECTION_LABEL, VISUALLY_HIDDEN } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
+import { ALL_PLATES, inventoryOnHand } from '../lib/platesonhand.ts';
+import type { PlatesOnHand } from '../lib/platesonhand.ts';
 import type { LoadSummary } from '../lib/summary.ts';
 import { format, shownIn, displayCeilingKg, draftToKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
-import type { Plate } from '../lib/plates.ts';
+import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
 import { linkUrl } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
@@ -73,7 +76,7 @@ type Recents = HTMLElement & {
   readonly undoPending: boolean;
 };
 type Loaded = HTMLElement & { side: readonly Plate[] };
-type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
+type Palette = HTMLElement & { inventory: readonly InventoryEntry[]; sideMm: number };
 type Share = HTMLElement & {
   load: LoadSummary;
   plateSet: string;
@@ -113,10 +116,14 @@ export function persistedPrimaryUnit(): Unit {
   return readPersisted(UNIT_KEY) === 'lb' ? 'lb' : 'kg';
 }
 
-// Same Plates in the same order. Both sides are drawn from the active set's Inventory
-// objects (parseLink and the solver alike), so identity is the comparison.
+// Same Plates in the same order, by face and finish: a limited size is a copy of the
+// set's Plate (withLimits, ADR-0016), so a linked Side (the set's own objects) and a
+// solved one need not share identity.
 function sameSide(a: readonly Plate[], b: readonly Plate[]): boolean {
-  return a.length === b.length && a.every((p, i) => p === b[i]);
+  return (
+    a.length === b.length &&
+    a.every((p, i) => p.kg === b[i].kg && p.color === b[i].color && p.label === b[i].label)
+  );
 }
 
 // The bar block's fixed parts (RBAR-67, re-cut by RBAR-75): the label row sits in flow
@@ -175,6 +182,16 @@ class RackConsole extends HTMLElement {
   // The active plate set (RBAR-17, ADR-0010): selects the Inventory to decode/encode
   // against. Defaults to Competition (kg Eleiko); the app sets it from Setup.
   private _plateSetKey: PlateSetKey = 'comp';
+  // Pairs of Plates on Hand for every set (RBAR-72, ADR-0016), from Setup via the app.
+  // inventory() applies the active set's; the capped Inventory is cached per (limits,
+  // set) so its entries keep one identity between solves (the Ramp planner and the
+  // palette compare Plates by identity).
+  private _onHand: PlatesOnHand = ALL_PLATES;
+  private invCache: {
+    onHand: PlatesOnHand;
+    key: PlateSetKey;
+    inv: readonly InventoryEntry[];
+  } | null = null;
   // The lifter's Primary-unit choice and Secondary-visible preference (ADR-0010).
   // unitPref holds on every plate set, and a set switch keeps it (RBAR-60). Both
   // restore from storage on connect and persist on change.
@@ -256,9 +273,31 @@ class RackConsole extends HTMLElement {
     return this._plateSetKey;
   }
 
-  // The Inventory the core draws from, from the active set (ADR-0010).
-  private inventory(): readonly Plate[] {
-    return plateSetFor(this._plateSetKey).inventory;
+  /**
+   * Pairs of Plates on Hand (RBAR-72, ADR-0016): every set's limits, set from Setup.
+   * A change re-solves whatever stands on the new Inventory, like a Bar change: a Decode
+   * Target re-decodes (and any chosen round-up is dropped -- the lifter re-opts in), a
+   * Warm up Ramp re-plans. A hand-built By Plates Side is the lifter's and is kept; the
+   * palette re-badges. Share links never carry these (a recipient's gym is theirs).
+   */
+  set platesOnHand(onHand: PlatesOnHand) {
+    if (onHand === this._onHand) return;
+    this._onHand = onHand;
+    if (this.palette) this.palette.inventory = this.inventory();
+    this.reconfigure();
+  }
+  get platesOnHand(): PlatesOnHand {
+    return this._onHand;
+  }
+
+  // The Inventory the core draws from: the active set's (ADR-0010) with its Pairs of
+  // Plates on Hand applied (ADR-0016).
+  private inventory(): readonly InventoryEntry[] {
+    const c = this.invCache;
+    if (c && c.onHand === this._onHand && c.key === this._plateSetKey) return c.inv;
+    const inv = inventoryOnHand(this._onHand, this._plateSetKey);
+    this.invCache = { onHand: this._onHand, key: this._plateSetKey, inv };
+    return inv;
   }
 
   // The display Unit: the lifter's choice on every plate set. The iron set used to force

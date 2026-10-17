@@ -431,3 +431,28 @@ export function stationRampOracle(
   for (const v of layer) if (lessStation(v.cost, best)) best = v.cost;
   return { best, tol, caps };
 }
+
+/**
+ * The cap a stored `rackbar.platesOnHand` value puts on one size, read straight from
+ * ADR-0016 as amended for RBAR-72 slice 2 and ADR-0007, independently of
+ * lib/platesonhand.ts: the stored value is a JSON object keyed by Plate set, each a
+ * JSON object of a size's face to its pairs on hand. The cap is that count when it is
+ * a whole number from 0 to 4; anything else -- unparseable text, a non-object, a missing
+ * set or face, a fraction, a negative, a count past 4, a string -- is All (Infinity).
+ */
+export function storedPairsOracle(raw: string | null, set: PlateSetKey, face: string): number {
+  if (raw === null) return Infinity;
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return Infinity;
+  }
+  const obj = (x: unknown): x is Record<string, unknown> =>
+    typeof x === 'object' && x !== null && !Array.isArray(x);
+  if (!obj(v) || !Object.prototype.hasOwnProperty.call(v, set)) return Infinity;
+  const limits = v[set];
+  if (!obj(limits) || !Object.prototype.hasOwnProperty.call(limits, face)) return Infinity;
+  const n = limits[face];
+  return typeof n === 'number' && [0, 1, 2, 3, 4].includes(n) ? n : Infinity;
+}
