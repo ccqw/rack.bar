@@ -7,8 +7,9 @@
 // the list, its persistence, and its dedupe/cap (lib/recents, ADR-0009).
 //
 // Targets are kilograms (the canonical store, ADR-0006/0009); the chip faces render
-// as the bare number in the console's active display Unit (RBAR-17, ADR-0010;
-// handoff sRecentChip -- the Unit lives in the entry readout, not on every chip).
+// in the console's active display Unit (RBAR-17, ADR-0010) WITH the unit as a small
+// dim suffix (RBAR-58: units on every number -- the handoff's bare sRecentChip leaned
+// on the Target block's unit, and that block is gone).
 // The `data-target` stays canonical kg, so re-apply is Unit-agnostic; only the
 // visible face and aria change Unit. The chip naming the current Target (the
 // `target` property, near-equal within the prototype's epsilon) reads selected;
@@ -191,6 +192,12 @@ class RackRecents extends HTMLElement {
           border: 1px solid var(--rack-border); border-radius: var(--rack-radius-pill);
           transition: background-color .16s ease, border-color .16s ease, color .16s ease;
         }
+        /* The unit suffix (RBAR-58): smaller and dimmer than the number, so the chip
+           still reads value-first (the hero's .tu, at chip size). */
+        .face .fu {
+          margin-left: 3px; font-size: 10px; font-weight: 500; color: var(--rack-text-dim);
+        }
+        .chip.selected .face .fu { color: var(--rack-text-secondary); }
         .chip:hover .face { border-color: var(--rack-border-active); }
         .chip:focus-visible, .undo:focus-visible { outline: none; }
         .chip:focus-visible .face, .undo:focus-visible .face {
@@ -339,7 +346,7 @@ class RackRecents extends HTMLElement {
   // pending: the frozen slots, each live chip as itself and each removed one as an Undo
   // chip locked to the removed chip's width, so no neighbour shifts. Nothing pending and
   // no Targets -> hide the whole element (no bare "Recent" label or empty rail). The face
-  // is the bare number in the display Unit; the accessible name keeps "<n> <unit>".
+  // is the number with its unit suffix (RBAR-58); the accessible name is the action.
   private renderChips(): void {
     // Mid-collapse the slots are animating shut: a rebuild would restart them at width 0
     // (a snap, the very jump the collapse exists to avoid). finishCollapse renders the
@@ -371,7 +378,8 @@ class RackRecents extends HTMLElement {
                 data-target="${kg}"${on ? ' aria-current="true"' : ''}
                 aria-label="Set Target to ${format(kg, this._unit)}"
                 aria-describedby="${HINT_ID}" aria-keyshortcuts="Delete"><span
-                class="face">${shownIn(kg, this._unit)}</span></button>`;
+                class="face">${shownIn(kg, this._unit)}<span
+                class="fu"> ${this._unit}</span></span></button>`;
       })
       .join('');
     this.rail.scrollLeft = scrollLeft;

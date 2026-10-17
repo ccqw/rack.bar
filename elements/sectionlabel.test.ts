@@ -90,7 +90,7 @@ describe('section labels are headings (RBAR-53)', () => {
   }
 
   const HEADINGS: Array<[tag: string, selector: string, text: string]> = [
-    ['rack-console', 'h2.label', 'Total'],
+    ['rack-console', 'h2.label', 'On the bar'],
     ['rack-entry', 'h2.caption', 'Target'],
     ['rack-recents', 'h2.label', 'Recent'],
     ['rack-share', 'h2.label', 'Loading card'],

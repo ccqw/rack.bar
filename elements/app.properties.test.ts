@@ -21,7 +21,7 @@ import { displayCeilingKg, draftToKg, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { sideOnScreen } from './properties.drivers.ts';
 import {
-  SEED, type Console, resetPool, q, sr, entryRoot, unitBtn, type, totalText, rigArb,
+  SEED, type Console, resetPool, q, sr, unitBtn, type, totalText, rigArb,
   unitArb, draftArb,
 } from './properties.drivers.ts';
 import './app.ts';
@@ -65,7 +65,7 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
         tile(app, 'data-collar', rig.collarKg).click();
         const c = appConsole(app);
         unitBtn(c, u).click();
-        const valueBtn = q<HTMLButtonElement>(entryRoot(c), '[data-value]');
+        const valueBtn = q<HTMLButtonElement>(sr(c), '[data-total-tap]') // the hero (RBAR-58);
         for (const d of commits) {
           valueBtn.click(); // open the keypad
           type(c, d);
@@ -232,7 +232,7 @@ describe('<rack-app> custom Bar properties (ADR-0017)', () => {
           const c = appConsole(app);
           expect(c.barKg).toBe(oracleKg(stamp));
           unitBtn(c, u).click();
-          const valueBtn = q<HTMLButtonElement>(entryRoot(c), '[data-value]');
+          const valueBtn = q<HTMLButtonElement>(sr(c), '[data-total-tap]') // the hero (RBAR-58);
           valueBtn.click();
           type(c, draft);
           valueBtn.click();

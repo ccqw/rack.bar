@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './app.ts';
 import {
-  q, sr, entryDraft, entryRoot, modeBtn, unitBtn, roundUp, sideOnScreen, statusKind,
+  q, sr, entryDraft, modeBtn, unitBtn, roundUp, sideOnScreen, statusKind,
   totalText, type,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
@@ -39,8 +39,9 @@ function paste(fragment: string): void {
   history.replaceState(null, '', `/${fragment}`);
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
+// The hero Total: By Weight's Target editor since RBAR-58 (a tap toggles the keypad).
 const valueBtn = (app: HTMLElement) =>
-  q<HTMLButtonElement>(entryRoot(appConsole(app)), '[data-value]');
+  q<HTMLButtonElement>(appConsole(app).shadowRoot!, '[data-total-tap]');
 
 describe('opening a share link (RBAR-50, ADR-0014)', () => {
   beforeEach(() => {

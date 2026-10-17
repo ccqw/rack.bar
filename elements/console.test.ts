@@ -18,13 +18,11 @@ function mountConsole(): Console {
   return el;
 }
 
-// The raw text in the Target field, anchor included (entryValue hides the muted
-// anchor; this test needs to read it to prove it follows the Bar).
+// The raw Target draft, anchor included (entryValue hides the muted anchor; this test
+// needs to read it to prove it follows the Bar). Read off the keypad sheet's live number:
+// the By Weight entry is headless since RBAR-58, so the sheet is where the draft shows.
 function entryAnchorText(el: HTMLElement): string {
-  return (
-    entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value-num]')!
-      .textContent ?? ''
-  );
+  return entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live]')!.textContent ?? '';
 }
 
 // Type a Target through the entry's on-screen keypad (RBAR-8) -- the real input path.
@@ -112,10 +110,8 @@ function clearBtn(el: HTMLElement): HTMLButtonElement {
 // The value currently shown in the Target field (what the +/- steppers move from).
 // An empty draft renders the muted Bar-weight anchor; report that as '' (no Target).
 function entryValue(el: HTMLElement): string {
-  const v = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-value]')!;
-  return v.classList.contains('empty')
-    ? ''
-    : v.querySelector<HTMLElement>('[data-value-num]')!.textContent ?? '';
+  const v = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live]')!;
+  return v.classList.contains('empty') ? '' : (v.textContent ?? '');
 }
 
 // Tap a denomination key on the Encode palette (by kg).
@@ -159,17 +155,18 @@ function visibleBlockOrder(el: HTMLElement): string[] {
 }
 
 describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
-  it('orders the column bar -> Total -> round-up -> Target -> Recent -> palette', () => {
+  it('orders the column bar -> Total -> round-up -> Recent -> palette', () => {
     // The static block order (handoff "Screens / views": bar always directly under the
     // mode toggle, then the Total region, then the editors). One DOM order serves both
-    // modes -- the palette sits where the Target/Recent editors do, all toggled by hidden.
+    // modes -- the palette sits where the Recent editor does, all toggled by hidden.
+    // RBAR-58: no Target block -- the hero Total is the Target's editor, and the
+    // headless entry (its keypad sheet) sits outside the column.
     const el = mountConsole();
     expect(blockOrder(el)).toEqual([
       'modes',
       'viz',
       'readout',
       'over',
-      'rack-entry',
       'working',
       'rack-warmup',
       'rack-recents',
@@ -185,17 +182,13 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
     expect(visibleBlockOrder(el)).toEqual(['modes', 'viz', 'readout', 'working', 'rack-warmup']);
   });
 
-  it('By Weight reads mode -> bar -> Total -> round-up -> Target -> Recent (4a)', () => {
+  it('By Weight reads mode -> bar -> Total -> round-up -> Recent, no Target block (4a, RBAR-58)', () => {
     const el = mountConsole();
     commit(el, '100.5'); // off-grid: a Recent chip exists and the round-up is offered
-    expect(visibleBlockOrder(el)).toEqual([
-      'modes',
-      'viz',
-      'readout',
-      'over',
-      'rack-entry',
-      'rack-recents',
-    ]);
+    expect(visibleBlockOrder(el)).toEqual(['modes', 'viz', 'readout', 'over', 'rack-recents']);
+    // The By Weight entry is headless and outside the column (only its sheet draws).
+    expect(entry(el).hasAttribute('headless')).toBe(true);
+    expect(entry(el).closest('.stack')).toBeNull();
   });
 
   it('By Plates reads mode -> bar -> Total -> On the bar -> Add palette (4b)', () => {
@@ -851,9 +844,10 @@ function recentChips(el: HTMLElement): HTMLButtonElement[] {
 function recentLabels(el: HTMLElement): number[] {
   return recentChips(el).map((c) => Number(c.dataset.target));
 }
-// The Target field's value button -- tapping it opens then closes the keypad.
+// The hero Total -- By Weight's Target editor since RBAR-58: tapping it opens then
+// closes the keypad, as the Target field's own value did.
 function valueBtn(el: HTMLElement): HTMLButtonElement {
-  return entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!;
+  return el.shadowRoot!.querySelector<HTMLButtonElement>('[data-total-tap]')!;
 }
 // Commit a typed Target the way a lifter does: type it, then open and close the keypad
 // (the close is the commit that feeds Recents).
@@ -1589,27 +1583,28 @@ describe('statusPill deriver (RBAR-28)', () => {
 });
 
 describe('onBarLine deriver (RBAR-22 keypad sheet)', () => {
-  // The loadable Total + delta, in the keypad's own wording ("under"/"over"/"exact"),
-  // keyed off the DISPLAYED numbers (ADR-0010). Args are canonical kg.
+  // The loadable Total + delta, in the status pill's words since RBAR-58 ("N kg short" /
+  // "N kg over", or "exact"), keyed off the DISPLAYED numbers (ADR-0010). Args are kg.
   it('reads an exactly-achievable Target as "exact" after the middot (prototype L803)', () => {
     expect(onBarLine(100, 100, 'kg', false)).toBe('On the bar: 100 kg \u00B7 exact');
   });
 
-  it('reads a Total below the Target as "N under" -- the keypad wording, not "short"', () => {
-    // Target 142.5, loadable 142 -> 0.5 under (the prototype's keypad line uses "under"
-    // where the status pill above says "short").
-    expect(onBarLine(142, 142.5, 'kg', false)).toBe('On the bar: 142 kg \u00B7 0.5 under');
+  it('reads a Total below the Target as "N kg short" -- the pill\'s word, not "under" (RBAR-58)', () => {
+    // Target 142.5, loadable 142 -> 0.5 kg short: the same word and unit as the status
+    // pill (the prototype's keypad line said "under" for the same fact).
+    expect(onBarLine(142, 142.5, 'kg', false)).toBe('On the bar: 142 kg \u00B7 0.5 kg short');
+    expect(onBarLine(142, 142.5, 'kg', false)).toContain(statusPill(142, 142.5, 'kg', false).label);
   });
 
-  it('reads a Total above the Target as "N over"', () => {
-    expect(onBarLine(101, 100.5, 'kg', false)).toBe('On the bar: 101 kg \u00B7 0.5 over');
+  it('reads a Total above the Target as "N kg over"', () => {
+    expect(onBarLine(101, 100.5, 'kg', false)).toBe('On the bar: 101 kg \u00B7 0.5 kg over');
   });
 
   it('reads a physically-full short Side with BOTH facts (RBAR-47)', () => {
     // The sheet covers the pill and mutes announce() while open, so this line is
     // the only surface carrying the shortfall -- it must not drop the magnitude.
     expect(onBarLine(720, 720.3, 'kg', true)).toBe(
-      'On the bar: 720 kg \u00B7 0.3 under, at capacity',
+      'On the bar: 720 kg \u00B7 0.3 kg short, at capacity',
     );
   });
 
@@ -1657,10 +1652,10 @@ describe('<rack-console> feeds the keypad sheet its load line (RBAR-22)', () => 
     expect(line.classList.contains('exact')).toBe(true);
   });
 
-  it('reads an off-grid Target as under (keypad wording)', () => {
+  it('reads an off-grid Target as short, the pill\'s word (RBAR-58)', () => {
     const el = mountConsole();
     type(el, '100.5'); // nearest at-or-under is 100
-    expect(loadLineEl(el).textContent).toBe('On the bar: 100 kg \u00B7 0.5 under');
+    expect(loadLineEl(el).textContent).toBe('On the bar: 100 kg \u00B7 0.5 kg short');
   });
 
   it('hides the line when the field is emptied (nothing decoded)', () => {
@@ -2086,7 +2081,7 @@ describe('screen-reader announcements (RBAR-53)', () => {
     return el.shadowRoot!.querySelector<HTMLElement>('[data-announce]')!;
   }
   function openKeypad(el: HTMLElement): void {
-    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-value]')!.click();
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-total-tap]')!.click();
   }
   function done(el: HTMLElement): void {
     entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-done]')!.click();
@@ -2102,7 +2097,7 @@ describe('screen-reader announcements (RBAR-53)', () => {
       .click();
   }
   function stepperInc(el: HTMLElement): void {
-    entry(el).shadowRoot!.querySelector<HTMLButtonElement>('[data-step="inc"]')!.click();
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-hero-step="inc"]')!.click();
   }
 
   it('is a polite status region, hidden by the clip recipe (never display:none)', () => {
@@ -2199,7 +2194,7 @@ describe('screen-reader announcements (RBAR-53)', () => {
     expect(announcer(el).textContent).toBe('20 kilograms');
     const line = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live-load]')!;
     expect(line.getAttribute('role')).toBe('status');
-    expect(line.textContent).toBe('On the bar: 142 kg \u00B7 0.5 under');
+    expect(line.textContent).toBe('On the bar: 142 kg \u00B7 0.5 kg short');
     // Closing hands the announcement back to the console, settled on the final value.
     done(el);
     expect(announcer(el).textContent).toBe('142 kilograms, 0.5 kg short');
@@ -2244,8 +2239,8 @@ describe('announceLine', () => {
   });
 });
 
-// The Total is the page's biggest number and reads as tappable -- so it is (RBAR-57):
-// tapping it opens the keypad, the same edit the small Target value button offers.
+// The Total is the page's biggest number and reads as tappable -- so it is (RBAR-57).
+// Since RBAR-58 it is By Weight's only Target editor, so it toggles like the old value.
 describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
   const sheet = (el: HTMLElement) =>
     entry(el).shadowRoot!.querySelector<HTMLElement>('.sheet')!;
@@ -2259,11 +2254,13 @@ describe('<rack-console> Total tap opens the keypad (RBAR-57)', () => {
     expect(sheet(el).hidden).toBe(false);
   });
 
-  it('a second tap while open leaves the sheet open -- an edit affordance, not a toggle', () => {
+  it('a second tap while open closes the sheet -- the hero is the Target\'s value now (RBAR-58)', () => {
     const el = mountConsole();
     totalTap(el).click();
+    expect(totalTap(el).getAttribute('aria-expanded')).toBe('true');
     totalTap(el).click();
-    expect(sheet(el).hidden).toBe(false);
+    expect(sheet(el).hidden).toBe(true);
+    expect(totalTap(el).getAttribute('aria-expanded')).toBe('false');
   });
 
   it('is inert in By Plates: disabled, keypad stays closed', () => {
@@ -2631,13 +2628,110 @@ describe('<rack-console> metrics sweep (RBAR-74)', () => {
     expect(sec).toContain('color: var(--rack-text-dim)');
   });
 
-  it('spaces the readout like the prototype column: 6px, an 18px status row, 8px (L134-L140)', () => {
+  it('spaces the readout like the prototype column: 6px, an 18px status row (24px in By Weight), 8px (L134-L140, RBAR-58)', () => {
     const line = rule(css(), '.statusline {');
     expect(line).toContain('margin-top: 6px');
     expect(line).toContain('min-height: 18px');
+    // RBAR-58: By Weight reserves the "You asked" chip's 24px in every state.
+    expect(rule(css(), '.readout[data-by-weight] .statusline {')).toContain('min-height: 24px');
     // The secondary is a button: it keeps its side pad but adds no height to the row.
     expect(rule(css(), '.secondary {')).toContain('padding: 0 6px');
     // The column gap is 12px; the round-up row sits 6px + 2px under the status row.
     expect(rule(css(), '.rounduprow {')).toContain('margin-top: -4px');
+  });
+});
+
+// RBAR-58 (option C, "split when different"): the hero Total is By Weight's one big
+// number and the Target's editor; the Target splits off as a dashed "You asked" chip
+// only when the load misses it as read. The rules are properties in
+// console-readout.properties.test.ts; these pin the markup and the per-mode chrome.
+describe('<rack-console> split-when-different readout (RBAR-58)', () => {
+  beforeEach(() => localStorage.clear());
+  const q = <T extends HTMLElement>(el: HTMLElement, sel: string) =>
+    el.shadowRoot!.querySelector<T>(sel)!;
+  const label = (el: HTMLElement) => q(el, '[data-total-label]').textContent;
+  const steps = (el: HTMLElement) => [
+    ...el.shadowRoot!.querySelectorAll<HTMLButtonElement>('[data-hero-step]'),
+  ];
+  const asked = (el: HTMLElement) => q<HTMLButtonElement>(el, '[data-asked]');
+  const secondary = (el: HTMLElement) => q<HTMLButtonElement>(el, '[data-secondary]');
+
+  it('labels the hero "On the bar" in By Weight and "Total" in By Plates', () => {
+    const el = mountConsole();
+    expect(label(el)).toBe('On the bar');
+    modeBtn(el, 'encode').click();
+    expect(label(el)).toBe('Total'); // By Plates has its own "On the bar" chips row
+  });
+
+  it('flanks the hero with the Target steppers in By Weight only, labelled in the unit', () => {
+    const el = mountConsole();
+    expect(steps(el).map((b) => b.hidden)).toEqual([false, false]);
+    expect(steps(el).map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Decrease Target by 1 kg',
+      'Increase Target by 1 kg',
+    ]);
+    el.shadowRoot!.querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    expect(steps(el)[1].getAttribute('aria-label')).toBe('Increase Target by 5 lb');
+    modeBtn(el, 'encode').click();
+    expect(steps(el).map((b) => b.hidden)).toEqual([true, true]);
+  });
+
+  it('+ from "142, asked 142.3" goes to 143; - goes to 142 (the ticket\'s case)', () => {
+    const el = mountConsole();
+    type(el, '142.3');
+    expect(total(el)).toBe('142 kg');
+    expect(asked(el).textContent).toBe('You asked 142.3 kg');
+    steps(el)[1].click();
+    expect(entryValue(el)).toBe('143');
+    expect(total(el)).toBe('143 kg');
+    expect(asked(el).hidden).toBe(true); // exact again: the Target is not shown twice
+    type(el, '142.3');
+    steps(el)[0].click();
+    expect(entryValue(el)).toBe('142');
+  });
+
+  it('swaps the Secondary readout for the chip only while they differ', () => {
+    const el = mountConsole();
+    type(el, '140');
+    expect(asked(el).hidden).toBe(true);
+    expect(secondary(el).hidden).toBe(false);
+    type(el, '142.3');
+    expect(asked(el).hidden).toBe(false);
+    expect(secondary(el).hidden).toBe(true);
+    modeBtn(el, 'encode').click(); // no Target in By Plates: no chip
+    expect(asked(el).hidden).toBe(true);
+    expect(secondary(el).hidden).toBe(false);
+  });
+
+  it('opens the keypad on the Target from the chip (an edit entry point, open-only)', () => {
+    const el = mountConsole();
+    type(el, '142.3');
+    asked(el).click();
+    const sheet = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-sheet]')!;
+    expect(sheet.hidden).toBe(false);
+    expect(entryValue(el)).toBe('142.3');
+    asked(el).click();
+    expect(sheet.hidden).toBe(false);
+  });
+
+  it('draws the chip dashed on the sunken fill, through tokens', () => {
+    const el = mountConsole();
+    const css = el.shadowRoot!.querySelector('style')!.textContent!;
+    const start = css.indexOf('.asked {');
+    const body = css.slice(start, css.indexOf('}', start));
+    expect(body).toContain('border: 1px dashed var(--rack-border-active)');
+    expect(body).toContain('background: var(--rack-sunken)');
+    expect(body).not.toMatch(/#[0-9a-f]{3,6}/i);
+  });
+
+  it('gives the hero an accessible name and reflects the open keypad on it', () => {
+    const el = mountConsole();
+    type(el, '100');
+    const hero = q<HTMLButtonElement>(el, '[data-total-tap]');
+    expect(hero.getAttribute('aria-label')).toBe('100 kg on the bar. Edit Target');
+    expect(hero.getAttribute('aria-haspopup')).toBe('true');
+    hero.click();
+    expect(hero.classList.contains('editing')).toBe(true);
+    expect(hero.getAttribute('aria-expanded')).toBe('true');
   });
 });

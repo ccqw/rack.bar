@@ -91,8 +91,14 @@ export const modeBtn = (el: HTMLElement, m: 'decode' | 'encode' | 'warmup') =>
   q<HTMLButtonElement>(sr(el), `[data-mode="${m}"]`);
 export const press = (el: HTMLElement, k: string) =>
   q<HTMLButtonElement>(entryRoot(el), `[data-key="${CSS.escape(k)}"]`).click();
+// The By Weight steppers flank the hero Total since RBAR-58 (they nudge the Target).
 export const step = (el: HTMLElement, dir: 'inc' | 'dec') =>
-  q<HTMLButtonElement>(entryRoot(el), `[data-step="${dir}"]`).click();
+  q<HTMLButtonElement>(sr(el), `[data-hero-step="${dir}"]`).click();
+// The hero Total: By Weight's Target editor (RBAR-58) -- a tap toggles the keypad.
+export const heroTap = (el: HTMLElement) => q<HTMLButtonElement>(sr(el), '[data-total-tap]');
+// The keypad's Done (the commit, keypadclose).
+export const done = (el: HTMLElement) => q<HTMLButtonElement>(entryRoot(el), '[data-done]').click();
+export const sheetOpen = (el: HTMLElement) => !q(entryRoot(el), '[data-sheet]').hidden;
 export function type(el: HTMLElement, value: string): void {
   press(el, 'clear');
   for (const ch of value) press(el, ch);
@@ -115,11 +121,25 @@ export const statusLabel = (el: HTMLElement) =>
 export const atcapShown = (el: HTMLElement) => !q(sr(el), '[data-atcap]').hidden;
 export const barnoteShown = (el: HTMLElement) => !q(sr(el), '[data-barnote]').hidden;
 export const loadLine = (el: HTMLElement) => q(entryRoot(el), '[data-live-load]').textContent ?? '';
-// The Target field's raw draft ('' when it shows the muted Bar anchor).
-export function entryDraft(el: HTMLElement): string {
-  const v = q(entryRoot(el), '[data-value]');
-  return v.classList.contains('empty') ? '' : (q(v, '[data-value-num]').textContent ?? '');
+// The "You asked" chip (RBAR-58): null while hidden, else its text ("You asked 142.3 kg").
+export function askedText(el: HTMLElement): string | null {
+  const a = q<HTMLButtonElement>(sr(el), '[data-asked]');
+  return a.hidden ? null : (a.textContent ?? '');
 }
+export const askedBtn = (el: HTMLElement) => q<HTMLButtonElement>(sr(el), '[data-asked]');
+export const secondaryShown = (el: HTMLElement) => !q(sr(el), '[data-secondary]').hidden;
+// The Target's raw draft as the keypad sheet shows it ('' when it shows the muted Bar
+// anchor). Since RBAR-58 the field row is headless, so the sheet's live number is where
+// the lifter reads the draft (the sheet keeps it current while closed too).
+export function entryDraft(el: HTMLElement): string {
+  const v = q(entryRoot(el), '[data-live]');
+  return v.classList.contains('empty') ? '' : (v.textContent ?? '');
+}
+// The Recent chips' visible faces, in rail order (RBAR-58: each carries its unit).
+export const recentFaces = (el: HTMLElement) =>
+  [...sr(q(sr(el), 'rack-recents')).querySelectorAll<HTMLElement>('[data-target] .face')].map(
+    (f) => f.textContent ?? '',
+  );
 // The loaded Side, as the sleeve draws it: one record per disc.
 export function sideOnScreen(el: HTMLElement): { kg: number; color: string }[] {
   return [...sr(q(sr(el), 'rack-sleeve')).querySelectorAll<HTMLElement>('.disc')].map(

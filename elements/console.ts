@@ -16,7 +16,7 @@
 // the chosen plate set and its Pairs of Plates on Hand (RBAR-72, ADR-0016) select the
 // Inventory to solve against. The unit toggle is free on every set
 // (RBAR-60, ADR-0010 amendment): a kg lifter can load the iron set by kg Targets.
-import './entry.ts';
+import { MINUS_ICON, PLUS_ICON } from './entry.ts';
 import './palette.ts';
 import './loaded.ts';
 import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
@@ -48,7 +48,7 @@ import type { PlateSetKey } from '../lib/platesets.ts';
 import { ALL_PLATES, inventoryOnHand } from '../lib/platesonhand.ts';
 import type { PlatesOnHand } from '../lib/platesonhand.ts';
 import type { LoadSummary } from '../lib/summary.ts';
-import { format, shownIn, displayCeilingKg, draftToKg } from '../lib/units.ts';
+import { format, shownIn, displayCeilingKg, draftToKg, stepFor } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
@@ -69,6 +69,8 @@ type Entry = HTMLElement & {
   readonly reading: string;
   retarget(kg: number): void;
   open(): void;
+  toggle(): void;
+  step(dir: 1 | -1): void;
   barKg: number;
   unit: Unit;
   loadLine: string | null;
@@ -166,6 +168,14 @@ class RackConsole extends HTMLElement {
   private totalNum!: HTMLElement;
   private totalTap!: HTMLButtonElement;
   private totalUnit!: HTMLElement;
+  private totalLabel!: HTMLElement;
+  // By Weight's hero steppers (RBAR-58): they flank the Total but nudge the Target.
+  private heroSteps!: NodeListOf<HTMLButtonElement>;
+  // The "You asked" chip (RBAR-58): the Target, split off the hero only when the load
+  // misses it as read.
+  private asked!: HTMLButtonElement;
+  private askedNum!: HTMLElement;
+  private askedUnit!: HTMLElement;
   private secondary!: HTMLButtonElement;
   private status!: HTMLElement;
   private statusLabel!: HTMLElement;
@@ -534,7 +544,7 @@ class RackConsole extends HTMLElement {
            the 384px design frame (RBAR-39; 13vw fell ~4px short there), the floor still
            covers narrower phones. Rolls up on change (numRoll, via rollText). */
         .readout output {
-          display: block; font-family: var(--rack-font); font-weight: 800;
+          display: inline-block; font-family: var(--rack-font); font-weight: 800;
           font-size: clamp(40px, 14.0625vw, 54px); letter-spacing: -.025em;
           line-height: 1; font-variant-numeric: tabular-nums;
           color: var(--rack-fg);
@@ -551,12 +561,56 @@ class RackConsole extends HTMLElement {
            inside, and the By-Plates disabled state (no keypad there) must not dim
            the Total, so no :disabled restyle beyond the cursor. */
         .totaltap {
-          display: block; width: 100%; padding: 0; margin: 0; border: 0;
-          background: none; color: inherit; text-align: inherit; font: inherit;
-          cursor: pointer;
+          display: block; flex: 1; min-width: 0; padding: 0; margin: 0; border: 0;
+          background: none; color: inherit; text-align: center; font: inherit;
+          white-space: nowrap; cursor: pointer;
         }
         .totaltap:disabled { cursor: default; }
         .totaltap:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 4px; }
+        /* RBAR-58 (option C, "split when different"): the Total is By Weight's one hero
+           number AND its editor -- the steppers flank it and a tap opens the keypad on
+           the Target. A thin underline marks it editable (the prototype's hero-under),
+           accent while the keypad is open. By Weight only: By Plates and Warm up keep
+           the bare Total and its 6px for their Bar picture (a mode switch may move the
+           column a few px, ADR-0013). */
+        .hero {
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .totaltap:not(:disabled) output {
+          padding-bottom: 4px; border-bottom: 2px solid var(--rack-border-muted);
+        }
+        .totaltap.editing output { border-bottom-color: var(--rack-accent); }
+        /* The hero steppers: the 44px round touch targets the Target row had (RBAR-74),
+           the same glyph pair (entry.ts). By Weight only -- hidden elsewhere, where the
+           centered Total stays put because the pair is symmetric. */
+        .step {
+          flex: none; width: 44px; height: 44px; padding: 0;
+          display: flex; align-items: center; justify-content: center;
+          color: var(--rack-fg); background: transparent;
+          border: 1px solid var(--rack-line); border-radius: 999px;
+          cursor: pointer;
+        }
+        .step[hidden] { display: none; }
+        .step svg { display: block; }
+        .step:active { background: var(--rack-line); }
+        .step:focus-visible { outline: 2px solid var(--rack-accent); }
+        /* The "You asked" chip (RBAR-58, prototype .asked): the Target split off the hero
+           when the load misses it as read -- dashed, on the sunken fill, so it reads as
+           the lifter's input rather than a result. Tapping it opens the keypad. 24px
+           tall, the status line's reserved height, so it never moves the column. */
+        .asked {
+          display: inline-block; white-space: nowrap;
+          font-family: var(--rack-font-num); font-size: 12px; font-weight: 500;
+          line-height: 14px; color: var(--rack-text-secondary);
+          background: var(--rack-sunken);
+          border: 1px dashed var(--rack-border-active);
+          border-radius: var(--rack-radius-pill); padding: 4px 10px 4px 11px;
+          cursor: pointer;
+        }
+        .asked[hidden] { display: none; }
+        .asked b { color: var(--rack-text); font-weight: 700; }
+        .asked .au { font-size: 11px; color: var(--rack-text-dim); }
+        .asked:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         /* The Secondary readout: the same Total in the other unit, tap to hide/show
            (ADR-0006/0010). A quiet line under the prominent Total, in Hanken 500 13px
            (prototype L137; RBAR-74). Side pad only, so the button adds no height. */
@@ -568,12 +622,16 @@ class RackConsole extends HTMLElement {
         .secondary.off { opacity: .7; font-style: italic; }
         .secondary:focus-visible { outline: 2px solid var(--rack-accent); }
         /* The status line: the Secondary readout with the status pill beside it, on one
-           centered row (handoff 4a, screenshot 01). Decode only. 6px under the Total,
-           18px tall (prototype L134-L138; RBAR-74). */
+           centered row (handoff 4a, screenshot 01). Decode only. 6px under the Total
+           (prototype L134-L138; RBAR-74), 18px tall -- 24px in By Weight since RBAR-58, so
+           the "You asked" chip that takes the Secondary's place on a miss never moves
+           the column. */
         .statusline {
           display: flex; align-items: center; justify-content: center;
           gap: 9px; margin-top: 6px; min-height: 18px;
         }
+        .readout[data-by-weight] .statusline { min-height: 24px; }
+        .secondary[hidden] { display: none; }
         /* The status pill (RBAR-28): the Total's Exact / N over / N short indicator
            (at capacity the pill keeps the shortfall; the .atcap caption below names
            the capacity fact -- RBAR-47). A quiet uppercase mono pill with a state
@@ -691,6 +749,14 @@ class RackConsole extends HTMLElement {
           width: 5px; height: 5px; border-radius: 999px; flex: none;
           background: var(--rack-accent);
         }
+        /* The narrowest phones (320px): a long miss -- "You asked 1000 kg" beside
+           "630 KG SHORT" -- ran a few px past the column, so the status line closes up
+           its gap and the two pills their side pads (fit-check's LINE CLIPPED). */
+        @media (max-width: 359px) {
+          .statusline { gap: 4px; }
+          .asked { padding: 4px 6px; }
+          .status { padding: 3px 7px; }
+        }
         /* The short-screen tier (RBAR-67, fit.ts): a tighter column gap, a thinner
            inset around the mode segments (the track's padding only -- the tappable
            segments keep their size), and a closer Total head. */
@@ -700,6 +766,10 @@ class RackConsole extends HTMLElement {
           .readhead { margin-bottom: 4px; }
         }
       </style>
+      <!-- By Weight's Target (RBAR-58): headless -- the hero Total below is its visible
+           editor, so the element adds only the draft and the fixed keypad sheet. It sits
+           outside the column (zero height, no row and no gap in it), first in the root. -->
+      <rack-entry headless></rack-entry>
       <div class="stack">
         <!-- The user-facing labels name the INPUT you work from ("By Weight" =
              type a Target; "By Plates" = tap Plates), which is more intuitive than
@@ -748,18 +818,28 @@ class RackConsole extends HTMLElement {
         </div>
         <div class="readout">
           <div class="readhead">
-            <h2 class="label">Total</h2>
+            <h2 class="label" data-total-label>Total</h2>
             <div class="units" role="group" aria-label="Display unit">
               <button type="button" data-unit="kg" aria-pressed="true">kg</button>
               <button type="button" data-unit="lb" aria-pressed="false">lb</button>
             </div>
           </div>
-          <button type="button" class="totaltap" data-total-tap
-            ><output data-total><span data-total-num>${DEFAULT_BAR_KG}</span><span
-              class="tu" data-total-unit> kg</span></output
-          ></button>
+          <!-- The hero (RBAR-58): the Total, flanked in By Weight by the Target's
+               steppers; a tap opens the keypad on the Target. -->
+          <div class="hero">
+            <button type="button" class="step" data-hero-step="dec" hidden
+              >${MINUS_ICON}</button>
+            <button type="button" class="totaltap" data-total-tap
+              ><output data-total><span data-total-num>${DEFAULT_BAR_KG}</span><span
+                class="tu" data-total-unit> kg</span></output
+            ></button>
+            <button type="button" class="step" data-hero-step="inc" hidden
+              >${PLUS_ICON}</button>
+          </div>
           <div class="statusline">
             <button type="button" class="secondary" data-secondary></button>
+            <button type="button" class="asked" data-asked aria-haspopup="true" hidden
+              >You asked <b data-asked-num></b><span class="au" data-asked-unit></span></button>
             <span class="status" data-status hidden
               ><span class="dot" aria-hidden="true"></span
               ><span data-status-label></span></span>
@@ -769,7 +849,7 @@ class RackConsole extends HTMLElement {
                the sighted readout above IS this information. -->
           <div class="sr" data-announce role="status"></div>
         </div>
-        <!-- The round-up row sits under the Total (handoff 4a), above the Target block:
+        <!-- The round-up row sits under the Total (handoff 4a), above Recents:
              the round-up opt-in OR the at-capacity caption (never both -- ADR-0012)
              OR the below-Bar note (RBAR-67; exclusive with both).
              The wrapper's "over" class is the block-order token only (blockToken in
@@ -787,7 +867,6 @@ class RackConsole extends HTMLElement {
                the offer or the caption, so the row's fixed height holds all three. -->
           <span class="barnote" data-barnote hidden></span>
         </div>
-        <rack-entry></rack-entry>
         <!-- Warm up (RBAR-65 slice 2): the working-weight row, then the Ramp's stairs +
              Next -- in the editor slot the Target block and Recents hold in By Weight. -->
         <rack-entry variant="working" data-working hidden></rack-entry>
@@ -818,6 +897,11 @@ class RackConsole extends HTMLElement {
     this.totalNum = this.root.querySelector('[data-total-num]')!;
     this.totalUnit = this.root.querySelector('[data-total-unit]')!;
     this.totalTap = this.root.querySelector('[data-total-tap]')!;
+    this.totalLabel = this.root.querySelector('[data-total-label]')!;
+    this.heroSteps = this.root.querySelectorAll('[data-hero-step]');
+    this.asked = this.root.querySelector('[data-asked]')!;
+    this.askedNum = this.root.querySelector('[data-asked-num]')!;
+    this.askedUnit = this.root.querySelector('[data-asked-unit]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
@@ -843,6 +927,7 @@ class RackConsole extends HTMLElement {
     // close -> re-render so the console region settles on the final decoded value.
     this.entry.addEventListener('keypadopen', () => {
       this.keypadOwner = 'decode';
+      this.renderHeroEditing();
     });
     // A Target commit (the keypad closing) is remembered in the Recent row (RBAR-20).
     // Distinct from `target`, which fires on every keystroke -- only the commit is kept,
@@ -851,6 +936,7 @@ class RackConsole extends HTMLElement {
     // region even on a null commit (rememberTarget only renders on a real Target).
     this.entry.addEventListener('keypadclose', (e) => {
       this.keypadOwner = null;
+      this.renderHeroEditing();
       this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
       this.render();
     });
@@ -880,9 +966,16 @@ class RackConsole extends HTMLElement {
       this.side = rows[this.warmIdx].side;
       this.render();
     });
-    // The big Total opens the keypad too (RBAR-57): it reads as tappable, so it is.
-    // Open-only -- closing (the commit) stays with Done / the value re-tap.
-    this.totalTap.addEventListener('click', () => this.entry.open());
+    // The hero Total is By Weight's editor (RBAR-58, after RBAR-57): a tap opens the
+    // keypad on the Target -- the draft, so 142.3 when 142 is loaded -- and a re-tap
+    // closes it, as the Target's own value did. The steppers nudge the Target's draft
+    // (+ from "142, asked 142.3" goes to 143), never the Total. The "You asked" chip
+    // opens the same keypad (open-only: it is an edit entry point).
+    this.totalTap.addEventListener('click', () => this.entry.toggle());
+    this.heroSteps.forEach((b) =>
+      b.addEventListener('click', () => this.entry.step(b.dataset.heroStep === 'inc' ? 1 : -1)),
+    );
+    this.asked.addEventListener('click', () => this.entry.open());
     // A recent chip tap re-applies that Target: seed the field, decode it, and move it
     // back to the front of the history (a re-use is a fresh commit).
     this.recentsRow.addEventListener('recentapply', (e) => {
@@ -1462,6 +1555,7 @@ class RackConsole extends HTMLElement {
     // The Total-tap affordance is By-Weight only (RBAR-57): By Plates has no keypad,
     // so the wrapper goes inert there (its look never changes -- see .totaltap).
     this.totalTap.disabled = this.mode !== 'decode';
+    this.renderHero(unit);
     // The Recent row is a By-Weight (Decode) affordance: shown only there, and only once
     // there is something to show (the row also self-hides when empty -- ADR-0009). A
     // pending Undo counts (RBAR-73): removing the last chip leaves its Undo on screen.
@@ -1527,6 +1621,12 @@ class RackConsole extends HTMLElement {
       // names the capacity fact in the round-up row (which the absent offer vacated --
       // ADR-0012 ties the two). The spoken line carries BOTH facts.
       this.atcap.hidden = pill.kind !== 'capacity';
+      // Split when different (RBAR-58): the Target splits off the hero only when the
+      // load misses it AS READ (ADR-0010) -- the pill's own test, so the chip and the
+      // pill always come and go together, and "You asked" minus the hero is the pill's
+      // magnitude. Exact: the Target is the hero, not shown twice, and the Secondary
+      // readout keeps its place.
+      this.renderAsked(pill.kind === 'exact' ? null : targetKg, unit);
       // After a step to another way, or while off the first (RBAR-66), the line says
       // which way and names its Plates -- a bar tap keeps the Total, so the Plates are
       // the news ("140 kilograms, Exact, way 2 of 5, 25 kg + 20 kg + 15 kg per side").
@@ -1541,6 +1641,7 @@ class RackConsole extends HTMLElement {
       );
       this.announce(note === null ? line : `${line}. ${note}`);
     } else if (this.mode === 'warmup' && this.ramp && this.working !== null) {
+      this.renderAsked(null, unit);
       this.renderWarmStatus(this.ramp, this.ramp.rows[this.warmIdx], this.working, unit);
     } else {
       this.status.hidden = true;
@@ -1553,6 +1654,7 @@ class RackConsole extends HTMLElement {
       this.workEntry.loadLine = null;
       this.barnote.hidden = true;
       this.barnote.textContent = '';
+      this.renderAsked(null, unit);
       // No decode outcome to qualify the Total (Encode, or no Target yet): the spoken
       // line is the Total (RBAR-53) -- what a plate add/remove changes -- plus "Sleeve
       // full" when the last-fitting Plate just went on, so By Plates speaks the same
@@ -1607,6 +1709,52 @@ class RackConsole extends HTMLElement {
     if (this.keypadOwner !== null && this.keypadOwner === this.mode) return;
     if (this.announcer.textContent === text) return;
     this.announcer.textContent = text;
+  }
+
+  // The hero (RBAR-58). In By Weight the Total is labelled "On the bar" (plain language
+  // for the Total, CONTEXT.md user-facing copy) and is the Target's editor: steppers
+  // either side, a tap for the keypad. By Plates keeps "Total" -- its own "On the bar"
+  // row names the loaded chips -- and so does Warm up; neither edits from the hero.
+  private renderHero(unit: Unit): void {
+    const byWeight = this.mode === 'decode';
+    this.totalLabel.textContent = byWeight ? 'On the bar' : 'Total';
+    // Reserves the chip's 24px status line in By Weight only (see .statusline).
+    this.totalLabel.closest('.readout')!.toggleAttribute('data-by-weight', byWeight);
+    const step = stepFor(unit);
+    this.heroSteps.forEach((b) => {
+      b.hidden = !byWeight;
+      const verb = b.dataset.heroStep === 'inc' ? 'Increase' : 'Decrease';
+      b.setAttribute('aria-label', `${verb} Target by ${step} ${unit}`);
+    });
+    if (byWeight) {
+      this.totalTap.setAttribute('aria-haspopup', 'true');
+      this.totalTap.setAttribute(
+        'aria-label',
+        `${format(this.loadTotalKg(), unit)} on the bar. Edit Target`,
+      );
+    } else {
+      this.totalTap.removeAttribute('aria-haspopup');
+      this.totalTap.removeAttribute('aria-label');
+    }
+    this.renderHeroEditing();
+  }
+
+  // The hero's open-keypad state: the accent underline and aria-expanded, off the
+  // entry's keypadopen/keypadclose edges (keypadOwner).
+  private renderHeroEditing(): void {
+    const editing = this.keypadOwner === 'decode' && this.mode === 'decode';
+    this.totalTap.classList.toggle('editing', editing);
+    if (this.mode === 'decode') this.totalTap.setAttribute('aria-expanded', String(editing));
+    else this.totalTap.removeAttribute('aria-expanded');
+  }
+
+  // The "You asked" chip (RBAR-58): the Target as read, in place of the Secondary
+  // readout, or (null) hidden with the Secondary back.
+  private renderAsked(targetKg: number | null, unit: Unit): void {
+    this.asked.hidden = targetKg === null;
+    this.secondary.hidden = targetKg !== null;
+    this.askedNum.textContent = targetKg === null ? '' : fmtNum(shownIn(targetKg, unit));
+    this.askedUnit.textContent = targetKg === null ? '' : ` ${unit}`;
   }
 
   // Reflect the active Primary unit on the kg|lb toggle.
@@ -1769,9 +1917,10 @@ export function statusPill(
  * Total plus how far it lands from the Target, so the keypad sheet is self-contained
  * (the lifter never has to read the Total behind it). Like statusPill it keys off the
  * DISPLAYED numbers (ADR-0010) so it is honest in kg and lb; `totalKg`/`targetKg` are
- * canonical kg. Mirrors the prototype's keypad wording ("under"/"over"/"exact"), which
- * deliberately differs from the status pill above ("short"). The prototype separates the
- * two facts with a middle dot (L803, "On the bar: 142 kg <middot> 0.5 under"; RBAR-74),
+ * canonical kg. Since RBAR-58 it says the miss in the status pill's words ("0.5 kg
+ * short", "0.7 kg over") -- the prototype's keypad "under" said the same fact as the
+ * pill's "short" in a second word, and without the unit. The prototype separates the
+ * two facts with a middle dot (L803, "On the bar: 142 kg <middot> 0.5 kg short"; RBAR-74),
  * emitted as an escape so the source stays ASCII (the Setup pill's precedent, app.ts).
  */
 export function onBarLine(
@@ -1784,13 +1933,15 @@ export function onBarLine(
   const shownTotal = shownIn(totalKg, unit);
   const shownTarget = shownIn(targetKg, unit);
   if (shownTotal === shownTarget) return `${head} \u00B7 exact`;
-  const mag = fmtNum(Math.abs(shownTotal - shownTarget));
-  if (shownTotal > shownTarget) return `${head} \u00B7 ${mag} over`;
+  // The miss is statusPill's own label ("0.3 kg short" / "0.7 kg over"), so the two
+  // surfaces say the same fact in the same words (RBAR-58).
+  const { label } = statusPill(shownTotal, shownTarget, unit, atCapacity);
   // At capacity the shortfall still rides along (RBAR-47: the magnitude of the miss
   // is never lost): while the sheet is open it is the ONLY surface saying it -- the
   // sheet covers the pill and announce() goes quiet.
-  if (atCapacity) return `${head} \u00B7 ${mag} under, at capacity`;
-  return `${head} \u00B7 ${mag} under`;
+  return atCapacity && shownTotal < shownTarget
+    ? `${head} \u00B7 ${label}, at capacity`
+    : `${head} \u00B7 ${label}`;
 }
 
 /**

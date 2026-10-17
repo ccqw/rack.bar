@@ -66,8 +66,10 @@ const STEP_GLYPH = (d: string): string => `<svg width="14" height="14" viewBox="
     fill="none" aria-hidden="true"><path d="${d}" stroke="currentColor" stroke-width="2"
     stroke-linecap="round"/></svg>`;
 const MINUS_D = 'M2 7h10';
-const MINUS_ICON = STEP_GLYPH(MINUS_D);
-const PLUS_ICON = STEP_GLYPH(`${MINUS_D}M7 2v10`);
+// Exported for the console's By Weight hero steppers (RBAR-58), so both stepper pairs
+// wear the one glyph pair.
+export const MINUS_ICON = STEP_GLYPH(MINUS_D);
+export const PLUS_ICON = STEP_GLYPH(`${MINUS_D}M7 2v10`);
 
 // Keydown origins the physical-keyboard handler defers to (RBAR-49): a text field owns
 // every key typed into it; an activatable control outside the entry owns its Enter.
@@ -113,6 +115,10 @@ class RackEntry extends HTMLElement {
   // with variant="working" -- the Warm up mode's Working set Target, labelled "Working
   // weight" in plain language (CONTEXT.md). One element, one keypad sheet, one keyboard
   // path: the variant only changes the labels and lays the row out compactly.
+  // With the `headless` attribute (RBAR-58, By Weight's Target) the field row and its
+  // caption are not drawn at all: the console's hero Total is the visible editor -- its
+  // steppers call step(), a tap calls toggle() -- and this element contributes the draft,
+  // the keypad sheet and the keyboard path.
   private noun = 'Target';
   private liveEl!: HTMLElement;
   private liveUEl!: HTMLElement;
@@ -120,7 +126,7 @@ class RackEntry extends HTMLElement {
   private liveLoadEl!: HTMLElement;
 
   // The "on the bar" load line the sheet shows under the live value, e.g.
-  // "On the bar: 142 kg <middot> 0.5 under" -- the actual loadable Total + how far it lands from
+  // "On the bar: 142 kg <middot> 0.5 kg short" -- the actual loadable Total + how far it lands from
   // the Target. The console owns decode (ADR-0005), so it computes this and pushes it down;
   // null hides the line (an untouched default or empty field has nothing decoded yet).
   private _loadLine: string | null = null;
@@ -476,6 +482,10 @@ class RackEntry extends HTMLElement {
           border-bottom-width: 1px;
         }
         :host([variant="working"]) .value .vu { font-size: 12px; }
+        /* Headless (RBAR-58): no caption, no row, no section opener -- only the fixed
+           keypad sheet, which never takes part in the column's layout. */
+        :host([headless]) { margin: 0; border: 0; padding: 0; }
+        :host([headless]) .caption, :host([headless]) .row { display: none; }
       </style>
       <!-- The Target section heading (RBAR-53): an h2 under the app's h1, styled by the
            section-label recipe. Static "Target" ("Working weight" in the Warm up variant,
@@ -600,10 +610,19 @@ class RackEntry extends HTMLElement {
     }
   };
 
-  /** Open the keypad sheet if closed. The console's Total-tap affordance (RBAR-57):
-   * an edit entry point, not a toggle, so an already-open sheet stays open. */
+  /** Open the keypad sheet if closed: an edit entry point (RBAR-57), not a toggle, so an
+   * already-open sheet stays open. The By Weight "You asked" chip uses it (RBAR-58). */
   open(): void {
     if (this.sheet && this.sheet.hidden) this.openKeypad();
+  }
+
+  /** Open the sheet if closed, close (and commit) it if open -- exactly a tap on the
+   * field's own value. A headless entry's visible value is the console's hero Total
+   * (RBAR-58), so its tap toggles like the value it stands in for. */
+  toggle(): void {
+    if (!this.sheet) return;
+    if (this.sheet.hidden) this.openKeypad();
+    else this.closeKeypad();
   }
 
   // Show the keypad sheet. Reflect the open state on the value button so assistive tech
@@ -704,7 +723,9 @@ class RackEntry extends HTMLElement {
   // a nominally-on-grid value is not treated as off-grid and half-stepped -- defensive:
   // real drafts are keypad literals or shownIn output (both fuzz-free at these grids),
   // so only a hand-pasted many-decimal draft can exercise it.
-  private step(dir: 1 | -1): void {
+  // Public for the headless variant (RBAR-58): the console's hero steppers call it, so
+  // a hero +/- is this same nudge on the Target's draft, never on the Total.
+  step(dir: 1 | -1): void {
     this.pristine = false;
     this.reformatted = false;
     // A nudge is an explicit edit of the current value, so a following digit appends to

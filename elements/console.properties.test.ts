@@ -17,7 +17,7 @@ import {
   SEED, other, on, press, step, type, roundUp, totalText, secondaryText,
   statusKind, statusLabel, atcapShown, barnoteShown, loadLine, entryDraft,
   sideOnScreen, drawnTotalKg, shownTarget, gridCaseArb, offGridCaseArb,
-  rigDraftCaseArb, expectedFor, rigArb, unitArb,
+  rigDraftCaseArb, expectedFor, rigArb, unitArb, secondaryShown,
 } from './properties.drivers.ts';
 
 // The pool is kept across this file's tests (each checkout resets the entry, mode and
@@ -61,7 +61,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
     );
   });
 
-  it('the pill, the round-up, the capacity caption and the keypad line all tell the same story (ADR-0003, ADR-0010, ADR-0012)', () => {
+  it('the pill, the round-up, the capacity caption and the keypad line all tell the same story, in the same words (ADR-0003, ADR-0010, ADR-0012, RBAR-58)', () => {
     fc.assert(
       fc.property(rigDraftCaseArb, ([rig, u, draft]) => {
         const el = on(rig, u);
@@ -85,17 +85,19 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
           expect(statusLabel(el)).toBe(`${mag} ${u} short`);
           expect(offered).toBe(true);
           expect(atcapShown(el)).toBe(false);
-          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} under`);
+          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} ${u} short`);
         } else if (kind === 'capacity') {
           expect(statusLabel(el)).toBe(`${mag} ${u} short`);
           expect(offered).toBe(false);
           expect(atcapShown(el)).toBe(true);
-          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} under, at capacity`);
+          expect(loadLine(el)).toBe(
+            `On the bar: ${total} ${u} \u00B7 ${mag} ${u} short, at capacity`,
+          );
         } else {
           expect(kind).toBe('over'); // only the bare-rig floor (previous property)
           expect(statusLabel(el)).toBe(`${mag} ${u} over`);
           expect(offered).toBe(false);
-          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} over`);
+          expect(loadLine(el)).toBe(`On the bar: ${total} ${u} \u00B7 ${mag} ${u} over`);
         }
       }),
       { seed: SEED, numRuns: 40 },
@@ -128,7 +130,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
     );
   });
 
-  it('the readout is always a clean number: no NaN, primary = drawn Total in the unit, secondary = the same Total in the other unit, under any keypad/stepper script (ADR-0010)', () => {
+  it('the readout is always a clean number: no NaN, primary = drawn Total in the unit, secondary (when shown) = the same Total in the other unit, under any keypad/stepper script (ADR-0010)', () => {
     const keyArb = fc.constantFrom(
       '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', 'del', 'clear', 'inc', 'dec',
     );
@@ -141,7 +143,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
           const kg = drawnTotalKg(el, rig);
           expect(totalText(el)).toMatch(/^\d+(\.\d{1,2})? (kg|lb)$/);
           expect(totalText(el)).toBe(format(kg, u));
-          expect(secondaryText(el)).toBe(format(kg, other(u)));
+          if (secondaryShown(el)) expect(secondaryText(el)).toBe(format(kg, other(u)));
           expect(entryDraft(el)).not.toMatch(/NaN|Infinity/);
         }
       }),

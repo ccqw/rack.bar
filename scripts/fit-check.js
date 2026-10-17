@@ -20,7 +20,11 @@
 // sheet would scroll inside (the most across both sets and units): any inner scroll
 // reads SHEET SCROLLS and adds a FAIL line (since the RBAR-72 SE tightening, the sheet
 // fits at every viewport), and the RBAR-72 states open a size's None..All row with
-// limits stored.
+// limits stored. Since RBAR-58 (the By Weight Target block is gone; the Target splits
+// off the hero as a "You asked" chip) each state also measures how far the status line
+// -- Secondary or chip, plus the pill -- runs past the readout's edges (LINE CLIPPED n),
+// and the walk adds the split states: the round-up taken (chip + over pill) and the
+// keypad open on a split Target.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -83,8 +87,16 @@ async (shared) => {
       const ruOver = items.length
         ? Math.max(0, Math.ceil(itemsW + gap * (items.length - 1) - ru.clientWidth))
         : 0;
+      // The status line's visible children against the readout's box (RBAR-58).
+      const ro = con.querySelector('.readout').getBoundingClientRect();
+      const kids = [...con.querySelectorAll('.statusline > *')].filter((k) => !k.hidden);
+      const lineClip = kids.reduce((m, k) => {
+        const r = k.getBoundingClientRect();
+        return Math.max(m, Math.ceil(ro.left - r.left), Math.ceil(r.right - ro.right));
+      }, 0);
       return {
         ruOver,
+        lineClip,
         iconsMissing,
         iconsHit,
         sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
@@ -148,6 +160,13 @@ async (shared) => {
         await record('weight: another way sheet');
         await inConsole(
           `con.querySelector('rack-ways').shadowRoot.querySelector('[data-done]').click()`,
+        );
+        await inConsole(`con.querySelector('[data-over]').click()`);
+        await record('weight: round-up taken');
+        await inConsole(`con.querySelector('[data-asked]').click()`);
+        await record('weight: keypad on a split Target');
+        await inConsole(
+          `con.querySelector('rack-entry').shadowRoot.querySelector('[data-done]').click()`,
         );
         await chip(1000);
         await record('weight: at capacity');
@@ -239,12 +258,14 @@ async (shared) => {
         iconsMissing: r.iconsMissing || (prev?.iconsMissing ?? false),
         sheetScroll: Math.max(r.sheetScroll, prev?.sheetScroll ?? 0),
         ruOver: Math.max(r.ruOver, prev?.ruOver ?? 0),
+        lineClip: Math.max(r.lineClip, prev?.lineClip ?? 0),
       });
     } else {
       prev.ruOver = Math.max(prev.ruOver, r.ruOver);
       if (!r.iconsHit) prev.iconsHit = false;
       if (r.iconsMissing) prev.iconsMissing = true;
       prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
+      prev.lineClip = Math.max(prev.lineClip, r.lineClip);
     }
   }
   const lines = [...worst.entries()].map(
@@ -253,6 +274,7 @@ async (shared) => {
       `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
       `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}` +
       `${r.ruOver ? ` ROUND-UP ROW OVER ${r.ruOver}px` : ''}` +
+      `${r.lineClip > 0 ? ` LINE CLIPPED ${r.lineClip}` : ''}` +
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
