@@ -15,7 +15,15 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { decode, decodeWithin } from './decode.ts';
 import { addPlate, removePlate, encode } from './encode.ts';
-import { SLEEVE_MM, sideLoadKg, sideWidthMm, totalKg, barWithCollars } from './plates.ts';
+import {
+  SLEEVE_MM,
+  sideLoadKg,
+  sideWidthMm,
+  totalKg,
+  barWithCollars,
+  COLLAR_OPTIONS,
+  isOfferedCollar,
+} from './plates.ts';
 import type { Plate } from './plates.ts';
 import {
   draftToKg,
@@ -37,6 +45,8 @@ import {
   maxTotal,
 } from './properties.oracle.ts';
 import type { Rig } from './properties.oracle.ts';
+import { parseLink, serializeLink, MAX_TARGET_KG } from './link.ts';
+import type { LinkState, LinkMode } from './link.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -547,5 +557,220 @@ describe('Plate set properties (ADR-0010)', () => {
       // The oracle asserts the grid when it builds; reaching here means it held.
       expect(achievableTotals(RIGS.find((r) => r.set === key)!).length).toBeGreaterThan(0);
     }
+  });
+});
+
+// Share links (RBAR-50, ADR-0014). States are built only through the real core paths
+// (an offered set, one of its Bars, an offered Collar, a Side Load grown by addPlate so
+// the Sleeve caps it), so the round-trip is checked over exactly the loads the app can
+// show. The fuzzers then aim arbitrary and grammar-shaped text at the parser.
+describe('Share link properties (ADR-0014)', () => {
+  const modeArb = fc.constantFrom<LinkMode>('decode', 'encode');
+
+  const linkStateArb: fc.Arbitrary<LinkState> = fc
+    .record({
+      key: fc.constantFrom(...PLATE_SET_KEYS),
+      barIx: fc.nat(),
+      collarKg: fc.constantFrom(...COLLAR_OPTIONS),
+      unit: unitArb,
+      mode: modeArb,
+      picks: fc.array(fc.nat(), { maxLength: 40 }),
+      cents: fc.option(fc.integer({ min: 1, max: MAX_TARGET_KG * 100 }), { nil: undefined }),
+    })
+    .map(({ key, barIx, collarKg, unit, mode, picks, cents }): LinkState => {
+      const set = PLATE_SETS[key];
+      const side = picks.reduce<readonly Plate[]>(
+        (acc, i) => addPlate(acc, set.inventory[i % set.inventory.length]!),
+        [],
+      );
+      const barKg = set.bars[barIx % set.bars.length]!.kg;
+      const base = { set: key, barKg, collarKg, unit, mode, side };
+      return mode === 'decode' && cents !== undefined ? { ...base, targetKg: cents / 100 } : base;
+    });
+
+  // Every invariant a parsed state must hold -- the parser's output contract.
+  function expectValid(s: LinkState): void {
+    expect(isOfferedPlateSet(s.set)).toBe(true);
+    const set = PLATE_SETS[s.set];
+    expect(set.bars.map((b) => b.kg)).toContain(s.barKg);
+    expect(isOfferedCollar(s.collarKg)).toBe(true);
+    expect(UNITS).toContain(s.unit);
+    expect(['decode', 'encode']).toContain(s.mode);
+    for (const p of s.side) expect(set.inventory).toContain(p);
+    for (let i = 1; i < s.side.length; i++) {
+      expect(s.side[i - 1]!.kg).toBeGreaterThanOrEqual(s.side[i]!.kg);
+    }
+    expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+    if (s.targetKg !== undefined) {
+      expect(s.mode).toBe('decode');
+      expect(Number.isFinite(s.targetKg)).toBe(true);
+      expect(s.targetKg).toBeGreaterThan(0);
+      expect(s.targetKg).toBeLessThanOrEqual(MAX_TARGET_KG);
+      expect(Number(s.targetKg.toFixed(2))).toBe(s.targetKg);
+    }
+  }
+
+  // Grammar-shaped links: one optional value per key, MOSTLY valid for the chosen set
+  // (so a real share is accepted and the post-acceptance checks bite), salted with
+  // near-misses (the other set's faces and Bar stamps, counts 0 and past 99, piles past
+  // the Sleeve, t with m=p, junk values, a duplicate key), in a shuffled order.
+  const allFaces = [
+    ...new Set(
+      [...PLATE_SETS.comp.inventory, ...PLATE_SETS.training.inventory].map(
+        (p) => p.label ?? String(p.kg),
+      ),
+    ),
+  ];
+  const allStamps = ['20kg', '15kg', '5kg', '45lb', '20lb', '20'];
+  const opt = (arb: fc.Arbitrary<string>) => fc.option(arb, { nil: undefined, freq: 20 });
+  const often = <T,>(good: fc.Arbitrary<T>, bad: fc.Arbitrary<T>): fc.Arbitrary<T> =>
+    fc.oneof({ arbitrary: good, weight: 15 }, { arbitrary: bad, weight: 1 });
+  const grammarArb = fc.constantFrom(...PLATE_SET_KEYS).chain((key) => {
+    const set = PLATE_SETS[key];
+    const ownFaces = set.inventory.map((p) => p.label ?? String(p.kg));
+    const ownStamps = set.bars.map((b) => (b.unit === 'lb' ? `${Math.round(kgToLb(b.kg))}lb` : `${b.kg}kg`));
+    const plateTokenArb = fc
+      .tuple(
+        often(
+          fc.option(fc.integer({ min: 1, max: 3 }), { nil: undefined }),
+          fc.constantFrom<number | undefined>(0, 99, 100, 120),
+        ),
+        often(fc.constantFrom(...ownFaces), fc.constantFrom(...allFaces, 'x', '')),
+      )
+      .map(([n, face]) => (n === undefined ? face : `${n}x${face}`));
+    return fc
+      .tuple(
+        fc.record({
+          v: opt(often(fc.constant('1'), fc.constantFrom('2', '', '01'))),
+          s: opt(often(fc.constant(key), fc.constantFrom('x', '__proto__'))),
+          b: opt(often(fc.constantFrom(...ownStamps), fc.constantFrom(...allStamps))),
+          m: opt(often(fc.constantFrom('w', 'p'), fc.constant('q'))),
+          c: opt(often(fc.constantFrom('0', '2.5'), fc.constantFrom('5', '', '2.50', '0x0'))),
+          u: opt(often(fc.constantFrom('kg', 'lb'), fc.constant('st'))),
+          p: opt(fc.array(plateTokenArb, { maxLength: 4 }).map((ts) => ts.join(','))),
+          t: opt(
+            often(
+              fc.integer({ min: 1, max: 100_000 }).map((c) => String(c / 100)),
+              fc.oneof(fc.integer({ min: -500, max: 110_000 }).map((c) => String(c / 100)), fc.string()),
+            ),
+          ),
+          zz: opt(fc.string()),
+        }),
+        often(fc.constant(undefined), fc.constantFrom('v=1', `s=${key}`, 'p=25')),
+        fc.array(fc.nat(), { minLength: 12, maxLength: 12 }),
+      )
+      .map(([rec, dup, noise]) =>
+        [...Object.entries(rec).map(([k, v]) => (v === undefined ? undefined : `${k}=${v}`)), dup]
+          .filter((kv): kv is string => kv !== undefined)
+          .map((kv, i) => ({ kv, k: noise[i]! + i / 100 }))
+          .sort((a, b) => a.k - b.k)
+          .map((e) => e.kv)
+          .join('&'),
+      );
+  });
+
+  it('round-trips: parseLink(serializeLink(s)) is s for every showable load (ADR-0014)', () => {
+    fc.assert(
+      fc.property(linkStateArb, (s) => {
+        expect(parseLink(serializeLink(s))).toEqual(s);
+      }),
+      opts,
+    );
+  });
+
+  it('canonical form is a fixed point: serializeLink(parseLink(x)) === x for every canonical x (ADR-0014)', () => {
+    fc.assert(
+      fc.property(linkStateArb, (s) => {
+        const x = serializeLink(s);
+        expect(serializeLink(parseLink(x)!)).toBe(x);
+      }),
+      opts,
+    );
+  });
+
+  it('canonicalization is idempotent: a reshuffled, defaulted, padded link parses to the same load (ADR-0014 ignore-unknown-keys, re-sort)', () => {
+    fc.assert(
+      fc.property(
+        linkStateArb,
+        fc.array(fc.nat(), { minLength: 50, maxLength: 50 }),
+        fc.boolean(),
+        fc.boolean(),
+        (s, noise, dropDefaults, addUnknown) => {
+          // Rewrite the canonical link: every Plate as a single token in a shuffled
+          // order, defaulted keys dropped, unknown keys added, the pairs shuffled.
+          const shuffle = <T,>(xs: readonly T[]): T[] =>
+            xs
+              .map((x, i) => ({ x, k: noise[i % noise.length]! + i / 1000 }))
+              .sort((a, b) => a.k - b.k)
+              .map((e) => e.x);
+          const faces = s.side.map((p) => p.label ?? String(p.kg));
+          const pairs = serializeLink(s)
+            .split('&')
+            .filter((kv) => !kv.startsWith('p='))
+            .filter((kv) => !(dropDefaults && (kv === 'c=0' || kv === `u=${s.unit}`)));
+          if (!(dropDefaults && faces.length === 0)) pairs.push(`p=${shuffle(faces).join(',')}`);
+          if (addUnknown) pairs.push('zz=later', 'q');
+          const parsed = parseLink(shuffle(pairs).join('&'), s.unit);
+          expect(parsed).toEqual(s);
+          const canon = serializeLink(parsed!);
+          expect(canon).toBe(serializeLink(s));
+          expect(serializeLink(parseLink(canon)!)).toBe(canon);
+        },
+      ),
+      opts,
+    );
+  });
+
+  it('never throws on arbitrary text, and yields null or a fully valid load (ADR-0014 all-or-nothing)', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.string(),
+          fc.string({ unit: 'binary' }),
+          grammarArb,
+          linkStateArb.map((s) => serializeLink(s).slice(0, -1)),
+        ),
+        (x) => {
+          const s = parseLink(x);
+          if (s !== null) expectValid(s);
+        },
+      ),
+      { ...opts, numRuns: 1000 },
+    );
+  });
+
+  it('every accepted Side Load fits the Sleeve and every accepted Bar is one its set offers (ADR-0014, ADR-0012)', () => {
+    let accepted = 0;
+    fc.assert(
+      fc.property(grammarArb, (x) => {
+        const s = parseLink(x);
+        if (s === null) return;
+        accepted++;
+        expect(sideWidthMm(s.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+        expect(PLATE_SETS[s.set].bars.map((b) => b.kg)).toContain(s.barKg);
+      }),
+      { ...opts, numRuns: 2000 },
+    );
+    // The grammar must actually reach acceptance, or this property is vacuous (the
+    // fixed seed accepts ~22%; a tenth is the floor).
+    expect(accepted).toBeGreaterThan(200);
+  });
+
+  it('a whole-lb Target reads back as the same whole pounds after the trip (ADR-0014, ADR-0006)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: Math.floor(kgToLb(MAX_TARGET_KG)) }), (n) => {
+        const s: LinkState = {
+          set: 'training',
+          barKg: PLATE_SETS.training.defaultBarKg,
+          collarKg: 0,
+          unit: 'lb',
+          mode: 'decode',
+          side: [],
+          targetKg: lbToKg(n),
+        };
+        expect(shownIn(parseLink(serializeLink(s))!.targetKg!, 'lb')).toBe(n);
+      }),
+      opts,
+    );
   });
 });
