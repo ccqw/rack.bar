@@ -23,7 +23,7 @@
 // Both directions validate against the same rules. The parser is all-or-nothing: any
 // rejected field nulls the whole link, so a mangled link degrades to a normal boot,
 // never a half-applied one. The serializer refuses (null) a load it cannot represent
-// exactly, so a link that serializes always opens to that same load. Unknown keys are
+// exactly, so a link that serializes always opens to that same load (Target at 2 dp). Unknown keys are
 // ignored, so a later additive v1 field does not break this client; a breaking change
 // bumps `v`.
 import {
@@ -44,7 +44,7 @@ export type LinkMode = 'decode' | 'encode';
 /** The rig and Side Load every link carries, whatever its mode. */
 interface LinkLoad {
   readonly set: PlateSetKey;
-  /** The bare Bar, kg -- one of `PLATE_SETS[set].bars`. */
+  /** The bare Bar, kg -- the kg of one of `PLATE_SETS[set].bars`. */
   readonly barKg: number;
   readonly collarKg: CollarKg;
   /** The sender's Primary unit (CONTEXT.md): the Unit the load was read in. */
@@ -58,7 +58,7 @@ interface LinkLoad {
  * sender's screen); a By Weight link may also carry the Target so the recipient's entry
  * reads the same. Only decode mode has a Target, so the type is split on `mode`.
  */
-// AI-REVIEW 2026-10-17 [claude/type-design] T1 (audit, PR #98): `targetKg?` sat on both
+// AI-REVIEW 2026-10-17 [claude-opus-5-5/type-design] T1 (audit, PR #98): `targetKg?` sat on both
 // modes, so an encode load could carry a Target the serializer silently dropped.
 export type LinkState =
   | (LinkLoad & {
@@ -69,10 +69,12 @@ export type LinkState =
   | (LinkLoad & { readonly mode: 'encode' });
 
 /** The longest fragment the parser reads; longer is rejected before any splitting.
- * A Sleeve full of the narrowest Plates still serializes well under 150 chars. */
+ * Counts fold to one `Nx` token per face (at most 10), so a canonical link stays under
+ * ~100 chars; the cap only bounds hostile input. */
 export const MAX_LINK_LENGTH = 512;
 
-/** The heaviest Target a link may carry, kg (the same order as a sleeve-full Total). */
+/** The heaviest Target a link may carry, kg: a sanity cap well above any Sleeve-full
+ * Total (~375 kg). */
 export const MAX_TARGET_KG = 1000;
 
 /** The only format version this client writes. Parsing an older `v` stays supported
@@ -136,7 +138,7 @@ function isLinkableSide(side: readonly Plate[], set: PlateSet): boolean {
  * writes `t` only when a decode-mode load has a Target. A non-null result always
  * parses back to `state` (with the Target at 2 dp).
  */
-// AI-REVIEW 2026-10-17 [claude/silent-failure] SF1-SF3 (audit, PR #98): an off-menu
+// AI-REVIEW 2026-10-17 [claude-opus-5-5/silent-failure] SF1-SF3 (audit, PR #98): an off-menu
 // Bar, a foreign Plate or a bad Target used to serialize into a link that opened to a
 // different load or to nothing; the serializer now refuses them.
 export function serializeLink(state: LinkState): string | null {
@@ -181,8 +183,10 @@ export function linkUrl(state: LinkState): string | null {
  * malformed percent-encoding. Unknown keys -- duplicated, valueless or malformed -- are
  * ignored, as are empty segments (a trailing `&`).
  */
-// AI-REVIEW 2026-10-17 [claude/silent-failure] SF4 (audit, PR #98): decoding the whole
-// fragment first let `x=a%26t%3D50` set the Target; split first, then decode.
+// AI-REVIEW 2026-10-17 [claude-opus-5-5/silent-failure] SF4 (audit, PR #98): decoding the
+// whole fragment first let `x=a%26t%3D50` set the Target; split first, then decode.
+// AI-REVIEW 2026-10-17 [claude-opus-5-5/silent-failure] SF6 (audit, PR #98): a duplicated
+// unknown key nulled the link, against ignore-unknown-keys; unknown keys are now skipped.
 function splitPairs(fragment: string): Map<string, string> | null {
   const pairs = new Map<string, string>();
   for (const seg of fragment.split('&')) {
@@ -215,8 +219,8 @@ function parseSide(value: string, set: PlateSet): readonly Plate[] | null {
     counts.set(plate, (counts.get(plate) ?? 0) + n);
   }
   // Rebuild heaviest-first in Inventory order (each Inventory is heaviest-first). The
-  // length cap bounds the pile (~256 tokens x 99), so expanding before the fit check
-  // is cheap.
+  // length cap bounds the pile (~100 `99x` tokens, ~10k Plates), so expanding before the
+  // fit check is cheap.
   const side = set.inventory.flatMap((p) => Array<Plate>(counts.get(p) ?? 0).fill(p));
   return fitsSleeve(side) ? side : null;
 }

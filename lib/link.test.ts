@@ -206,7 +206,7 @@ describe('parseLink: accepted links (ADR-0014)', () => {
     expect(targetOf(parse('v=1&s=comp&b=20kg&m=w&t=1000'))).toBe(MAX_TARGET_KG);
   });
 
-  it('accepts a Side Load that exactly fills the Sleeve', () => {
+  it('accepts a Side Load no further Plate fits on', () => {
     // 7 x 25 kg = 406 mm, + 0.5 kg (16 mm) would be 422 > 415; 7 x 58 + 1 kg (19) = 425.
     expect(parse('v=1&s=comp&b=20kg&m=p&p=7x25')).not.toBeNull();
   });

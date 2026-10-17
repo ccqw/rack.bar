@@ -624,7 +624,9 @@ describe('Share link properties (ADR-0014)', () => {
   // Grammar-shaped links: one optional value per key, MOSTLY valid for the chosen set
   // (so a real share is accepted and the post-acceptance checks bite), salted with
   // near-misses (the other set's faces and Bar stamps, counts 0 and past 99, piles past
-  // the Sleeve, t with m=p, junk values, a duplicate key), in a shuffled order.
+  // the Sleeve, t with m=p, junk values, a duplicate key), in a shuffled order. Some
+  // salt is tolerated, not rejected (`c=2.50`, a stamp both sets offer): the checks
+  // below assert validity of whatever is accepted, not which inputs are rejected.
   const allFaces = [
     ...new Set(
       [...PLATE_SETS.comp.inventory, ...PLATE_SETS.training.inventory].map(

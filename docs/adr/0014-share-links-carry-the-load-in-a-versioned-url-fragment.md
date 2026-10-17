@@ -51,8 +51,9 @@ entry and status read the same. **Plates win over a re-solve** when the two disa
   Collar stay kg-canonical, where kg is exact.
 - **Readable on purpose.** No base64; a lifter can read or hand-edit `t=100&p=2x25`.
   Every value is an allowlisted token or a bounded decimal, so nothing needs
-  percent-encoding. The worst realistic link (a Sleeve full of 0.5s) is well under 150
-  characters.
+  percent-encoding. Counts fold to one `Nx` token per face, so even the longest
+  canonical link (a mixed descent of every face plus a Target) is under ~100
+  characters; the 512-character cap only bounds hostile input.
 
 ## Decision: all-or-nothing parse, unknown keys ignored
 
@@ -86,7 +87,7 @@ Plate from the other set, a Side out of order or past the Sleeve, a Target that 
 finite, rounds to <= 0, or is over the cap). Refusing beats a link that opens to a
 different load -- an off-menu 20.4 kg Bar would round onto the `45lb` stamp, and a red
 Eleiko `25` on a Training load would open as an iron 25 lb. Every link it does write
-parses back to the same load. A missing `u` takes the recipient's Primary unit, which the
+parses back to the same load (with the Target at 2 dp). A missing `u` takes the recipient's Primary unit, which the
 shell must pass (`parseLink`'s second argument is required).
 
 ## Decision: the link applies transiently
