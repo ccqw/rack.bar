@@ -68,10 +68,11 @@ function heaviestFirst(inventory: readonly Plate[]): Plate[] {
  * The step every Side sum on `inventory` lies on: the largest g with every Plate an
  * integer multiple of it. The smallest Plate when it divides the rest (0.5 kg Eleiko,
  * 2.5 lb iron); finer when it does not (Eleiko without its 0.5s still makes half-kg
- * sums from 2.5 and 1.5). Throws a RangeError for an empty Inventory, a non-positive or
- * non-finite Plate mass or width, or Plates with no common grid down to 1/1000 of the smallest:
- * no shipped set does any of these (test-locked), and the exact search cannot run
- * without a grid -- a silent fallback would hide the broken Inventory.
+ * sums from 2.5 and 1.5). Throws a RangeError for an empty Inventory, a non-positive
+ * or non-finite Plate mass or width, or Plates with no common grid (each within EPS)
+ * down to 1/1000 of the smallest: no shipped set does any of these (test-locked), and
+ * the exact search cannot run without a grid -- a silent fallback would hide the
+ * broken Inventory.
  */
 export function plateGridKg(inventory: readonly Plate[]): number {
   if (inventory.length === 0) throw new RangeError('plateGridKg: empty Inventory');
@@ -90,10 +91,12 @@ export function plateGridKg(inventory: readonly Plate[]): number {
  * Every distinct Side Load that reaches exactly `sideKg` and fits `sleeveMm`, lazily,
  * in rank order (fewest Plates, then heaviest-first). The first is the canonical Side
  * Load; RBAR-66 takes the first few. Each stack is heaviest-first, a fresh array, and
- * holds the Inventory's own Plate objects. Throws a RangeError for a Plate with a bad
- * mass or width (see plateGridKg); an off-grid sum is simply unreachable. A zero sum yields one empty stack (the bare
+ * holds the Inventory's own Plate objects. A zero sum yields one empty stack (the bare
  * Bar); nothing is yielded when no stack reaches the sum (off-grid, negative, heavier
- * than the Sleeve can carry, or an empty Inventory).
+ * than the Sleeve can carry, or an empty Inventory). Throws a RangeError, at the call,
+ * for a Plate with a bad mass or width or a Sleeve that is not a positive finite
+ * length -- as do sideAtOrUnder and sideAbove, which also need a common grid
+ * (plateGridKg).
  *
  * Method: iterative deepening on the Plate count (1, 2, 3, ...), and at each count a
  * depth-first walk over non-increasing stacks, heaviest denomination first -- so stacks
