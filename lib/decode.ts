@@ -58,9 +58,9 @@ export interface Decoded {
    * The opt-in over-target alternative (ADR-0003): the least achievable Total
    * *strictly above* the solve ceiling, fewest Plates, with a positive `delta`.
    * Present only when `primary` lands strictly under the ceiling and a PHYSICAL
-   * round-up exists -- the step is re-filled under the same sleeve cap and kept only
-   * if it still exceeds the ceiling (ADR-0012), so a sleeve-full shortfall carries no
-   * over. Absent for a primary exactly on the ceiling (an exact `decode`), a sub-Bar
+   * round-up exists -- the refill steps up under the same sleeve cap until a load
+   * exceeds the ceiling (ADR-0012; more than one step in the sleeve-bound band,
+   * RBAR-62), so a sleeve-full shortfall carries no over. Absent for a primary exactly on the ceiling (an exact `decode`), a sub-Bar
    * Target, an empty Inventory, and -- via the early return below -- a non-finite
    * Target. Note a `decodeWithin` primary sits just under its ceiling, so it usually
    * carries an over even when it DISPLAYS exact; the shell hides the offer then.
@@ -109,15 +109,25 @@ export function decode(
   // The refill honors the same sleeve cap, so the candidate is kept only when it
   // still lands strictly ABOVE the Target -- a sleeve-full shortfall has no physical
   // round-up and carries no `over` at all (ADR-0012).
+  //
+  // In the sleeve-bound band the very next step may not fit while a later one does (a
+  // 164.5 kg Side has no stack within 415 mm, a 165 kg Side does -- RBAR-62), so the
+  // refill keeps stepping until it lands above the Target or the budget passes the
+  // heaviest Side the sleeve could ever hold (every Plate at the densest kg-per-mm).
+  // Uncapped, the first step always lands, so ordinary Targets do exactly one refill.
   if (primary.delta < -EPS && inventory.length > 0) {
     const step = Math.min(...inventory.map((p) => p.kg));
-    const overSide = fillSide(sideLoadKg(side) + step, inventory, sleeveMm);
-    const overTotal = totalKg(overSide, bar);
-    if (overTotal > target + EPS) {
-      return {
-        primary,
-        over: { side: overSide, total: overTotal, delta: overTotal - target },
-      };
+    const densest = Math.max(...inventory.map((p) => p.kg / p.widthMm));
+    const maxSideKg = densest * sleeveMm;
+    for (let budget = sideLoadKg(side) + step; budget <= maxSideKg + step; budget += step) {
+      const overSide = fillSide(budget, inventory, sleeveMm);
+      const overTotal = totalKg(overSide, bar);
+      if (overTotal > target + EPS) {
+        return {
+          primary,
+          over: { side: overSide, total: overTotal, delta: overTotal - target },
+        };
+      }
     }
   }
 

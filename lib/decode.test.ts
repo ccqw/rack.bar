@@ -321,6 +321,19 @@ describe('the sleeve caps decode (RBAR-31, ADR-0012)', () => {
     }
   });
 
+  it('offers a round-up that is more than one step up when the next step will not fit (RBAR-62)', () => {
+    // Found by the RBAR-62 property suite. Target 349 on the default rig: the primary is
+    // 348 (sleeve-bound); no 164.5 kg Side (Total 349) fits within 415 mm, but a 165 kg
+    // Side (Total 350) does. The old one-step refill fell back to 348, offered no
+    // round-up, and the console read "Bar at capacity" while a heavier load still fit. ADR-0003 RBAR-11: the least achievable
+    // Total above; ADR-0012: present whenever one physically exists.
+    const { primary, over } = decode(349);
+    expect(primary.total).toBe(348);
+    expect(over).toBeDefined();
+    expect(over!.total).toBe(350);
+    expect(sideWidthMm(over!.side)).toBeLessThanOrEqual(SLEEVE_MM);
+  });
+
   it('caps an overflowing Target at the widest fitting Side (7 reds, Total 370)', () => {
     const { primary, over } = decode(1000);
     expect(primary.side.map((p) => p.kg)).toEqual([25, 25, 25, 25, 25, 25, 25]);
