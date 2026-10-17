@@ -1,0 +1,153 @@
+// TEST-ONLY independent oracle for the property suites (RBAR-62). Never imported by
+// app code (nothing under elements/ or index.html reaches it), so it never ships.
+//
+// It answers "what Totals can this rig physically build?" from the ADRs alone, with
+// no call into the loader under test: a dynamic programme over Side sums on the
+// Inventory's own grid, tracking the narrowest stack for each (sum, Plate count).
+//   - ADR-0002: Bar and Inventory are inputs; the Total is Bar + 2 x Side Load.
+//   - ADR-0008: a Collar folds into the baseline (Bar + 2 x Collar) the solver loads from.
+//   - ADR-0012: "achievable" means buildable AND within the Sleeve -- a Side sum is
+//     achievable iff some stack reaching it fits SLEEVE_MM.
+//   - ADR-0003: among stacks reaching the same Total the pick is the fewest Plates.
+// The property tests compare the real solver to THESE answers, so a loader change that
+// still passes the example tests but breaks a rule somewhere in the space fails here.
+import { SLEEVE_MM } from './plates.ts';
+import type { Plate } from './plates.ts';
+import { PLATE_SETS, PLATE_SET_KEYS } from './platesets.ts';
+import type { PlateSetKey } from './platesets.ts';
+
+/** One physical rig: the set's Inventory on a given baseline (Bar + 2 x Collar). */
+export interface Rig {
+  readonly set: PlateSetKey;
+  readonly barKg: number;
+  readonly collarKg: number;
+  readonly inventory: readonly Plate[];
+  /** Bar + 2 x Collar (ADR-0008) -- the empty-rig Total. */
+  readonly baselineKg: number;
+  /** A readable name for failure messages. */
+  readonly name: string;
+}
+
+/** The two Collar options v1 offers (None / Standard 2.5 kg, ADR-0008). */
+export const COLLARS_KG: readonly number[] = [0, 2.5];
+
+/** Every rig v1 can be set to: each set x each Bar it offers x each Collar. */
+export const RIGS: readonly Rig[] = PLATE_SET_KEYS.flatMap((set) =>
+  PLATE_SETS[set].bars.flatMap((bar) =>
+    COLLARS_KG.map((collarKg) => ({
+      set,
+      barKg: bar.kg,
+      collarKg,
+      inventory: PLATE_SETS[set].inventory,
+      baselineKg: bar.kg + 2 * collarKg,
+      name: `${set} bar ${Number(bar.kg.toFixed(3))} kg collar ${collarKg}`,
+    })),
+  ),
+);
+
+/** What the oracle knows about one achievable Side sum. */
+export interface Reachable {
+  /** The Side Load in kg (sum of one Side's Plates). */
+  readonly sideKg: number;
+  /** The fewest Plates that reach it within the Sleeve (ADR-0003 + ADR-0012). */
+  readonly fewestPlates: number;
+}
+
+interface Table {
+  /** Achievable Side sums, ascending. */
+  readonly sides: readonly Reachable[];
+}
+
+const cache = new Map<string, Table>();
+
+/**
+ * Every achievable Side sum for `inventory` under `sleeveMm`, ascending. The grid unit
+ * is the smallest Plate (0.5 kg Eleiko, 2.5 lb iron); every Plate must be an integer
+ * multiple of it, which holds for both v1 sets (asserted, so a future set that breaks
+ * the assumption fails loudly here instead of producing a wrong oracle).
+ */
+export function reachableSides(
+  inventory: readonly Plate[],
+  sleeveMm: number = SLEEVE_MM,
+): readonly Reachable[] {
+  const key = `${inventory.map((p) => `${p.kg}/${p.widthMm}`).join(',')}@${sleeveMm}`;
+  const hit = cache.get(key);
+  if (hit) return hit.sides;
+
+  const unit = Math.min(...inventory.map((p) => p.kg));
+  const units = inventory.map((p) => {
+    const u = Math.round(p.kg / unit);
+    if (Math.abs(u * unit - p.kg) > 1e-9) {
+      throw new Error(`oracle: Plate ${p.kg} kg is off the ${unit} kg grid`);
+    }
+    return u;
+  });
+  const widths = inventory.map((p) => p.widthMm);
+  const maxCount = Math.floor(sleeveMm / Math.min(...widths));
+  const maxUnits = maxCount * Math.max(...units);
+  // w[c][s] = the narrowest stack of exactly c Plates summing to s grid units.
+  const w: Float64Array[] = [];
+  w[0] = new Float64Array(maxUnits + 1).fill(Infinity);
+  w[0][0] = 0;
+  for (let c = 1; c <= maxCount; c++) {
+    const prev = w[c - 1];
+    const row = new Float64Array(maxUnits + 1).fill(Infinity);
+    for (let s = 0; s <= maxUnits; s++) {
+      for (let i = 0; i < units.length; i++) {
+        if (units[i] > s) continue;
+        const cand = prev[s - units[i]] + widths[i];
+        if (cand < row[s]) row[s] = cand;
+      }
+    }
+    w[c] = row;
+  }
+  const sides: Reachable[] = [];
+  for (let s = 0; s <= maxUnits; s++) {
+    for (let c = 0; c <= maxCount; c++) {
+      if (w[c][s] <= sleeveMm + 1e-9) {
+        sides.push({ sideKg: s * unit, fewestPlates: c });
+        break;
+      }
+    }
+  }
+  cache.set(key, { sides });
+  return sides;
+}
+
+/** Every achievable Total on `rig`, ascending (baseline + 2 x each achievable Side). */
+export function achievableTotals(rig: Rig): readonly number[] {
+  return reachableSides(rig.inventory).map((r) => rig.baselineKg + 2 * r.sideKg);
+}
+
+// Grid points are >= 1 kg apart on every rig, so a 1e-9 tolerance only absorbs float
+// drift in the summed Plate masses (the iron kg are lbToKg products), never a real step.
+const TOL = 1e-9;
+
+/** The greatest achievable Total at or under `ceiling`, or the baseline floor (ADR-0003). */
+export function greatestAtOrUnder(rig: Rig, ceiling: number): number {
+  let best = rig.baselineKg;
+  for (const t of achievableTotals(rig)) {
+    if (t <= ceiling + TOL) best = t;
+    else break;
+  }
+  return best;
+}
+
+/** The least achievable Total strictly above `ceiling`, or null when none fits. */
+export function leastAbove(rig: Rig, ceiling: number): number | null {
+  for (const t of achievableTotals(rig)) if (t > ceiling + TOL) return t;
+  return null;
+}
+
+/** The fewest Plates (one Side) that reach `total` on `rig` within the Sleeve, or null. */
+export function fewestPlatesFor(rig: Rig, total: number): number | null {
+  const sideKg = (total - rig.baselineKg) / 2;
+  const r = reachableSides(rig.inventory).find((x) => Math.abs(x.sideKg - sideKg) < 1e-6);
+  return r ? r.fewestPlates : null;
+}
+
+/** The heaviest achievable Total on `rig` (the Sleeve full of the densest stack). */
+export function maxTotal(rig: Rig): number {
+  const all = achievableTotals(rig);
+  return all[all.length - 1];
+}
