@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { cacheName, precacheUrls, renderWorker } from './precache.ts';
@@ -110,7 +110,123 @@ describe('renderWorker (scripts/sw.js)', () => {
     expect(sw).toMatch(/SKIP_WAITING'\) self\.skipWaiting\(\)/);
   });
 
+  it('precaches with cache: reload (bypassing the HTTP cache)', () => {
+    expect(sw).toMatch(/new Request\(url, \{ cache: 'reload' \}\)/);
+  });
+
   it('refuses a template without its markers', () => {
     expect(() => renderWorker('const CACHE = 1;', 'c', [])).toThrow(/marker/);
+  });
+});
+
+// The rendered worker, run against fake worker globals: what it precaches and how it
+// answers a page navigation (ADR-0018 decisions 2 and 4).
+describe('the worker (scripts/sw.js) at run time', () => {
+  const template = readFileSync(resolve(import.meta.dirname, 'sw.js'), 'utf8');
+  const PRECACHE = ['/', '/assets/index-AbC123.js', '/game.html'];
+  const ORIGIN = 'https://rack.bar';
+
+  /** A response stand-in: just a body string. */
+  type Body = { body: string };
+  type FakeReq = { url: string; init: { cache?: string } };
+
+  function boot(fetchImpl: (req: unknown) => Promise<Body>) {
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const store = new Map<string, Body>();
+    const added: FakeReq[] = [];
+    const put = vi.fn();
+    const cache = {
+      addAll: vi.fn(async (reqs: FakeReq[]) => {
+        for (const r of reqs) {
+          added.push(r);
+          store.set(r.url, { body: 'precached ' + r.url });
+        }
+      }),
+      match: vi.fn(async (key: string) => store.get(key)),
+      put,
+    };
+    const fakeCaches = {
+      open: vi.fn(async () => cache),
+      match: vi.fn(async (req: { url: string }) => store.get(new URL(req.url).pathname)),
+      keys: vi.fn(async () => []),
+      delete: vi.fn(),
+    };
+    const fakeSelf = {
+      location: { origin: ORIGIN },
+      clients: { claim: vi.fn() },
+      skipWaiting: vi.fn(),
+      addEventListener: (type: string, fn: (e: unknown) => void) => {
+        handlers[type] = fn;
+      },
+    };
+    class FakeRequest {
+      url: string;
+      init: { cache?: string };
+      constructor(url: string, init: { cache?: string }) {
+        this.url = url;
+        this.init = init;
+      }
+    }
+    const sw = renderWorker(template, 'rack-bar-vtest', PRECACHE);
+    new Function('self', 'caches', 'fetch', 'Request', sw)(
+      fakeSelf,
+      fakeCaches,
+      fetchImpl,
+      FakeRequest,
+    );
+
+    const install = async () => {
+      let done: unknown = Promise.resolve();
+      handlers.install!({ waitUntil: (p: Promise<unknown>) => (done = p) });
+      await done;
+    };
+    const navigate = (path: string): Promise<Body> => {
+      let res!: Promise<Body>;
+      handlers.fetch!({
+        request: { url: ORIGIN + path, method: 'GET', mode: 'navigate' },
+        respondWith: (p: Promise<Body>) => (res = p),
+      });
+      return res;
+    };
+    return { install, navigate, added, put };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('precaches straight from the network, never the HTTP cache', async () => {
+    const w = boot(() => Promise.reject(new Error('unused')));
+    await w.install();
+    expect(w.added.map((r) => r.url)).toEqual(PRECACHE);
+    for (const r of w.added) expect(r.init.cache).toBe('reload');
+  });
+
+  it('serves an online page from the network and never writes it to the cache', async () => {
+    const w = boot(async () => ({ body: 'fresh' }));
+    await w.install();
+    expect((await w.navigate('/')).body).toBe('fresh');
+    expect(w.put).not.toHaveBeenCalled();
+  });
+
+  it('offline, serves the precached page by its path, ignoring the query', async () => {
+    const w = boot(() => Promise.reject(new TypeError('Failed to fetch')));
+    await w.install();
+    expect((await w.navigate('/?from=share')).body).toBe('precached /');
+    expect((await w.navigate('/index.html')).body).toBe('precached /');
+    expect((await w.navigate('/game.html?x=1')).body).toBe('precached /game.html');
+    // a page that was never precached falls back to the app
+    expect((await w.navigate('/nope')).body).toBe('precached /');
+  });
+
+  it('on a hanging network, serves the precached page after 3 s', async () => {
+    vi.useFakeTimers();
+    const w = boot(() => new Promise<Body>(() => {})); // one bar of signal: never settles
+    await w.install();
+    const res = w.navigate('/');
+    let settled: Body | undefined;
+    void res.then((b) => (settled = b));
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(settled).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await res).body).toBe('precached /');
   });
 });

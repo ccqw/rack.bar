@@ -42,8 +42,10 @@ export function offline(opts: { version: string; template: string }): Plugin {
       handler(_options, bundle) {
         const publicFiles = walk(publicDir);
         urls = precacheUrls([...Object.keys(bundle), ...publicFiles]);
-        // Hash the shipped bytes in a fixed order: same build, same worker.
-        const hash = createHash('sha256');
+        // Hash the shipped bytes in a fixed order: same build, same worker. The worker
+        // template is shipped bytes too: a worker-only change gets a new cache.
+        const template = readFileSync(opts.template, 'utf8');
+        const hash = createHash('sha256').update(template);
         for (const name of Object.keys(bundle).sort()) {
           const item = bundle[name]!;
           hash.update(name).update(item.type === 'chunk' ? item.code : item.source);
@@ -52,7 +54,7 @@ export function offline(opts: { version: string; template: string }): Plugin {
           hash.update(name).update(readFileSync(join(publicDir, name)));
         }
         const source = renderWorker(
-          readFileSync(opts.template, 'utf8'),
+          template,
           cacheName(opts.version, hash.digest('hex')),
           urls,
         );
