@@ -293,9 +293,9 @@ class RackSetup extends HTMLElement {
            shadow and entrance per prototype L252 (RBAR-74): sheetIn .26s on the spring
            curve. Split like the keypad sheet for reduced motion: everyone gets the
            fade (opacity is not motion), only a no-preference lifter gets the rise. */
-        /* The sheet scrolls inside itself when its sections outgrow a short phone
-           (RBAR-72 added the Pairs of Plates on Hand section); the page never does
-           (ADR-0013). */
+        /* The sheet fits every supported phone without scrolling (RBAR-72: a short
+           phone tightens the spacing below); overflow-y stays as a guard for anything
+           shorter, so the page itself never scrolls (ADR-0013). */
         .panel {
           width: 100%; max-width: 520px;
           max-height: calc(100% - env(safe-area-inset-top));
@@ -554,7 +554,7 @@ class RackSetup extends HTMLElement {
         .pairs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-top: 8px; }
         .pairs[hidden] { display: none; }
         .pairs button {
-          min-height: 40px; padding: 0; cursor: pointer;
+          min-height: 44px; padding: 0; cursor: pointer;
           font-family: var(--rack-font-num); font-size: 12px; font-weight: 700;
           color: var(--rack-text-secondary); background: transparent;
           border: 1px solid var(--rack-border-muted); border-radius: var(--rack-radius-tile);
@@ -563,6 +563,22 @@ class RackSetup extends HTMLElement {
           color: var(--rack-bg); background: var(--rack-accent); border-color: var(--rack-accent);
         }
         .pairs button:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* A short phone (the SE in Safari, 548px tall): the sheet tightens its spacing so
+           every section, an open None..All row included, fits with no inner scroll
+           (ADR-0013 as amended for RBAR-72). Every tap target stays 44px or taller; the
+           handoff's spacing holds on the Must viewport (393x659) and up. */
+        @media (max-height: 600px) {
+          .panel { padding: 12px 20px calc(10px + env(safe-area-inset-bottom)); }
+          .head { margin-bottom: 8px; }
+          .section-label, .label-row { margin-bottom: 6px; }
+          .tiles, .bar-row, .rows { margin-bottom: 12px; }
+          .tile { min-height: 48px; padding: 6px 4px; }
+          .rows { gap: 6px; }
+          .row { min-height: 48px; padding: 7px 13px; }
+          .onhand { gap: 4px; }
+          .size { min-height: 44px; padding: 6px 0 5px; }
+          .pairs { margin-top: 6px; }
+        }
       </style>
       <div class="scrim" data-scrim>
         <div class="panel" data-panel role="dialog" aria-modal="true" aria-labelledby="setup-heading">
@@ -700,7 +716,8 @@ class RackSetup extends HTMLElement {
       if (this.openFace === face) return this.closePairs();
       this.openFace = face;
       this.syncOnhand();
-      // Bring the row into view (the sheet may scroll inside itself, ADR-0013) and put
+      // Bring the row into view (a guard: the sheet only scrolls below the supported
+      // viewports, ADR-0013) and put
       // focus on the size's current count, a step from the tile, not ten Tabs away.
       this.pairsRowEl.scrollIntoView?.({ block: 'nearest' });
       this.pairsRowEl.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();

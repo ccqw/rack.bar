@@ -81,8 +81,12 @@ UI, scopes and persistence questions below; Warm up under caps stays with slice 
 3. **UI lives only in Setup**, a section titled "Pairs of Plates on Hand" with an
    "All plates" reset at the title's right, one tile per size in its Plate color
    reading "all", "N pair(s)" or "none" (dimmed, struck), and a None / 1 / 2 / 3 / 4
-   / All row for the tapped size. No explanatory copy in the section. The sheet now
-   scrolls inside itself on a short phone; the page never does (ADR-0013). Opening a
+   / All row for the tapped size. No explanatory copy in the section. The sheet fits
+   without scrolling at every phone viewport, a size's row open included (Caitlin,
+   2026-10-17): on a short phone (548px tall) it tightens its spacing, every tap
+   target staying 44px or taller, and fit-check fails on any inner scroll. The sheet
+   keeps `overflow-y: auto` only as a guard for viewports below the supported ones;
+   the page never scrolls (ADR-0013). Opening a
    size's row scrolls it into view and focuses its current count; Escape or a second
    tap on the tile closes it and returns focus to the tile.
 4. **Any change re-solves at once** everything that draws from the Inventory: a

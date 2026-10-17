@@ -79,6 +79,20 @@ describe('<rack-setup> Pairs of Plates on Hand (RBAR-72)', () => {
     expect(reset(root).getAttribute('aria-disabled')).toBe('false');
   });
 
+  // happy-dom cannot lay out, so the fit itself is scripts/fit-check.js's (it fails on any
+  // inner scroll); this pins the rules that make it: a short-phone tightening and 44px
+  // floors on every Pairs control (RBAR-72, ADR-0013).
+  it('keeps every Pairs control 44px or taller and tightens the sheet on a short phone', () => {
+    const { root } = mount();
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toMatch(/\.pairs button \{\s*min-height: 44px;/);
+    const short = css.slice(css.indexOf('@media (max-height: 600px)'));
+    expect(short).toMatch(/\.size \{ min-height: 44px;/);
+    expect(short).toMatch(/\.tile \{ min-height: 48px;/);
+    expect(short).toMatch(/\.row \{ min-height: 48px;/);
+    expect(short).not.toMatch(/min-height: (?:[0-3]\d|4[0-3])px/);
+  });
+
   it('only the active set limits show: Training limits never touch Competition', () => {
     const { root } = mount({ training: { '45': 0 } });
     expect(tile(root, '25').dataset.state).toBe('all');

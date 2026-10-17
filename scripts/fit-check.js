@@ -16,10 +16,10 @@
 // land on that button, or the line reads ICONS BLOCKED (ICONS MISSING if the selector no
 // longer finds exactly two). The Setup states (RBAR-76) add the sheet's height, how far
 // it runs above the viewport (`over`, 0 = it fits), and how far its Bar row scrolls
-// sideways inside the sheet. Since RBAR-72 the sheet may scroll inside itself (the Pairs
-// of Plates on Hand section), never the page: the Setup lines also give how far the
-// sheet scrolls inside (`scrolls inside`, the most across both sets and units -- a
-// report, not an assertion), and the RBAR-72 states open a size's None..All row with
+// sideways inside the sheet. Since RBAR-72 the Setup lines also give how far the
+// sheet would scroll inside (the most across both sets and units): any inner scroll
+// reads SHEET SCROLLS and adds a FAIL line (since the RBAR-72 SE tightening, the sheet
+// fits at every viewport), and the RBAR-72 states open a size's None..All row with
 // limits stored.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
@@ -220,14 +220,19 @@ async (shared) => {
       prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
     }
   }
-  return [...worst.entries()].map(
+  const lines = [...worst.entries()].map(
     ([key, r]) =>
       `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
       `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
       `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}` +
       (r.sheetH
-        ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px,` +
-          ` scrolls inside ${r.sheetScroll}px`
+        ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
+          `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
         : ''),
   );
+  // The Setup sheet must fit without scrolling inside at every viewport, a None..All
+  // row open included (RBAR-72, ADR-0013): any inner scroll fails the run.
+  const scrolling = [...worst.entries()].filter(([, r]) => r.sheetScroll > 0).map(([k]) => k);
+  if (scrolling.length) lines.push(`FAIL: the Setup sheet scrolls inside at ${scrolling.join('; ')}`);
+  return lines;
 }
