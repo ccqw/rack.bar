@@ -294,6 +294,18 @@ describe('loadingSummary', () => {
     expect(text.split('\n')).toHaveLength(13);
     expect(text.length).toBeLessThan(200);
   });
+
+  // RBAR-50 slice 3 (ADR-0011 amendment): the closing line carries the load's share
+  // link when the console has one, so every paste opens the same loadout.
+  it('closes with the share link it is given, in place of the bare site', () => {
+    const url = 'https://rack.bar/#v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=25,15&t=100';
+    const out = loadingSummary(
+      { side: [eleiko(25), eleiko(15)], barKg: 20, collarKg: 0, unit: 'kg' },
+      url,
+    ).split('\n');
+    expect(out.at(-1)).toBe(url);
+    expect(out).not.toContain(SHARE_LINK);
+  });
 });
 
 describe('summary source', () => {

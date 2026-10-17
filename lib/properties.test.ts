@@ -74,7 +74,7 @@ import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import type { RampStep } from './plan.ts';
 import type { Rig } from './properties.oracle.ts';
 import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
-import { parseLink, serializeLink, MAX_TARGET_KG } from './link.ts';
+import { parseLink, readingFits, serializeLink, MAX_TARGET_KG } from './link.ts';
 import type { LinkState, LinkMode } from './link.ts';
 import {
   MAX_CUSTOM_BARS,
@@ -1341,6 +1341,31 @@ describe('Plate set properties (ADR-0010)', () => {
 // the Sleeve caps it), so the round-trip is checked over exactly the loads the app can
 // show. The fuzzers then aim arbitrary and grammar-shaped text at the parser.
 describe('Share link properties (ADR-0014)', () => {
+  // RBAR-50 slice 3: the console solves the window of the DISPLAYED Target
+  // (displayCeilingKg), so a link carries the sender's Target field text `d`. Whatever
+  // set the Target -- typed in the unit (<= 2 dp), or a kg weight shown as its readout
+  // (whole lb / 2 dp kg) -- the reading fits the 2 dp kg `t`, and solving from it
+  // reproduces the sender's reading and window exactly.
+  it('a Target reading fits its link Target and re-solves the same display window (ADR-0014 d, ADR-0010)', () => {
+    const typedArb = fc
+      .tuple(unitArb, fc.integer({ min: 1, max: 99_999 }))
+      .map(([u, c]) => ({ u, reading: String(c / 100), kg: draftToKg(String(c / 100), u)! }));
+    const readoutArb = fc
+      .tuple(unitArb, fc.integer({ min: 1, max: MAX_TARGET_KG * 100 }))
+      .map(([u, c]) => ({ u, reading: String(shownIn(c / 100, u)), kg: c / 100 }));
+    fc.assert(
+      fc.property(fc.oneof(typedArb, readoutArb), ({ u, reading, kg }) => {
+        const t = Number(kg.toFixed(2));
+        fc.pre(t > 0 && t <= MAX_TARGET_KG);
+        expect(readingFits(reading, t, u)).toBe(true);
+        const solved = draftToKg(reading, u)!;
+        expect(shownIn(solved, u)).toBe(shownIn(kg, u));
+        expect(displayCeilingKg(solved, u)).toBeCloseTo(displayCeilingKg(kg, u), 9);
+      }),
+      opts,
+    );
+  });
+
   const modeArb = fc.constantFrom<LinkMode>('decode', 'encode');
 
   // A deterministic shuffle keyed by generated noise (fast-check shrinks the noise, not
@@ -1360,8 +1385,11 @@ describe('Share link properties (ADR-0014)', () => {
       mode: modeArb,
       picks: fc.array(fc.nat(), { maxLength: 40 }),
       cents: fc.option(fc.integer({ min: 1, max: MAX_TARGET_KG * 100 }), { nil: undefined }),
+      // The Target field's text (RBAR-50 slice 3): none, the readout (whole lb / 2 dp kg,
+      // a Target set from kg or a chip), or a 2 dp reading in the unit (typed).
+      readingKind: fc.constantFrom('none', 'readout', 'typed'),
     })
-    .map(({ key, barIx, collarKg, unit, mode, picks, cents }): LinkState => {
+    .map(({ key, barIx, collarKg, unit, mode, picks, cents, readingKind }): LinkState => {
       const set = PLATE_SETS[key];
       const side = picks.reduce<readonly Plate[]>(
         (acc, i) => addPlate(acc, set.inventory[i % set.inventory.length]!),
@@ -1369,7 +1397,14 @@ describe('Share link properties (ADR-0014)', () => {
       );
       const barKg = set.bars[barIx % set.bars.length]!.kg;
       const base = { set: key, barKg, collarKg, unit, mode, side };
-      return mode === 'decode' && cents !== undefined ? { ...base, targetKg: cents / 100 } : base;
+      if (mode !== 'decode' || cents === undefined) return base;
+      const t = cents / 100;
+      if (readingKind === 'none') return { ...base, targetKg: t };
+      const reading =
+        readingKind === 'readout' || unit === 'kg'
+          ? String(shownIn(t, unit))
+          : String(Number(kgToLb(t).toFixed(2)));
+      return { ...base, targetKg: t, reading };
     });
 
   // Every invariant a parsed state must hold -- the parser's output contract.
@@ -1394,6 +1429,11 @@ describe('Share link properties (ADR-0014)', () => {
       expect(t).toBeGreaterThan(0);
       expect(t).toBeLessThanOrEqual(MAX_TARGET_KG);
       expect(Number(t.toFixed(2))).toBe(t);
+    }
+    const reading = (s as { readonly reading?: string }).reading;
+    if (reading !== undefined) {
+      expect(t).toBeDefined(); // a reading (`d`, RBAR-50 slice 3) only rides with a Target
+      expect(readingFits(reading, t!, s.unit)).toBe(true);
     }
   }
 

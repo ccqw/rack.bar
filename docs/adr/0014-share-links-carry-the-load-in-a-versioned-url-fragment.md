@@ -41,6 +41,7 @@ entry and status read the same. **Plates win over a re-solve** when the two disa
 | `u` | the sender's Primary unit | `kg`, `lb` | optional, default the recipient's own Primary unit |
 | `p` | Side Load, heaviest first, by face stamp, `Nx` prefix when N > 1 | e.g. `2x25,15,2.5`; empty = bare Bar | optional, default bare Bar |
 | `t` | Target, kg, 2 dp (the Recents precision, ADR-0009) | plain decimal, > 0, <= 1000 | only with `m=w`, optional there |
+| `d` | the Target field's text, in `u` (additive, slice 3) | decimal, <= 4 + 2 digits, fits `t` | only with `t`, optional there |
 
 - **Canonical form.** The encoder always writes `c`, `u` and `p` (even when default
   or empty), and `t` only for a By Weight load that has a Target. Counts fold via the
@@ -72,6 +73,9 @@ the whole link on:
   comparison, walked heaviest-first);
 - `t` present with `m=p`; `t` not a plain decimal (no sign, exponent, hex or blank);
   `t` <= 0 or over 1000 kg after rounding to 2 dp.
+- `d` without `t` (so also with `m=p`); `d` not a decimal of at most 4 + 2 digits; `d`
+  that does not fit `t` in the load's unit (`readingFits`: in kg it rounds to `t`; in
+  lb it is within half a whole-lb readout plus the 2 dp kg rounding, 0.5111 lb).
 
 Tolerated, and canonicalized: keys in any order, missing optional keys, an explicit
 `1x`, repeated or unsorted faces (re-sorted heaviest-first), leading or trailing zeros in a
@@ -153,9 +157,9 @@ Built as decided above; these are the details settled during the build.
   Nothing else is pushed on open; a By Plates link remembers nothing until the
   recipient shares, as today.
 - **Unit.** The link's unit is applied for the view and not persisted. The Target
-  travels as kg at 2 dp, which reads back exactly for any kg Target and for an lb Target
-  to 1 dp (the rounding is at most 0.011 lb). A 2 dp lb Target (677.51 lb -> 307.31 kg
-  -> 677.5 lb) can re-solve to a different load; the Plates still win via the carry.
+  travels as kg at 2 dp. With a `d` reading, the entry shows `d` as is and the console
+  solves from `draftToKg(d, u)`; without one, the entry shows the readout of `t` and
+  solves from `t`. See "The Target reading `d`" below for why `t` alone is not enough.
 - **A Bar tap after a cross-set link saves the set too.** "A later change persists that
   one key" holds for the Collar, the unit and the set; but a Bar only exists within its
   set (ADR-0010), so saving the Bar alone under a different saved set would be rejected
@@ -169,3 +173,45 @@ Property-tested in `elements/link.properties.test.ts`: opening any link over any
 persisted rig shows exactly its Side, Bar, Collar, unit and mode (Setup included) and
 changes no rig key; a By Weight link built
 from a sender's screen opens to the same Total, Target and status.
+
+**Slice 3 (Copy link, 2026-10-17)** adds the sending side; see the ADR-0011 amendment
+of the same date. The round trip is property-tested end to end in
+`elements/link.properties.test.ts`: from any sender screen (a typed Target, the
+round-up, a unit switch after typing, x.5 lb readings, Plates tapped on, or a carry
+across a mode switch), Copy link's URL boots a fresh app showing the same rig, mode,
+unit, Plates, Total, Target and status.
+
+### The Target reading `d` (slice 3, 2026-10-17): an additive v1 key
+
+**Why.** The console solves the window of the *displayed* Target: `displayCeilingKg`
+rounds the Target to its reading (whole lb, or kg at 2 dp) and solves at or under the
+top of that reading (ADR-0003, ADR-0010). The Target's 2 dp kg does not always recover
+that reading in lb. A typed 52.5 lb is 23.8136 kg and reads 53. Its 2 dp kg, 23.81,
+reads 52. So a recipient solving from `t` worked in a lower window. The review of
+PR #111 measured 91 of 210 x.5 lb Targets opening to another status, or to a carry
+with no Target. Going the other way, recovering a 1 dp lb text from `t` broke a kg
+Target shown in lb: 100 kg reads 220, but its 1 dp lb is 220.5.
+
+**Decision.** The sender's link also carries `d`, the text the sender's Target field
+shows, in `u`. The recipient shows `d` and solves from `draftToKg(d, u)`. That
+reproduces the reading and, from it, the window, the Plates and the status, whatever
+set the Target: typed in either unit at up to 2 dp, a kg Target shown in lb (whole), or
+a Recent chip. `t` stays the canonical kg Target, and it is what Recents remember.
+`readingFits` checks that `d` fits `t` in both directions, so a hand-edited `d` cannot
+open a load far from its Target.
+
+**Format.** `d` is additive: written after `t`, ignored by a client that predates it
+(unknown keys are ignored), and optional for this one. No link from before `d` exists in
+the wild (slice 3 is the first sender), and a `d`-less link still opens: the readout of
+`t`, solved from `t`. `v` stays `1`.
+
+**Remaining limit.** A link without `d` (hand-written, or from a client older than
+slice 3, of which there are none) can still re-solve a different window for an lb
+Target near a half-pound boundary. That is the old behaviour, and the Plates still win
+through the drift carry.
+
+**Over the cap.** The entry takes Targets over MAX_TARGET_KG (1000 kg). Those load a
+full Sleeve, but the link cannot carry the Target, so the card shows its disabled "No
+link" state. It does not send a link without `t`, which would open to a carry with no
+status. Raising the cap or capping the entry is an open question for Caitlin.
+

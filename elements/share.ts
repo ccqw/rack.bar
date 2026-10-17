@@ -4,9 +4,10 @@
 // the per-Side Plates as wrapped colour chips (or a bare-bar state), and a config
 // caption -- then one action row: the primary button (accent, grows; sends the emoji
 // Plate list -- "Share" opens the native share sheet where the browser has one, else
-// "Copy summary" writes the clipboard, RBAR-64) beside Close (quiet outline). Since
-// RBAR-70 the share also attaches a PNG of the loadout (elements/shareimage.ts), drawn
-// when the card opens; see copy() for the fallback chain.
+// "Copy summary" writes the clipboard, RBAR-64) beside Copy link (RBAR-50: the load's
+// share link to the clipboard; the summary's closing line is that link too) and a glyph
+// Close. Since RBAR-70 the share also attaches a PNG of the loadout
+// (elements/shareimage.ts), drawn when the card opens; see copy() for the fallback chain.
 //
 // A controlled, stateless shell (ADR-0001), the same shape as <rack-setup> / <rack-recents>:
 // one property down (`load`, a snapshot of the current load), one event up (`close`). It
@@ -19,6 +20,7 @@ import {
   groupText,
   loadingSummary,
   loadTotalKg,
+  SHARE_LINK,
 } from '../lib/summary.ts';
 import type { LoadSummary } from '../lib/summary.ts';
 import { format, shownIn } from '../lib/units.ts';
@@ -31,6 +33,11 @@ import { shareImageFile } from './shareimage.ts';
 
 // How long the Copy button reads "Copied" before reverting (ADR-0011, handoff 1.6s).
 const COPIED_MS = 1600;
+// Copy link's resting label (RBAR-50).
+const LINK_LABEL = 'Copy link';
+// Its label, and the reason shown under the row, when the load has no exact link.
+const NO_LINK_LABEL = 'No link';
+const NO_LINK_REASON = "This load can't be sent as a link.";
 
 class RackShare extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -41,6 +48,18 @@ class RackShare extends HTMLElement {
   private chipsEl!: HTMLElement;
   private captionEl!: HTMLElement;
   private copyBtn!: HTMLButtonElement;
+  private linkBtn!: HTMLButtonElement;
+  private noLinkEl!: HTMLElement;
+  // The pending Copy link label revert (RBAR-50), kept apart from the summary's.
+  private linkTimer: ReturnType<typeof setTimeout> | null = null;
+  // The load's share link (RBAR-50, ADR-0014), built by the console; null when the load
+  // has no exact link (never a lossy link): Copy link then reads "No link", disabled,
+  // with NO_LINK_REASON shown under the row -- an explicit state, not a silent no-op.
+  private _link: string | null = null;
+  // Bumped on every open and close (resetCopy). A clipboard write remembers the opening
+  // it was tapped in and confirms nothing in a later one (RBAR-50 review: a write held
+  // behind a permission prompt across a close and reopen must not relabel the new card).
+  private opening = 0;
   // The pending "Copied" -> resting-label revert, so a rapid re-tap or a close can
   // cancel it rather than letting a stale timer overwrite a fresh label.
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -77,6 +96,15 @@ class RackShare extends HTMLElement {
   }
   get plateSet(): string {
     return this._plateSet;
+  }
+
+  /** The load's share link, or null (RBAR-50). The console sets it before open(). */
+  set link(url: string | null) {
+    this._link = url;
+    this.flashLink(null); // drop any pending "Copied" for the old link; sync the state
+  }
+  get link(): string | null {
+    return this._link;
   }
 
   /** The current load snapshot to summarise (ADR-0011). Assigning re-renders the card. */
@@ -201,13 +229,34 @@ class RackShare extends HTMLElement {
           border: none; border-radius: 13px; padding: 12px 0;
           min-height: 44px; cursor: pointer;
         }
+        /* Close is a 44px glyph square since RBAR-50: with Copy link in the row, a text
+           Close squeezed "Copy summary" onto two lines at 393px. A scrim tap still
+           closes too; the glyph's accessible name stays "Close". */
         .close {
           flex: none; font-family: var(--rack-font); font-size: 13px; font-weight: 600;
           color: var(--rack-text-dim); background: transparent;
           border: 1px solid var(--rack-border-strong); border-radius: 13px;
-          padding: 12px 17px; min-height: 44px; cursor: pointer;
+          padding: 12px 0; width: 44px; min-height: 44px; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
         }
-        .copy:focus-visible, .close:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* Copy link (RBAR-50): the quiet outline, wide enough for "Copy failed" so the
+           row does not shift when the label flips. */
+        .link {
+          flex: none; font-family: var(--rack-font); font-size: 13px; font-weight: 600;
+          color: var(--rack-text); background: transparent;
+          border: 1px solid var(--rack-border-strong); border-radius: 13px;
+          padding: 12px 10px; min-width: 88px; min-height: 44px; cursor: pointer;
+          white-space: nowrap;
+        }
+        .link:disabled { color: var(--rack-text-dim); cursor: default; }
+        /* The no-link reason (RBAR-50): one quiet line under the row, caption-sized. */
+        .nolink {
+          margin: 10px 0 0; text-align: center;
+          font-family: var(--rack-font); font-weight: 500; font-size: 12px;
+          color: var(--rack-text-dim);
+        }
+        .nolink[hidden] { display: none; }
+        .link:focus-visible, .copy:focus-visible, .close:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .close:hover { color: var(--rack-text); }
       </style>
       <div class="scrim" data-scrim>
@@ -225,8 +274,15 @@ class RackShare extends HTMLElement {
           <span class="caption" data-caption></span>
           <div class="actions">
             <button type="button" class="copy" data-copy>Copy summary</button>
-            <button type="button" class="close" data-close>Close</button>
+            <button type="button" class="link" data-link>${LINK_LABEL}</button>
+            <button type="button" class="close" data-close aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.8"
+                      stroke-linecap="round"></path>
+              </svg>
+            </button>
           </div>
+          <p class="nolink" id="share-nolink" data-nolink hidden>${NO_LINK_REASON}</p>
         </div>
       </div>
     `;
@@ -238,6 +294,9 @@ class RackShare extends HTMLElement {
     this.chipsEl = this.root.querySelector('[data-chips]')!;
     this.captionEl = this.root.querySelector('[data-caption]')!;
     this.copyBtn = this.root.querySelector('[data-copy]')!;
+    this.linkBtn = this.root.querySelector('[data-link]')!;
+    this.noLinkEl = this.root.querySelector('[data-nolink]')!;
+    this.flashLink(null);
 
     // A scrim tap dismisses; a tap inside the card must not (it would bubble to the
     // scrim), so the card stops it -- the same guard as <rack-setup>.
@@ -247,6 +306,7 @@ class RackShare extends HTMLElement {
       .addEventListener('click', (e) => e.stopPropagation());
     this.root.querySelector('[data-close]')!.addEventListener('click', () => this.close());
     this.copyBtn.addEventListener('click', () => this.copy());
+    this.linkBtn.addEventListener('click', () => this.copyLink());
 
     this.render();
   }
@@ -315,7 +375,7 @@ class RackShare extends HTMLElement {
   // Share the button reads "Copy summary" and writes the clipboard directly. Both APIs
   // need a secure context.
   private copy(): void {
-    const text = loadingSummary(this._load);
+    const text = loadingSummary(this._load, this._link ?? SHARE_LINK);
     if (!canShare()) {
       this.writeClipboard(text);
       return;
@@ -366,8 +426,9 @@ class RackShare extends HTMLElement {
   private writeClipboard(text: string): void {
     const clip = navigator.clipboard;
     if (!clip || typeof clip.writeText !== 'function') return; // no clipboard: say nothing
+    const opening = this.opening;
     clip.writeText(text).then(
-      () => this.confirmCopied(),
+      () => this.confirmCopied(opening),
       () => {
         /* write denied/blocked: leave the label, never falsely confirm */
       },
@@ -379,8 +440,10 @@ class RackShare extends HTMLElement {
   // closed before this (async) clipboard write resolved -- otherwise a late confirm would
   // re-label a hidden card and arm a stale timer, surfacing "Copied" on the next open for
   // a copy the lifter never made in that session (the ADR-0011 no-false-confirm contract).
-  private confirmCopied(): void {
-    if (this.hidden) return;
+  // Also bails for a write tapped in an earlier opening (`opening`), even if the card is
+  // open again now (RBAR-50 review).
+  private confirmCopied(opening: number): void {
+    if (this.hidden || opening !== this.opening) return;
     if (this.copiedTimer !== null) clearTimeout(this.copiedTimer);
     this.copyBtn.textContent = 'Copied';
     this.copiedTimer = setTimeout(() => {
@@ -393,11 +456,65 @@ class RackShare extends HTMLElement {
   // the label matches what this browser can do) and on close (so the card never reopens
   // mid-confirmation).
   private resetCopy(): void {
+    this.opening++;
     if (this.copiedTimer !== null) {
       clearTimeout(this.copiedTimer);
       this.copiedTimer = null;
     }
     if (this.copyBtn) this.copyBtn.textContent = restingLabel();
+    this.flashLink(null);
+  }
+
+  // Copy the load's share link (RBAR-50, ADR-0011 amendment). Clipboard only, even where
+  // the share sheet exists: the summary already carries the link to the sheet. "Copied"
+  // flips only on a resolved write; a missing or denied clipboard reads "Copy failed",
+  // so a failure is never silent. A write that settles after close changes nothing.
+  private copyLink(): void {
+    const url = this._link;
+    if (url === null) return;
+    const clip = navigator.clipboard;
+    if (!clip || typeof clip.writeText !== 'function') {
+      this.flashLink('Copy failed');
+      return;
+    }
+    // A result for a link that has since changed, or from an earlier opening, is stale:
+    // say nothing about it.
+    const opening = this.opening;
+    const current = () => this._link === url && this.opening === opening;
+    clip.writeText(url).then(
+      () => current() && this.flashLink('Copied'),
+      () => current() && this.flashLink('Copy failed'),
+    );
+  }
+
+  // Show `label` on Copy link for COPIED_MS, then the resting state; null restores it
+  // now (open/close/a new link). A pending revert is cleared first, so a re-tap restarts
+  // cleanly. The resting state follows the link: "Copy link", or with no link a
+  // disabled "No link" plus the visible reason under the row.
+  private flashLink(label: string | null): void {
+    if (this.linkTimer !== null) {
+      clearTimeout(this.linkTimer);
+      this.linkTimer = null;
+    }
+    if (!this.linkBtn) return;
+    if (label === null || this.hidden || this._link === null) {
+      this.restLink();
+      return;
+    }
+    this.linkBtn.textContent = label;
+    this.linkTimer = setTimeout(() => {
+      this.restLink();
+      this.linkTimer = null;
+    }, COPIED_MS);
+  }
+
+  private restLink(): void {
+    const none = this._link === null;
+    this.linkBtn.textContent = none ? NO_LINK_LABEL : LINK_LABEL;
+    this.linkBtn.disabled = none;
+    this.noLinkEl.hidden = !none;
+    if (none) this.linkBtn.setAttribute('aria-describedby', this.noLinkEl.id);
+    else this.linkBtn.removeAttribute('aria-describedby');
   }
 }
 

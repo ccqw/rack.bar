@@ -108,7 +108,8 @@ export function configText(barKg: number, collarKg: number, setLabel: string): s
   return `${rig} - ${setLabel}`;
 }
 
-/** The closing link line of the shared text, so a paste advertises the app (RBAR-64). */
+/** The site origin (RBAR-64): the shared text's closing line when the load has no share
+ * link (RBAR-50), and the origin every share link is built on (lib/link.ts). */
 export const SHARE_LINK = 'https://rack.bar';
 
 /**
@@ -166,7 +167,8 @@ export function plateLines(side: readonly Plate[]): readonly string[] {
  *   (green square) 10 x 1                      first: emoji, stamped face, count
  *   (green circle) 1 x 1                       ("x" is the multiplication sign)
  *   (lock) collars 2.5 kg                   <- only when Collars are fitted
- *   https://rack.bar                        <- closing link
+ *   https://rack.bar                        <- closing link: the load's share link
+ *                                              when the console has one (RBAR-50)
  *
  * A bare Bar has a single "Bare bar" line in place of the Plate lines. The Plate
  * lines fold via `groupSide`, the same fold the card's chips render, so the faces,
@@ -174,9 +176,9 @@ export function plateLines(side: readonly Plate[]): readonly string[] {
  * an lb Total, lb on iron). The Bar and plate set are deliberately not named: the
  * Total already includes the Bar, and the lines say what to load on each Side.
  */
-export function loadingSummary(s: LoadSummary): string {
+export function loadingSummary(s: LoadSummary, link: string = SHARE_LINK): string {
   const head = `rack.bar ${MIDDOT} ${format(loadTotalKg(s), s.unit)} ${MIDDOT} per side`;
   const plates = plateLines(s.side);
   const collars = s.collarKg > 0 ? [`${LOCK} collars ${format(s.collarKg, 'kg')}`] : [];
-  return [head, ...plates, ...collars, SHARE_LINK].join('\n');
+  return [head, ...plates, ...collars, link].join('\n');
 }

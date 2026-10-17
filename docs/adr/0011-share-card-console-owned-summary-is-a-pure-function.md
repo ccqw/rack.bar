@@ -160,3 +160,40 @@ Share button attaches the picture itself.
   a fresh activation.
   Without Web Share at all the button still reads "Copy summary" and no picture is
   drawn.
+## Amended 2026-10-17 (RBAR-50 slice 3): Copy link, and the summary closes with the link
+
+Share links (ADR-0014) get their sending side on this card.
+
+- **The console builds the link.** `openShare` hands the card `link`, built from what
+  is on screen: the mode, the Side Load, the rig (set, Bar, Collar), the display Unit,
+  and -- only in By Weight with a live decode -- the Target (`primary.total -
+  primary.delta`, the same reading `reconfigure` uses) together with the Target field's
+  own text (`d`, ADR-0014). Showing the round-up sends the
+  round-up Plates with the same Target, so the recipient lands on the round-up too. A
+  carry (By Weight with no live decode) sends no Target. `linkUrl` returns null for a
+  load it cannot carry exactly; then the card has no link (below).
+- **Copy link** sits in the one action row: `[Share | Copy summary] [Copy link] [x]`.
+  It writes the URL to the clipboard only, even where Web Share exists (the summary
+  already takes the link to the sheet). The same no-false-confirm rule: "Copied" only
+  on a resolved write. A missing or denied clipboard reads **Copy failed** for the same
+  1.6 s, so a failure is never silent. A write that settles after close changes
+  nothing. A write tapped in an earlier opening of the card says nothing in a later
+  one; the same rule now guards Copy summary's "Copied" (an opening counter).
+- **No link is an explicit state, never a silent no-op or a lossy link.** When
+  `serializeLink` refuses the load, Copy link stays in the row, disabled, reading **No
+  link**, and one quiet line under the row says "This load can't be sent as a link."
+  (the button's `aria-describedby`). Today that is an off-menu Bar, a Target that
+  rounds to 0 kg, or a Target over the link cap of 1000 kg (ADR-0014). Two unmerged features will reach it routinely: a **custom Bar**
+  (RBAR-76; `serializeLink` refuses any Bar the set does not offer) and a **Warm up
+  row whose stack is not heaviest-first** (RBAR-65 s4b; the station rule can put a
+  heavier big Plate outside a lighter one). Either can later earn its own link grammar
+  (an additive key per ADR-0014); until then they land here.
+- **The summary's closing line is the load's link** (`loadingSummary(s, link)`), so one
+  Share or Copy summary sends the plan and a link that opens it. With no link it stays
+  `https://rack.bar`.
+- **Close becomes a 44 px glyph square** (an x, accessible name "Close"). With three
+  text buttons, "Copy summary" wrapped to two lines at 393 px. Copy link has a
+  min-width that fits "Copy failed", so the row does not shift when its label flips.
+  At 320 px a browser without Web Share still wraps "Copy summary" onto two lines (the
+  row stays inside the card); phones with Web Share read "Share" and fit.
+

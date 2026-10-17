@@ -63,6 +63,52 @@ describe('opening a share link (RBAR-50, ADR-0014)', () => {
     expect(rigKeys()).toEqual([null, null, null, null]);
   });
 
+  // RBAR-50 slice 3: the link carries the sender's Target reading `d`; the entry shows
+  // it as is (225.5, not the whole-lb readout 225) and the console solves from it.
+  it('an lb Target reads in the entry as its sender typed it (the `d` reading)', () => {
+    const app = openLink('#v=1&s=comp&b=20kg&m=w&c=0&u=lb&p=25,15,1&t=102.28&d=225.5');
+    const c = appConsole(app);
+    expect(sideKg(app)).toEqual([25, 15, 1]);
+    expect(statusKind(c)).not.toBe(''); // a live decode, not the carry
+    expect(entryDraft(c)).toBe('225.5');
+  });
+
+  // Review finding (PR #111): without `d`, an x.5 lb Target re-solved a different
+  // window -- 52.5 lb (reads 53) exact on the sender, over on the recipient; 103.5 lb
+  // short on the sender, a carry with no Target on the recipient. Sender to link to app.
+  it.each(['52.5', '43.5', '44.5', '103.5', '225.25'])(
+    'a typed %s lb Target opens to the same reading, Plates and status',
+    (draft) => {
+      const sender = document.createElement('rack-console') as Console;
+      document.body.append(sender);
+      unitBtn(sender, 'lb').click();
+      type(sender, draft);
+      const seen = { side: sideOnScreen(sender), status: statusKind(sender), draft: entryDraft(sender) };
+      q<HTMLButtonElement>(sr(sender), '[data-share]').click();
+      const url = (q(sr(sender), 'rack-share') as HTMLElement & { link: string }).link;
+      expect(url).toContain(`&d=${draft}`);
+      localStorage.clear();
+      const c = appConsole(openLink(url.slice(url.indexOf('#'))));
+      expect({ side: sideOnScreen(c), status: statusKind(c), draft: entryDraft(c) }).toEqual(seen);
+    },
+  );
+
+  // Review finding (PR #111): typed in kg, then shown in lb, the sender reads the whole
+  // lb readout (100 kg -> 220); the recipient must read 220 too, not 220.5.
+  it('a kg Target shown in lb opens to the same whole-lb reading', () => {
+    const sender = document.createElement('rack-console') as Console;
+    document.body.append(sender);
+    type(sender, '100');
+    unitBtn(sender, 'lb').click();
+    const seen = { side: sideOnScreen(sender), status: statusKind(sender), draft: entryDraft(sender) };
+    expect(seen.draft).toBe('220');
+    q<HTMLButtonElement>(sr(sender), '[data-share]').click();
+    const url = (q(sr(sender), 'rack-share') as HTMLElement & { link: string }).link;
+    localStorage.clear();
+    const c = appConsole(openLink(url.slice(url.indexOf('#'))));
+    expect({ side: sideOnScreen(c), status: statusKind(c), draft: entryDraft(c) }).toEqual(seen);
+  });
+
   it('applies the linked rig over the persisted one for the view only (ADR-0014)', () => {
     localStorage.setItem('rackbar.plateSet', 'comp');
     localStorage.setItem('rackbar.barKg', '15');
