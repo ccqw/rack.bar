@@ -17,7 +17,7 @@ export const NUDGE_STYLE = `
   .nudge {
     position: absolute; top: 0; bottom: 0; width: 42px; padding: 0;
     display: none; align-items: center; border: none; cursor: pointer; z-index: 1;
-    color: var(--rack-muted);
+    color: var(--rack-text-secondary); /* the chevron stroke, prototype L164 (RBAR-74) */
   }
   .nudge.show { display: flex; }
   .nudge.left {

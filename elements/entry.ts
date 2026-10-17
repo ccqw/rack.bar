@@ -58,6 +58,17 @@ const CHECK_ICON = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"
     aria-hidden="true"><path d="M1.5 5.5L4 8l4.5-6" stroke="currentColor"
     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+// The stepper faces (RBAR-74): a matched pair of SVG glyphs, not text characters
+// (Caitlin, 2026-10-16) -- the same 14px box, the same stroke and caps, so plus is
+// exactly minus with a vertical bar. Sized to the prototype's 22px mono glyph
+// (L149/L151). Decorative: each button's aria-label is the announcement.
+const STEP_GLYPH = (d: string): string => `<svg width="14" height="14" viewBox="0 0 14 14"
+    fill="none" aria-hidden="true"><path d="${d}" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round"/></svg>`;
+const MINUS_D = 'M2 7h10';
+const MINUS_ICON = STEP_GLYPH(MINUS_D);
+const PLUS_ICON = STEP_GLYPH(`${MINUS_D}M7 2v10`);
+
 // Keydown origins the physical-keyboard handler defers to (RBAR-49): a text field owns
 // every key typed into it; an activatable control outside the entry owns its Enter.
 const TEXT_FIELD = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
@@ -109,7 +120,7 @@ class RackEntry extends HTMLElement {
   private liveLoadEl!: HTMLElement;
 
   // The "on the bar" load line the sheet shows under the live value, e.g.
-  // "On the bar: 142 kg (0.5 under)" -- the actual loadable Total + how far it lands from
+  // "On the bar: 142 kg <middot> 0.5 under" -- the actual loadable Total + how far it lands from
   // the Target. The console owns decode (ADR-0005), so it computes this and pushes it down;
   // null hides the line (an untouched default or empty field has nothing decoded yet).
   private _loadLine: string | null = null;
@@ -274,10 +285,10 @@ class RackEntry extends HTMLElement {
       <style>
         ${BOX_SIZING}${BUTTON_FX}${ROLL_CSS}
         /* The Target section opener (prototype L146): a hairline divider + 15px pad on
-           the host, so the section boundary travels with the element. The margin above
-           comes from the console stack's gap. */
+           the host, so the section boundary travels with the element. The 15px above
+           is the console stack's 12px gap + this 3px (RBAR-74). */
         :host {
-          display: block;
+          display: block; margin-top: 3px;
           border-top: 1px solid var(--rack-divider); padding-top: 15px;
         }
         /* The Target section label (RBAR-40): the shared recipe, left-aligned like the
@@ -287,31 +298,34 @@ class RackEntry extends HTMLElement {
         .caption {
           display: block; ${SECTION_LABEL} margin: 0 0 9px;
         }
-        /* The value row: [-] prominent value [+]. The steppers are big round touch
-           targets; the value itself is a button that opens the keypad. */
+        /* The value row: [-] prominent value [+], 10px apart (prototype L148). The
+           steppers are 44px round touch targets (L149/L151; RBAR-74) faced with SVG
+           glyphs; the value itself is a button that opens the keypad. */
         .row {
-          display: flex; align-items: center; justify-content: center; gap: 12px;
+          display: flex; align-items: center; justify-content: center; gap: 10px;
         }
         .step {
-          flex: none; width: 52px; height: 52px; min-width: 44px; min-height: 44px;
-          font-family: var(--rack-font-num); font-size: 28px; font-weight: 600;
+          flex: none; width: 44px; height: 44px; padding: 0;
+          display: flex; align-items: center; justify-content: center;
           color: var(--rack-fg); background: transparent;
           border: 1px solid var(--rack-line); border-radius: 999px;
-          cursor: pointer; line-height: 1;
+          cursor: pointer;
         }
+        .step svg { display: block; }
         .step:active { background: var(--rack-line); }
         .step:focus-visible { outline: 2px solid var(--rack-accent); }
         /* The Target value (RBAR-39, prototype L150): Hanken 700 30px with explicit
            tabular figures (Hanken is proportional -- without tnum the digits jitter as
-           the value changes). Mono is reserved for labels/plate numerals/unit toggles. */
+           the value changes). Mono is reserved for labels/plate numerals/unit toggles.
+           Its ink sits a step under --rack-text, on a 3px pad (L150; RBAR-74). */
         .value {
           flex: 1; min-width: 0; text-align: center;
           font-family: var(--rack-font);
           font-size: 30px; font-weight: 700; line-height: 1.2;
           font-variant-numeric: tabular-nums;
-          color: var(--rack-text); background: transparent;
+          color: var(--rack-text-target); background: transparent;
           border: none; border-bottom: 2px solid var(--rack-line);
-          padding: 6px 0; cursor: pointer;
+          padding: 3px 0; cursor: pointer;
         }
         .value.empty { color: var(--rack-text-dim); } /* placeholder anchor */
         .value:focus-visible { outline: none; border-bottom-color: var(--rack-accent); }
@@ -355,7 +369,7 @@ class RackEntry extends HTMLElement {
         }
         /* The sheet's own readout: the big live value, its secondary unit, and the live
            "on the bar" load line (the field behind the sheet is covered). */
-        .live { text-align: center; margin-bottom: 4px; }
+        .live { text-align: center; margin-bottom: 0; }
         /* The sheet's live number (RBAR-39, prototype L231): Hanken 800 46px -.02em,
            tnum for the same no-jitter reason as the Target value above. Rolls on
            change (numRoll) like every display number. */
@@ -370,13 +384,20 @@ class RackEntry extends HTMLElement {
           color: var(--rack-text-dim); margin-left: 4px;
         }
         /* Secondary unit, then the "on the bar" status, stacked under the value (handoff 5):
-           the secondary in the other unit (muted), the load line in accent below it. */
+           the secondary in the other unit (muted), the load line in accent below it.
+           Both in Hanken, 6px under the number, 3px apart, 15px above the keys
+           (prototype L230-L234; RBAR-74): the secondary 500 13px, the load line
+           600 11px. */
         .sub {
-          display: flex; flex-direction: column; align-items: center; gap: 2px;
-          min-height: 18px; margin-bottom: 14px;
-          font-family: var(--rack-font-num); font-size: 13px; color: var(--rack-muted);
+          display: flex; flex-direction: column; align-items: center; gap: 3px;
+          min-height: 18px; margin-top: 6px; margin-bottom: 15px;
+          font-family: var(--rack-font); font-weight: 500; font-size: 13px;
+          color: var(--rack-muted);
         }
-        .sub .load { color: var(--rack-accent); }
+        .sub .load {
+          font-family: var(--rack-font); font-weight: 600; font-size: 11px;
+          color: var(--rack-accent);
+        }
         .sub .load[hidden] { display: none; }
         /* The dedicated exact line (RBAR-46, prototype L235 "[check] exact"): when the
            decoded Total lands exactly on the Target, the accent delta line gives way to
@@ -451,12 +472,12 @@ class RackEntry extends HTMLElement {
            span (RBAR-39); the value button still carries its own live aria-label. -->
       <h2 class="caption" data-caption>${this.noun}</h2>
       <div class="row">
-        <button type="button" class="step" data-step="dec" aria-label="Decrease">-</button>
+        <button type="button" class="step" data-step="dec" aria-label="Decrease">${MINUS_ICON}</button>
         <button type="button" class="value" data-value
                 aria-haspopup="true" aria-expanded="false"><span
             data-value-num>${DEFAULT_BAR_KG}</span><span
             class="vu" data-value-unit> kg</span></button>
-        <button type="button" class="step" data-step="inc" aria-label="Increase">+</button>
+        <button type="button" class="step" data-step="inc" aria-label="Increase">${PLUS_ICON}</button>
       </div>
       <div class="sheet" data-sheet role="dialog" aria-modal="false" aria-label="${enter}" hidden>
         <div class="live">
@@ -615,13 +636,13 @@ class RackEntry extends HTMLElement {
   // Target the prototype swaps the accent delta line for a dedicated quiet
   // "[check] exact" mono line -- the big live number already IS the exact Total, so
   // repeating it would say nothing. The console's onBarLine marks that state with its
-  // "(exact)" tail (elements/console.ts), so the sheet keys off that suffix; the
+  // "<middot> exact" tail (elements/console.ts), so the sheet keys off that suffix; the
   // announcement becomes just "exact" (the check drawing is aria-hidden).
   private renderLoadLine(): void {
     const text = this._loadLine ?? '';
     if (this.renderedLoadLine === text) return;
     this.renderedLoadLine = text;
-    if (text.endsWith('(exact)')) {
+    if (text.endsWith('\u00B7 exact')) {
       this.liveLoadEl.classList.add('exact');
       this.liveLoadEl.innerHTML = `${CHECK_ICON}exact`;
     } else {

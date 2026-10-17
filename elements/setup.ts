@@ -155,8 +155,10 @@ class RackSetup extends HTMLElement {
         :host { display: block; }
         :host([hidden]) { display: none; }
         @keyframes rack-fade { from { opacity: 0; } to { opacity: 1; } }
+        /* sheetIn (prototype L21): the rise fades in too (RBAR-74). */
         @keyframes rack-rise {
-          from { transform: translateY(100%); } to { transform: translateY(0); }
+          from { transform: translateY(100%); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
         /* The dim backdrop: covers the viewport, taps through to close. */
         .scrim {
@@ -166,39 +168,51 @@ class RackSetup extends HTMLElement {
           animation: rack-fade .16s ease-out;
         }
         /* The sheet itself rises from the bottom edge; safe-area pad keeps the Done
-           button and tiles clear of the home indicator (RBAR-15 mobile fit). */
+           button and tiles clear of the home indicator (RBAR-15 mobile fit). Metrics,
+           shadow and entrance per prototype L252 (RBAR-74): sheetIn .26s on the spring
+           curve. Split like the keypad sheet for reduced motion: everyone gets the
+           fade (opacity is not motion), only a no-preference lifter gets the rise. */
         .panel {
           width: 100%; max-width: 520px;
           background: var(--rack-overlay);
           border-top: 1px solid var(--rack-border-strong);
           border-radius: var(--rack-radius-sheet) var(--rack-radius-sheet) 0 0;
-          padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
-          box-shadow: var(--rack-shadow-sheet);
-          animation: rack-rise .2s cubic-bezier(.2, .85, .25, 1);
+          padding: 18px 20px calc(26px + env(safe-area-inset-bottom));
+          box-shadow: var(--rack-shadow-setup);
+          animation: rack-fade .26s cubic-bezier(.2, .85, .25, 1);
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .panel { animation: rack-rise .26s cubic-bezier(.2, .85, .25, 1); }
         }
         .head {
           display: flex; align-items: center; justify-content: space-between;
-          margin-bottom: 16px;
+          margin-bottom: 18px;
         }
         /* An h2 since RBAR-53 (heading navigation); as a flex item its display was
-           already blockified, margin pinned over the UA heading default. */
-        .head .title { font-size: 17px; font-weight: 700; color: var(--rack-fg); margin: 0; }
+           already blockified, margin pinned over the UA heading default. Hanken 800
+           17px -.01em (prototype L254). */
+        .head .title {
+          font-size: 17px; font-weight: 800; letter-spacing: -.01em;
+          color: var(--rack-fg); margin: 0;
+        }
+        /* Done: Hanken 700 12px on a 7px 17px pad (prototype L255). The 36px floor
+           keeps the touch target the header's Setup pill has. */
         .done {
-          font: inherit; font-size: 14px; font-weight: 700;
+          font: inherit; font-size: 12px; font-weight: 700;
           color: var(--rack-bg); background: var(--rack-accent);
-          border: none; border-radius: 999px; padding: 8px 18px;
+          border: none; border-radius: 999px; padding: 7px 17px;
           min-height: 36px; cursor: pointer;
         }
         .done:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         /* h3s under the sheet's h2 title since RBAR-53; margin pinned over the UA
            heading default. */
         .section-label {
-          display: block; ${SECTION_LABEL} margin: 0 0 8px;
+          display: block; ${SECTION_LABEL} margin: 0 0 9px;
         }
         /* Each selector row; the trailing margin separates a section from the next
            section-label (the last section -- the plate rows -- sits flush on the
            panel's bottom pad). */
-        .tiles { display: flex; gap: 8px; margin-bottom: 18px; }
+        .tiles { display: flex; gap: 8px; margin-bottom: 20px; }
         /* A selector tile: kg/lb headline + subtitle. Active = a raised, outlined fill;
            inactive = transparent with a hairline. 44px+ tall touch target. */
         .tile {

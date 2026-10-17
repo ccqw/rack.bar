@@ -73,7 +73,8 @@ class RackLoaded extends HTMLElement {
         .label { ${SECTION_LABEL} margin: 0; }
         /* The Clear pill: a quiet uppercase mono control that empties the Side. Its
            hover/active goes danger-red per the handoff -- a destructive affordance, so it
-           stays grey until reached for. */
+           stays grey until reached for. The ring takes the dark red, not the full
+           danger hex (prototype L184; RBAR-74). */
         .clear {
           display: inline-flex; align-items: center; gap: 5px;
           font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
@@ -83,7 +84,7 @@ class RackLoaded extends HTMLElement {
           padding: 5px 11px; cursor: pointer;
         }
         .clear:hover, .clear:active {
-          color: var(--rack-danger); border-color: var(--rack-danger);
+          color: var(--rack-danger); border-color: var(--rack-danger-border);
         }
         .clear:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .clear svg { display: block; }

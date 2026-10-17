@@ -214,3 +214,39 @@ describe('<rack-fullscreen> (numeric typography, RBAR-39)', () => {
     expect(root.querySelector('[data-total-unit]')!.classList.contains('roll')).toBe(false);
   });
 });
+
+// RBAR-74 (the RBAR-48a metrics sweep): the close button and the config caption,
+// matched to the handoff prototype (L315, L323). Text locks on the rule bodies.
+describe('<rack-fullscreen> metrics sweep (RBAR-74)', () => {
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('fills the close button raised, in secondary ink, 20px in from the corner (prototype L315)', () => {
+    const { root } = mount();
+    const close = rule(root, '.close {');
+    expect(close).toContain('background: var(--rack-raised)');
+    expect(close).toContain('color: var(--rack-text-secondary)');
+    expect(close).toContain('border: 1px solid var(--rack-border)');
+    expect(close).toContain('top: calc(20px + env(safe-area-inset-top))');
+    expect(close).toContain('right: 20px');
+    const hover = rule(root, '.close:hover {');
+    expect(hover).toContain('color: var(--rack-text)');
+    expect(hover).toContain('border-color: var(--rack-border-hover)');
+  });
+
+  it('inks the config caption #7e858d (prototype L323)', () => {
+    const { root } = mount();
+    expect(rule(root, '.caption {')).toContain('color: var(--rack-fullscreen-caption)');
+  });
+
+  it('pads the card 60px / 24px / 36px (prototype L314)', () => {
+    const { root } = mount();
+    const overlay = rule(root, '.overlay {');
+    expect(overlay).toContain('calc(60px + env(safe-area-inset-top)) 24px');
+    expect(overlay).toContain('calc(36px + env(safe-area-inset-bottom))');
+  });
+});

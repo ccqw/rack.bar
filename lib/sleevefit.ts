@@ -130,7 +130,7 @@ export const SLEEVE_PAD_PX = 8;
  * for the sleeve's CSS and the share picture's canvas (RBAR-70).
  */
 export const DISC_INK = {
-  dark: '#0f1113',
+  dark: '#0d0e10', // the accent ink (prototype plateInk L416; RBAR-74)
   darkEngrave: '0 1px 0 rgba(255,255,255,.3)',
   light: '#fff',
   lightEngrave: '0 1px 1px rgba(0,0,0,.4)',

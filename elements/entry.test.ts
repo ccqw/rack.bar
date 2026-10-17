@@ -370,9 +370,9 @@ describe('<rack-entry>', () => {
     const { el, root } = mountEntry();
     const load = root.querySelector<HTMLElement>('[data-live-load]')!;
     expect(load.hidden).toBe(true); // nothing fed yet
-    el.loadLine = 'On the bar: 142 kg (0.5 under)';
+    el.loadLine = 'On the bar: 142 kg \u00B7 0.5 under';
     expect(load.hidden).toBe(false);
-    expect(load.textContent).toBe('On the bar: 142 kg (0.5 under)');
+    expect(load.textContent).toBe('On the bar: 142 kg \u00B7 0.5 under');
     el.loadLine = null;
     expect(load.hidden).toBe(true);
   });
@@ -744,9 +744,9 @@ describe('keypad sheet announcements (RBAR-53)', () => {
     const line = root.querySelector<HTMLElement>('[data-live-load]')!;
     expect(line.getAttribute('role')).toBe('status');
     expect(line.hidden).toBe(true); // nothing decoded yet
-    el.loadLine = 'On the bar: 100 kg (2.5 under)';
+    el.loadLine = 'On the bar: 100 kg \u00B7 2.5 under';
     expect(line.hidden).toBe(false);
-    expect(line.textContent).toBe('On the bar: 100 kg (2.5 under)');
+    expect(line.textContent).toBe('On the bar: 100 kg \u00B7 2.5 under');
     el.loadLine = null;
     expect(line.hidden).toBe(true);
   });
@@ -756,11 +756,11 @@ describe('keypad sheet announcements (RBAR-53)', () => {
     // dedicated svg+text line, so the idempotence guard must key off the fed string,
     // not the (now diverged) rendered DOM.
     const { el, root } = mountEntry();
-    el.loadLine = 'On the bar: 100 kg (exact)';
+    el.loadLine = 'On the bar: 100 kg \u00B7 exact';
     const line = root.querySelector<HTMLElement>('[data-live-load]')!;
     const mo = new MutationObserver(() => {});
     mo.observe(line, { childList: true, characterData: true, subtree: true });
-    el.loadLine = 'On the bar: 100 kg (exact)'; // the same text again
+    el.loadLine = 'On the bar: 100 kg \u00B7 exact'; // the same text again
     const records = mo.takeRecords();
     mo.disconnect();
     expect(records.length).toBe(0);
@@ -827,7 +827,7 @@ describe('keypad surface fidelity (RBAR-46)', () => {
 
   it('shows the dedicated exact line when the Total lands exactly (prototype L235)', () => {
     const { el, root } = mountEntry();
-    el.loadLine = 'On the bar: 100 kg (exact)';
+    el.loadLine = 'On the bar: 100 kg \u00B7 exact';
     const line = root.querySelector<HTMLElement>('[data-live-load]')!;
     expect(line.hidden).toBe(false);
     expect(line.classList.contains('exact')).toBe(true);
@@ -839,11 +839,11 @@ describe('keypad surface fidelity (RBAR-46)', () => {
 
   it('returns to the accent delta line when the Total moves off exact', () => {
     const { el, root } = mountEntry();
-    el.loadLine = 'On the bar: 100 kg (exact)';
-    el.loadLine = 'On the bar: 101 kg (1 over)';
+    el.loadLine = 'On the bar: 100 kg \u00B7 exact';
+    el.loadLine = 'On the bar: 101 kg \u00B7 1 over';
     const line = root.querySelector<HTMLElement>('[data-live-load]')!;
     expect(line.classList.contains('exact')).toBe(false);
-    expect(line.textContent).toBe('On the bar: 101 kg (1 over)');
+    expect(line.textContent).toBe('On the bar: 101 kg \u00B7 1 over');
     expect(line.querySelector('svg')).toBeNull();
   });
 
@@ -935,5 +935,87 @@ describe('<rack-entry> retarget (RBAR-60)', () => {
     tap(root, '[data-value]');
     tap(root, '[data-value]');
     expect(seen).toHaveBeenLastCalledWith(null);
+  });
+});
+
+// RBAR-74 (the RBAR-48a metrics sweep): the Target row and the keypad sheet's lines,
+// matched to the handoff prototype. Text locks on the rule bodies (happy-dom computes
+// no layout); the rendered check is the browser pass and scripts/fit-check.js.
+describe('<rack-entry> metrics sweep (RBAR-74)', () => {
+  function rule(root: ShadowRoot, selector: string): string {
+    const css = root.querySelector('style')!.textContent!;
+    const start = css.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf('}', start));
+  }
+
+  it('draws the steppers as 44px circles (prototype L149/L151)', () => {
+    const { root } = mountEntry();
+    const step = rule(root, '.step {');
+    expect(step).toContain('width: 44px');
+    expect(step).toContain('height: 44px');
+    expect(step).not.toContain('52px');
+  });
+
+  it('faces the steppers with a matched pair of SVG glyphs, not text characters', () => {
+    const { root } = mountEntry();
+    const dec = root.querySelector('[data-step="dec"]')!;
+    const inc = root.querySelector('[data-step="inc"]')!;
+    expect(dec.textContent!.trim()).toBe('');
+    expect(inc.textContent!.trim()).toBe('');
+    const dSvg = dec.querySelector('svg')!;
+    const iSvg = inc.querySelector('svg')!;
+    expect(dSvg.getAttribute('aria-hidden')).toBe('true');
+    expect(iSvg.getAttribute('aria-hidden')).toBe('true');
+    // The pair: the same box and the same stroke; plus is minus with a vertical bar.
+    expect(iSvg.getAttribute('width')).toBe(dSvg.getAttribute('width'));
+    expect(iSvg.getAttribute('viewBox')).toBe(dSvg.getAttribute('viewBox'));
+    const dPath = dSvg.querySelector('path')!;
+    const iPath = iSvg.querySelector('path')!;
+    expect(iPath.getAttribute('stroke-width')).toBe(dPath.getAttribute('stroke-width'));
+    expect(iPath.getAttribute('stroke-linecap')).toBe(dPath.getAttribute('stroke-linecap'));
+    expect(iPath.getAttribute('d')!.startsWith(dPath.getAttribute('d')!)).toBe(true);
+    expect(iPath.getAttribute('d')).not.toBe(dPath.getAttribute('d'));
+  });
+
+  it('spaces the Target row 10px apart (prototype L148)', () => {
+    const { root } = mountEntry();
+    expect(rule(root, '.row {')).toContain('gap: 10px');
+  });
+
+  it('inks the Target value #cfd3d8 on a 3px pad (prototype L150)', () => {
+    const { root } = mountEntry();
+    const value = rule(root, '.value {');
+    expect(value).toContain('color: var(--rack-text-target)');
+    expect(value).toContain('padding: 3px 0');
+  });
+
+  it('sets the keypad secondary line in Hanken 500 13px, 6px under the number (prototype L232-L233)', () => {
+    const { root } = mountEntry();
+    expect(rule(root, '.live {')).toContain('margin-bottom: 0');
+    const sub = rule(root, '.sub {');
+    expect(sub).toContain('font-family: var(--rack-font);');
+    expect(sub).not.toContain('var(--rack-font-num)');
+    expect(sub).toContain('font-weight: 500');
+    expect(sub).toContain('font-size: 13px');
+    expect(sub).toContain('margin-top: 6px');
+    expect(sub).toContain('gap: 3px');
+    // The readout block's 15px bottom margin (prototype L230) separates it from the keys.
+    expect(sub).toContain('margin-bottom: 15px');
+  });
+
+  it('sets the keypad "On the bar" line in Hanken 600 11px accent (prototype L234)', () => {
+    const { root } = mountEntry();
+    const load = rule(root, '.sub .load {');
+    expect(load).toContain('font-family: var(--rack-font);');
+    expect(load).toContain('font-weight: 600');
+    expect(load).toContain('font-size: 11px');
+    expect(load).toContain('color: var(--rack-accent)');
+  });
+
+  it('opens the Target section 15px under the round-up row (prototype L146)', () => {
+    const { root } = mountEntry();
+    // The console column's 12px gap + 3px = the prototype's 15px margin-top.
+    expect(rule(root, ':host {')).toContain('margin-top: 3px');
   });
 });
