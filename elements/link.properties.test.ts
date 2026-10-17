@@ -8,11 +8,11 @@ import fc from 'fast-check';
 import { linkUrl } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
 import { PLATE_SETS } from '../lib/platesets.ts';
-import { draftToKg } from '../lib/units.ts';
+import { draftToKg, shownIn } from '../lib/units.ts';
 import {
   SEED, type Console, resetPool, q, sr, modeBtn, unitBtn, sideOnScreen, linkStateArb,
   fresh, rigArb, unitArb, draftArb, type, roundUp, statusKind, totalText, entryDraft,
-  tapAdd,
+  tapAdd, rigDraftCaseArb, commitWorking, stairs,
 } from './properties.drivers.ts';
 import './app.ts';
 
@@ -39,6 +39,26 @@ function open(state: LinkState): HTMLElement {
   return app;
 }
 const appConsole = (app: HTMLElement) => q<Console>(sr(app), 'rack-console');
+// Tap Copy link on an open share card and return the URL it wrote to the clipboard.
+function copyLinkUrl(card: HTMLElement): string {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  try {
+    q<HTMLButtonElement>(sr(card), '[data-link]').click();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+  return writeText.mock.calls[0]![0] as string;
+}
+// What a share card shows: its Total and its caption (Bar, Collar, set). Its chips
+// name the Side, which is judged off the sleeve.
+const cardFace = (card: HTMLElement) => ({
+  total: q(sr(card), '[data-total]').textContent ?? '',
+  caption: q(sr(card), '[data-caption]').textContent ?? '',
+});
+// A Side's Plates heaviest-first: the order a link carries them in (ADR-0014).
+const restacked = (side: { kg: number; color: string }[]) =>
+  [...side].sort((a, b) => b.kg - a.kg || a.color.localeCompare(b.color));
 const pressedIn = (el: HTMLElement, sel: string) =>
   [...sr(el).querySelectorAll<HTMLElement>(sel)]
     .filter((b) => b.getAttribute('aria-pressed') === 'true')
@@ -199,5 +219,49 @@ describe('opening a share link, properties (ADR-0014)', () => {
     );
     // Two full mounts per run (a sender console and a fresh app): ~1.5 s locally, past
     // Vitest's 5 s default on a loaded CI runner, so this one test gets more room.
+  }, 30_000);
+
+  // RBAR-78: a Warm up share opens in By Weight on the selected row's load, and the link
+  // describes exactly what the sender's card shows -- the bare-Bar row carries no
+  // Collars (ADR-0015 Q5), so its link sends none. Judged by the recipient's own screen
+  // and its own share card against the sender's card. The Plates are the same; a
+  // Warm-up stack with a big Plate outside a lighter one (ADR-0015 as amended) opens
+  // restacked heaviest-first, the link's one Side order.
+  it('sharing from any Ramp row on any rig opens By Weight on the card\'s Total, Side and Collars (ADR-0014, ADR-0015)', () => {
+    // A working weight the lifter could type (a reading in its unit, above 0).
+    const workCaseArb = rigDraftCaseArb.filter(([, u, d]) => {
+      const kg = draftToKg(d, u) ?? 0;
+      return kg > 0 && String(shownIn(kg, u)) === d;
+    });
+    fc.assert(
+      fc.property(workCaseArb, fc.nat({ max: 9 }), ([rig, u, draft], pick) => {
+        const sender = fresh(rig, u);
+        modeBtn(sender, 'warmup').click();
+        commitWorking(sender, draft);
+        const rows = stairs(sender);
+        const i = pick % rows.length;
+        rows[i]!.click();
+        const side = sideOnScreen(sender);
+        q<HTMLButtonElement>(sr(sender), '[data-share]').click();
+        const sent = q(sr(sender), 'rack-share');
+        const seen = cardFace(sent);
+        const url = copyLinkUrl(sent);
+        localStorage.clear();
+        history.replaceState(null, '', `/${url.slice(url.indexOf('#'))}`);
+        document.body.innerHTML = '';
+        const app = document.createElement('rack-app');
+        document.body.append(app);
+        const c = appConsole(app);
+        expect(pressedIn(c, '[data-mode]')).toEqual(['decode']);
+        expect([c.plateSet, c.barKg]).toEqual([rig.set, rig.barKg]);
+        // The bare-Bar row (always row 0) draws no Collars; every other row does.
+        expect(c.collarKg).toBe(i === 0 ? 0 : rig.collarKg);
+        expect(restacked(sideOnScreen(c))).toEqual(restacked(side));
+        expect(totalText(c)).toBe(totalText(sender));
+        q<HTMLButtonElement>(sr(c), '[data-share]').click();
+        expect(cardFace(q(sr(c), 'rack-share'))).toEqual(seen);
+      }),
+      APP_RUNS(30),
+    );
   }, 30_000);
 });

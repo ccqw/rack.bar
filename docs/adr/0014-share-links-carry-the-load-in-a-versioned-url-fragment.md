@@ -215,3 +215,33 @@ full Sleeve, but the link cannot carry the Target, so the card shows its disable
 link" state. It does not send a link without `t`, which would open to a carry with no
 status. Raising the cap or capping the entry is an open question for Caitlin.
 
+
+## Amendment 2026-10-17: sharing from Warm up (RBAR-78)
+
+**The rule.** A link describes exactly what the share card shows: the same set, Bar,
+Collar, Plates and Total. Before this, a Warm up share broke it twice. The link always
+sent the rig's Collar, but the card draws none on the bare-Bar Ramp row (ADR-0015 Q5),
+so a card reading 20 kg opened to 25 kg. And entering Warm up clears the By Weight
+decode, so the link went out as By Weight with no Target.
+
+**Decision.** A Warm up share opens in By Weight on the selected row's load. The link
+carries the row's Collar as the card draws it (`c=0` on the bare-Bar row, the rig's
+Collar on every other row), its Plates, and its Total as the Target `t`, with the
+readout of that Total as `d`. The recipient opens By Weight under the usual "Plates win"
+rule: the row's Plates with a live decode when they are a way to that Total, else the
+carry. Either way they see the card's Total, Plates and Collars. The Target joins
+Recents, as with any By Weight link. This is the simplest correct behaviour. A link
+that opens the whole Ramp in Warm up is RBAR-93.
+
+**Plate order.** The link carries a Side heaviest-first; that is its one order, and the
+parser re-sorts. A Warm-up stack can put a big Plate outside a lighter one (ADR-0015 as
+amended), and such a Side used to fail `serializeLink`, so its card showed "No link".
+The console now restacks the Side heaviest-first before it builds the link. The same
+Plates and the same Total travel, and the recipient's By Weight screen shows them as a
+heaviest-first stack. A Plate from outside the set would drop out of the restack, so
+then the Side goes as is and the serializer refuses it, never a lighter load.
+
+Property-tested in `elements/link.properties.test.ts`: sharing from any Ramp row on any
+rig opens By Weight on the same set and Bar, the card's Collar (none on the bare-Bar
+row), the same Plates and the same Total, and the recipient's own card reads the same
+Total and caption as the sender's.

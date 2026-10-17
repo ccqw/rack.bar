@@ -1312,16 +1312,34 @@ class RackConsole extends HTMLElement {
   // and solves the same display window. Null when the load has no exact link (e.g. an
   // off-menu Bar, a Target over MAX_TARGET_KG): the card then shows a disabled "No
   // link" with its reason under the row, never a link that opens to a different load.
+  //
+  // The link describes exactly what the card shows (RBAR-78, ADR-0014): the same Collar
+  // rule (loadCollarKg -- the bare-Bar Ramp row carries none), so the card's Total is
+  // the link's. A Warm up share opens in By Weight on the selected row's load: its Total
+  // as the Target, read as the readout shows it, with the row's Plates (ADR-0014's
+  // "Plates win" keeps them even if the recipient's solve would pick another way).
+  // The link carries the Plates heaviest-first, its one Side order: a Warm-up stack
+  // with a big Plate outside a lighter one (ADR-0015 as amended) travels as the same
+  // Plates restacked, never as "No link".
   private shareLink(): string | null {
+    // A Plate from outside the set would drop out of the restack, so then the Side goes
+    // as is and serializeLink refuses it ("No link"), never a lighter load.
+    const inventory = plateSetFor(this._plateSetKey).inventory;
+    const stacked = inventory.flatMap((p) => this.side.filter((s) => s === p));
     const load = {
       set: this._plateSetKey,
       barKg: this._barKg,
       // serializeLink validates the Collar against the offered options.
-      collarKg: this._collarKg as LinkState['collarKg'],
+      collarKg: this.loadCollarKg() as LinkState['collarKg'],
       unit: this.activeUnit(),
-      side: this.side,
+      side: stacked.length === this.side.length ? stacked : this.side,
     };
     if (this.mode === 'encode') return linkUrl({ ...load, mode: 'encode' });
+    const row = this.warmRow();
+    if (row) {
+      const reading = String(shownIn(row.total, load.unit));
+      return linkUrl({ ...load, mode: 'decode', targetKg: row.total, reading });
+    }
     const d = this.decoded;
     if (!d) return linkUrl({ ...load, mode: 'decode' });
     const targetKg = d.primary.total - d.primary.delta;
