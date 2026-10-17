@@ -4,7 +4,9 @@
 // the per-Side Plates as wrapped colour chips (or a bare-bar state), and a config
 // caption -- then one action row: the primary button (accent, grows; sends the emoji
 // Plate list -- "Share" opens the native share sheet where the browser has one, else
-// "Copy summary" writes the clipboard, RBAR-64) beside Close (quiet outline).
+// "Copy summary" writes the clipboard, RBAR-64) beside Close (quiet outline). Since
+// RBAR-70 the share also attaches a PNG of the loadout (elements/shareimage.ts), drawn
+// when the card opens; see copy() for the fallback chain.
 //
 // A controlled, stateless shell (ADR-0001), the same shape as <rack-setup> / <rack-recents>:
 // one property down (`load`, a snapshot of the current load), one event up (`close`). It
@@ -25,6 +27,7 @@ import { plateSetFor } from '../lib/platesets.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
+import { shareImageFile } from './shareimage.ts';
 
 // How long the Copy button reads "Copied" before reverting (ADR-0011, handoff 1.6s).
 const COPIED_MS = 1600;
@@ -43,6 +46,13 @@ class RackShare extends HTMLElement {
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
   // True while a native share sheet is open (RBAR-64), so a re-tap is ignored.
   private sharing = false;
+  // The loadout picture for the current load (RBAR-70), drawn ahead of the tap so the
+  // share sheet opens inside the tap's user activation (Safari refuses a share() that
+  // waited on a canvas encode). `undefined` = still drawing (or nothing drawn yet);
+  // `null` = this browser could not draw one. `imageGen` drops a stale draw that
+  // finishes after the load changed or the card closed.
+  private image: File | null | undefined = undefined;
+  private imageGen = 0;
 
   // The load to summarise. The console sets this before open(); a bare default keeps a
   // pre-seed render harmless. Assigning re-renders while open so a live change shows.
@@ -63,6 +73,7 @@ class RackShare extends HTMLElement {
   set plateSet(key: string) {
     this._plateSet = key;
     if (this.totalEl) this.render();
+    if (this.totalEl && !this.hidden) this.prepareImage(); // redraw only an open card
   }
   get plateSet(): string {
     return this._plateSet;
@@ -72,6 +83,7 @@ class RackShare extends HTMLElement {
   set load(value: LoadSummary) {
     this._load = value;
     if (this.totalEl) this.render();
+    if (this.totalEl && !this.hidden) this.prepareImage(); // redraw only an open card
   }
   get load(): LoadSummary {
     return this._load;
@@ -82,12 +94,15 @@ class RackShare extends HTMLElement {
     this.render();
     this.resetCopy();
     this.hidden = false;
+    this.prepareImage();
   }
 
   /** Hide the card and tell the console, so it can drop any open state. */
   close(): void {
     this.resetCopy();
     this.hidden = true;
+    this.imageGen++; // a draw still in flight is for a card that is gone
+    this.image = undefined;
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
@@ -268,13 +283,34 @@ class RackShare extends HTMLElement {
     this.captionEl.textContent = `${configText(barKg, collarKg, setLabel)} - per side`;
   }
 
-  // Send the loading summary (RBAR-64). Where the Web Share API exists the button reads
-  // "Share" and opens the native share sheet (which has its own Copy action); a
-  // cancelled sheet (AbortError) is silent, and any other share failure falls back to
-  // the clipboard. Without Web Share the button reads "Copy summary" and writes the
-  // clipboard directly. Both APIs need a secure context. A tap while a sheet is still
-  // open is ignored (a second share() would reject and wrongly fall back), and a
-  // failure that lands after the card closed writes nothing.
+  // Draw the loadout picture for the current load in the background (RBAR-70), so a
+  // tap can share it at once. Each call supersedes the last: a draw that finishes after
+  // a newer one started (or after close) is dropped. No Web Share, no picture needed.
+  private prepareImage(): void {
+    this.image = undefined;
+    if (!canShare()) return;
+    const gen = ++this.imageGen;
+    void shareImageFile(this._load, plateSetFor(this._plateSet).label).then(
+      (file) => {
+        if (gen === this.imageGen) this.image = file;
+      },
+      () => {
+        if (gen === this.imageGen) this.image = null;
+      },
+    );
+  }
+
+  // Send the loading summary (RBAR-64), with the loadout picture attached (RBAR-70).
+  // The fallback chain, one step at a time:
+  //   1. the picture + the text in one share, when the picture is drawn and
+  //      navigator.canShare says this browser can share that file;
+  //   2. the text alone (no picture yet, no file sharing, or step 1 failed);
+  //   3. the clipboard (no Web Share at all, or step 2 failed).
+  // A cancelled sheet (AbortError) stops the chain silently at any step. A tap while a
+  // sheet is still open is ignored (a second share() would reject and wrongly fall
+  // back), and a failure that lands after the card closed goes no further. Without Web
+  // Share the button reads "Copy summary" and writes the clipboard directly. Both APIs
+  // need a secure context.
   private copy(): void {
     const text = loadingSummary(this._load);
     if (!canShare()) {
@@ -283,22 +319,35 @@ class RackShare extends HTMLElement {
     }
     if (this.sharing) return;
     this.sharing = true;
-    navigator
-      .share({ text })
-      .then(
-        () => {
-          /* the sheet is its own feedback; never claim a copy */
-        },
-        (err: unknown) => {
-          // Match by name: a DOMException need not be an Error subclass everywhere.
-          if ((err as { name?: unknown } | null)?.name === 'AbortError') return; // cancelled
-          if (this.hidden) return; // the card closed meanwhile: leave the clipboard alone
-          this.writeClipboard(text);
-        },
-      )
+    // Called synchronously from the tap, so share() keeps the tap's user activation.
+    const file = this.image;
+    const withImage: ShareData | null = file ? { files: [file], text } : null;
+    const first: ShareData = withImage && canShareData(withImage) ? withImage : { text };
+    this.attempt(first)
+      .then((outcome) => {
+        // Step 2 only after a failed picture share, and only while the card is open.
+        if (outcome === 'failed' && first.files && !this.hidden) return this.attempt({ text });
+        return outcome;
+      })
+      .then((outcome) => {
+        if (outcome === 'failed' && !this.hidden) this.writeClipboard(text); // step 3
+      })
       .finally(() => {
         this.sharing = false;
       });
+  }
+
+  // One share attempt: 'shared' (the sheet is its own feedback; never claim a copy),
+  // 'cancelled' (AbortError: the lifter dismissed the sheet), or 'failed' (anything else).
+  private attempt(data: ShareData): Promise<'shared' | 'cancelled' | 'failed'> {
+    return navigator.share(data).then(
+      () => 'shared' as const,
+      // Match by name: a DOMException need not be an Error subclass everywhere.
+      (err: unknown) =>
+        (err as { name?: unknown } | null)?.name === 'AbortError'
+          ? ('cancelled' as const)
+          : ('failed' as const),
+    );
   }
 
   // Write `text` to the clipboard and confirm with a transient "Copied" (ADR-0011). The
@@ -345,6 +394,17 @@ class RackShare extends HTMLElement {
 // Whether this browser offers the native share sheet (Web Share API, RBAR-64).
 function canShare(): boolean {
   return typeof navigator.share === 'function';
+}
+
+// Whether this browser can share `data` -- a file share needs navigator.canShare's
+// say-so (RBAR-70); a browser without canShare is assumed unable to share files.
+function canShareData(data: ShareData): boolean {
+  if (typeof navigator.canShare !== 'function') return false;
+  try {
+    return navigator.canShare(data);
+  } catch {
+    return false;
+  }
 }
 
 // The primary button's resting label: "Share" when the native sheet is available

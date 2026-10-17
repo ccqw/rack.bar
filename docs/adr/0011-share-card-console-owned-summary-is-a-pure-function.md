@@ -107,3 +107,43 @@ share shows no confirmation (the sheet is its own feedback). Both APIs need a se
 context (https or localhost).
 A tap while a sheet is still open is ignored, and a share failure that lands after
 the card closed writes nothing to the clipboard.
+
+## Amended 2026-10-16 (RBAR-70): Share attaches a picture of the loadout
+
+Link previews can't show a loadout (GitHub Pages serves one static `og:image` for
+every URL, and a per-loadout preview would need a backend, against ADR-0001), so the
+Share button attaches the picture itself.
+
+- **The picture.** A 1080x1080 PNG drawn on a canvas on the phone: the `rack.bar`
+  wordmark, the Total in the display Unit with the other Unit under it, the whole Bar
+  with both Sides loaded in the handoff colours, a `PER SIDE` label over the format-D
+  Plate lines (`plateLines`, the same function `loadingSummary` uses, so the picture
+  and the text cannot drift), and the config caption (`configText`) at the foot.
+  Square because chat apps crop previews to squares. Considered: the fullscreen
+  card's landscape shape (crops badly in a chat bubble).
+- **Fixed light theme.** The ground and ink are the `--rack-page-*` "device wallpaper"
+  tokens, so the picture reads the same in light and dark chats; discs get an ink
+  hairline so the white Plates hold their edge. Considered: the app's dark surface
+  (matches the app, but sits heavy in a light chat), or following the phone's theme
+  (the recipient's theme is unknown to the sender).
+- **Same sizing rules as the sleeve.** The sleeve's sizing (ADR-0004: one px-per-mm
+  scale, diameter to height, thickness to width, the disc floor, the overflow guard,
+  the chrome and numeral buckets) moved to `lib/sleevefit.ts`; `<rack-sleeve>` and the
+  picture both read it. The picture's layout (`lib/shareimage.ts`) is pure and tested;
+  `elements/shareimage.ts` only paints it, reading colours and fonts from the live
+  `--rack-*` tokens and waiting for `document.fonts.ready` first.
+- **Always attached, one button.** The picture and the format-D text go in one share
+  (`navigator.share({ files, text })`), guarded by `navigator.canShare`. Considered:
+  separate "Share text" / "Share image" actions (a second button would cost the
+  RBAR-67 one-screen budget and a choice the lifter doesn't need to make).
+- **Drawn on open, shared on tap.** The card draws the picture when it opens (and
+  again if the load or plate set changes while open), so the tap calls `share()`
+  synchronously, inside its user activation; Safari rejects a `share()` that waited on
+  a canvas encode. A tap before the picture is ready shares the text alone rather than
+  waiting.
+- **Fallback chain.** Picture + text, then text alone, then the clipboard (the
+  RBAR-64 behaviour). Text alone is used directly when there is no picture yet, no
+  `canShare`, or `canShare` refuses the file. A cancelled sheet (`AbortError`) stops
+  the chain silently at every step; a failure after the card closed goes no further.
+  Without Web Share at all the button still reads "Copy summary" and no picture is
+  drawn.

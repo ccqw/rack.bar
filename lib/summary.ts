@@ -147,6 +147,17 @@ const LOCK = '\u{1F512}'; // lock (the Collars line)
 const BARE_BAR_LINE = 'Bare bar';
 
 /**
+ * The format-D Plate lines for one Side (RBAR-64): one `emoji face x count` line per
+ * `groupSide` group, heaviest first, or a single `Bare bar` line when nothing is loaded.
+ * Shared by the text the share button sends (`loadingSummary`) and the picture it
+ * attaches (RBAR-70, elements/shareimage.ts), so the two cannot drift.
+ */
+export function plateLines(side: readonly Plate[]): readonly string[] {
+  if (side.length === 0) return [BARE_BAR_LINE];
+  return groupSide(side).map((g) => `${g.emoji} ${g.face} ${TIMES} ${g.count}`);
+}
+
+/**
  * The loading summary the share button sends (RBAR-19/44, ADR-0011; reshaped by
  * RBAR-64 into the "D. Plate list" format Caitlin picked):
  *
@@ -166,10 +177,7 @@ const BARE_BAR_LINE = 'Bare bar';
  */
 export function loadingSummary(s: LoadSummary): string {
   const head = `rack.bar ${MIDDOT} ${format(loadTotalKg(s), s.unit)} ${MIDDOT} per side`;
-  const plates =
-    s.side.length === 0
-      ? [BARE_BAR_LINE]
-      : groupSide(s.side).map((g) => `${g.emoji} ${g.face} ${TIMES} ${g.count}`);
+  const plates = plateLines(s.side);
   const collars = s.collarKg > 0 ? [`${LOCK} collars ${format(s.collarKg, 'kg')}`] : [];
   return [head, ...plates, ...collars, SHARE_LINK].join('\n');
 }

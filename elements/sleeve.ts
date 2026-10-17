@@ -21,14 +21,35 @@ import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
+import {
+  BUMPER_MM,
+  CAP_H_PX,
+  CAP_PX,
+  CHROME_PX,
+  COLLAR_END_H_PX,
+  COLLAR_END_PX,
+  COLLAR_INNER_H_PX,
+  COLLAR_INNER_PX,
+  DISC_GAP_PX,
+  EMPTY_INSET_PX,
+  EMPTY_MM,
+  EMPTY_W_PX,
+  END_GAP_PX,
+  MAX_SCALE,
+  MIN_DISC_PX,
+  SHAFT_H_PX,
+  SHAFT_PX,
+  fitRow,
+  numeralFits,
+  numeralPx,
+  plateLabel,
+} from '../lib/sleevefit.ts';
 
-// Fit-to-width scale (ADR-0004). A bumper is 450 mm; cap the zoom so a normal load
-// renders at a comfortable fixed size and only a genuinely huge bar (whose plates
-// would overflow the host width) zooms below this. px-per-mm = MAX_SCALE until the
-// row no longer fits, then it shrinks to fit. Gaps between discs are fixed px.
-const BUMPER_MM = 450;
-const TARGET_BUMPER_PX = 168; // the prototype's cap (MAX_SCALE 168/450) so proportions match the handoff
-const MAX_SCALE = TARGET_BUMPER_PX / BUMPER_MM; // px per mm at full zoom
+// The sizing rules (fit-to-width scale, chrome, gaps, the disc floor, the numeral
+// buckets) live in lib/sleevefit.ts since RBAR-70, so the shared loadout picture draws
+// by the same rules. A bumper is 450 mm; MAX_SCALE caps the zoom so a normal load
+// renders at a comfortable fixed size and only a genuinely huge bar zooms below it.
+//
 // The visualizer block reserves the handoff's fixed height (README section 3: "204px
 // tall block") so the console column doesn't jump as the load grows and shrinks. That is
 // the standalone default (the fullscreen card); the console overrides it (RBAR-67) and
@@ -41,48 +62,7 @@ export const SLEEVE_MIN_PX = 84;
 // The vertical breathing room fit() keeps between a bumper and the host's edges (the
 // prototype's 4px bar-row padding, top and bottom).
 export const SLEEVE_PAD_PX = 8;
-// Bar chrome (handoff section 3): the fixed-px furniture framing the discs -- a sleeve
-// shaft + inner collar on the loaded end, an end collar + cap on the far end. The chrome
-// doesn't scale with the plates, so fit() reserves its total width. The discs sit flush to
-// the inner collar; DISC_GAP_PX separates adjacent discs, END_GAP_PX sits before the end
-// collar -- so the fixed budget fit() subtracts is the four pieces plus those gaps.
-const SHAFT_PX = 52;
-const COLLAR_INNER_PX = 11;
-const COLLAR_END_PX = 8;
-const CAP_PX = 13;
-const CHROME_PX = SHAFT_PX + COLLAR_INNER_PX + COLLAR_END_PX + CAP_PX;
-const DISC_GAP_PX = 1.5; // between adjacent discs (the first sits flush to the inner collar)
-const END_GAP_PX = 3; // between the last disc (or empty box) and the end collar
-// Floor each disc at the prototype's minimum so a thin change plate keeps a visible
-// sliver (far narrower than a bumper -- the size cue holds). The floor puts a hard
-// minimum under the row width that no scale can shrink, so fit() pairs it with the
-// prototype's proportional overflow guard (see fit()).
-const MIN_DISC_PX = 9;
 const FALLBACK_SCALE = MAX_SCALE; // used when the host has no measured width yet
-// The bare-Bar box's handoff height (120px at full zoom), in mm so it scales with the row.
-const EMPTY_MM = 120 / MAX_SCALE;
-
-// The engraved numeral treatment (handoff section 3): the numeral runs UP the disc face
-// (rotated -90deg), so in fullscreen -- where the whole bar rotates +90deg -- it reads
-// upright (supersedes RBAR-24's rotate-with-bar note). Its size buckets by the disc's
-// rendered width; a disc too narrow for the glyph height, or too short to seat all its
-// rotated digits, shows no numeral at all (never stacked or clipped digits).
-function numeralPx(discW: number): number {
-  return discW >= 16 ? 11 : discW >= 11 ? 9 : 8;
-}
-function numeralFits(discW: number, discH: number, text: string): boolean {
-  const px = numeralPx(discW);
-  return discW >= px - 1 && discH >= text.length * px * 0.6 + 4;
-}
-
-// The visible disc caption. An iron Plate carries its own stamped lb `label` (e.g.
-// "45", "2.5"); a kg Eleiko Plate derives it from its kg. Lifters read "point five", so
-// drop the leading zero on the sub-1 change plates (0.5 -> .5) -- narrower and natural --
-// while 1.5 / 2.5 keep theirs. The full name still goes to assistive tech via aria-label.
-function plateLabel(plate: Plate): string {
-  if (plate.label !== undefined) return plate.label;
-  return plate.kg < 1 ? String(plate.kg).replace(/^0/, '') : String(plate.kg);
-}
 
 class RackSleeve extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -166,17 +146,17 @@ class RackSleeve extends HTMLElement {
            center, an inner collar, then (after the discs) an end collar + cap. Fixed-px grey
            furniture; the pieces touch so the shaft + collar read as one continuous bar. */
         .shaft {
-          flex: none; width: ${SHAFT_PX}px; height: 9px;
+          flex: none; width: ${SHAFT_PX}px; height: ${SHAFT_H_PX}px;
           border-radius: 4px 0 0 4px; background: var(--rack-sleeve-shaft);
         }
         .collar { flex: none; background: var(--rack-sleeve-collar); }
-        .collar-inner { width: ${COLLAR_INNER_PX}px; height: 34px; border-radius: 3px; }
+        .collar-inner { width: ${COLLAR_INNER_PX}px; height: ${COLLAR_INNER_H_PX}px; border-radius: 3px; }
         .collar-end {
-          width: ${COLLAR_END_PX}px; height: 20px; border-radius: 2px;
+          width: ${COLLAR_END_PX}px; height: ${COLLAR_END_H_PX}px; border-radius: 2px;
           margin-left: ${END_GAP_PX}px; background: var(--rack-sleeve-end);
         }
         .cap {
-          flex: none; width: ${CAP_PX}px; height: 11px;
+          flex: none; width: ${CAP_PX}px; height: ${CAP_H_PX}px;
           border-radius: 1px 5px 5px 1px; background: var(--rack-sleeve-shaft);
         }
         /* A bare Bar: a dashed outline box with a + where the discs would load. Its
@@ -184,7 +164,7 @@ class RackSleeve extends HTMLElement {
            EMPTY_MM is 120px at full zoom -- so a height-fitted short sleeve (RBAR-67)
            shrinks the box with the bumpers it stands in for. */
         .empty {
-          flex: none; width: 34px; margin-left: 5px;
+          flex: none; width: ${EMPTY_W_PX}px; margin-left: ${EMPTY_INSET_PX}px;
           height: calc(var(--rack-mm-scale, ${FALLBACK_SCALE}) * ${EMPTY_MM}px);
           display: flex; align-items: center; justify-content: center;
           border: 1.5px dashed var(--rack-sleeve-empty); border-radius: 6px;
@@ -285,25 +265,7 @@ class RackSleeve extends HTMLElement {
     // first disc sits flush to the inner collar, so N discs add N-1 inter-disc gaps).
     const discGaps = DISC_GAP_PX * Math.max(0, this.plates.length - 1);
     const avail = hostWidth - CHROME_PX - END_GAP_PX - discGaps;
-    const rowWidthAt = (s: number): number =>
-      this.plates.reduce((px, p) => px + Math.max(p.widthMm * s, MIN_DISC_PX), 0);
-    let scale: number;
-    if (rowWidthAt(cap) <= avail) {
-      scale = cap; // the height-bounded full zoom fits -> no shrink needed
-    } else {
-      let lo = 0;
-      let hi = cap;
-      for (let i = 0; i < 24; i++) {
-        const mid = (lo + hi) / 2;
-        if (rowWidthAt(mid) <= avail) lo = mid;
-        else hi = mid;
-      }
-      scale = lo;
-    }
-    // row > 0 keeps a bare Bar (empty row) on an absurdly narrow host from a 0/0 NaN;
-    // Math.max keeps the shrink non-negative when the chrome alone overflows the host.
-    const row = rowWidthAt(scale);
-    const shrink = row > avail && row > 0 ? Math.max(0, avail) / row : 1;
+    const { scale, shrink } = fitRow(this.plates, avail, cap);
     // Set each property only when it changed -- a new Side Load re-fits at the same
     // width without churning the host's inline style. (Layout can't feed back into a
     // resize loop regardless: the host width is parent-bounded, and its height is either
