@@ -115,7 +115,8 @@ class RackShare extends HTMLElement {
         :host { display: block; }
         :host([hidden]) { display: none; }
         @keyframes rack-fade { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes rack-card { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+        /* The handoff's cardIn: rise 14px and grow from .97 (prototype L19). */
+        @keyframes rack-card { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
         /* The dim backdrop: covers the viewport, taps through to close. */
         .scrim {
           position: fixed; inset: 0; z-index: 60;

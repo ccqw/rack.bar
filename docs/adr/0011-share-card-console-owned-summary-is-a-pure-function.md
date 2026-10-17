@@ -114,24 +114,33 @@ Link previews can't show a loadout (GitHub Pages serves one static `og:image` fo
 every URL, and a per-loadout preview would need a backend, against ADR-0001), so the
 Share button attaches the picture itself.
 
-- **The picture.** A 1080x1080 PNG drawn on a canvas on the phone: the `rack.bar`
-  wordmark, the Total in the display Unit with the other Unit under it, the whole Bar
-  with both Sides loaded in the handoff colours, a `PER SIDE` label over the format-D
-  Plate lines (`plateLines`, the same function `loadingSummary` uses, so the picture
-  and the text cannot drift), and the config caption (`configText`) at the foot.
-  Square because chat apps crop previews to squares. Considered: the fullscreen
-  card's landscape shape (crops badly in a chat bubble).
-- **Fixed light theme.** The ground and ink are the `--rack-page-*` "device wallpaper"
-  tokens, so the picture reads the same in light and dark chats; discs get an ink
-  hairline so the white Plates hold their edge. Considered: the app's dark surface
-  (matches the app, but sits heavy in a light chat), or following the phone's theme
-  (the recipient's theme is unknown to the sender).
-- **Same sizing rules as the sleeve.** The sleeve's sizing (ADR-0004: one px-per-mm
-  scale, diameter to height, thickness to width, the disc floor, the overflow guard,
-  the chrome and numeral buckets) moved to `lib/sleevefit.ts`; `<rack-sleeve>` and the
-  picture both read it. The picture's layout (`lib/shareimage.ts`) is pure and tested;
-  `elements/shareimage.ts` only paints it, reading colours and fonts from the live
-  `--rack-*` tokens and waiting for `document.fonts.ready` first.
+- **The picture is the fullscreen card.** It is what the lifter sees in big mode
+  (`<rack-fullscreen>`, RBAR-18) on a phone: the dark radial wash, the `rack.bar`
+  wordmark, the huge Total with its unit suffix, the other Unit, the uppercase config
+  caption (`configText` + "per side", wrapped as the card wraps it), and one Side of
+  the Bar turned 90 degrees and blown up 1.5x, shaft at the top. A bare Bar shows the
+  sleeve's dashed empty box; Collars are on the caption, as on the card. The frame is
+  the card at ADR-0013's 393 x 659 phone viewport, drawn at an iPhone's 3x: a
+  **1179 x 1977** portrait PNG. Portrait because the card is portrait on a phone (the
+  Bar runs along the screen's long axis); a landscape frame would show a layout the
+  lifter never sees.
+- **Dark, like the card.** The wash is two new tokens, `--rack-fullscreen-glow` and
+  `--rack-fullscreen-deep` (the card read them inline before), and the text, plate,
+  chrome and disc-shadow colours are the card's own `--rack-*` tokens, read live.
+- **One source for card and picture.** The card's frame numbers (padding, type sizes,
+  margins, tracking, the rot width and the 1.5x blow-up) moved to
+  `lib/fullscreenframe.ts`, which the card's CSS now interpolates. The sleeve's sizing
+  (ADR-0004: one px-per-mm scale, diameter to height, thickness to width, the disc
+  floor, the overflow guard, the chrome, the numeral buckets and ink, and the
+  height-bounded fit of ADR-0013) moved to `lib/sleevefit.ts`; `<rack-sleeve>` fits
+  through its `sleeveFit`, and the picture draws its `sleeveLayout`. The head stack
+  and caption wrap are pure (`lib/shareimage.ts`); `elements/shareimage.ts` only
+  paints, after `document.fonts.ready`.
+- **Revised 2026-10-17 (Caitlin's phone test).** The first cut was a light 1080 x 1080
+  square showing both Sides and the format-D Plate lines, so it would read the same in
+  light and dark chats. Caitlin wanted the picture to look like big mode instead, so
+  the light theme is reversed and the Plate lines left the picture (the shared text
+  still carries them).
 - **Always attached, one button.** The picture and the format-D text go in one share
   (`navigator.share({ files, text })`), guarded by `navigator.canShare`. Considered:
   separate "Share text" / "Share image" actions (a second button would cost the

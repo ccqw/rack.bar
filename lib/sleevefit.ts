@@ -5,9 +5,9 @@
 // thickness, a floor under each disc so a thin change Plate keeps a sliver, and a
 // proportional overflow guard when even the floored row is too wide.
 //
-// Every px value here is a CSS px at the sleeve's own size. A larger drawing (the
-// 1080px share image) multiplies them by one zoom factor and passes the zoomed cap and
-// floor in; see `barLayout`'s `zoom` in lib/shareimage.ts.
+// Every px value here is a CSS px at the sleeve's own size. The share picture draws
+// `sleeveLayout` in those px and lets the canvas transform rotate, blow up and scale it
+// to device pixels, exactly as the fullscreen card's CSS transform does.
 import type { Plate } from './plates.ts';
 
 /** A competition bumper's diameter -- the tallest Plate on either set (ADR-0004). */
@@ -114,4 +114,107 @@ export function numeralFits(discW: number, discH: number, text: string): boolean
 export function plateLabel(plate: Plate): string {
   if (plate.label !== undefined) return plate.label;
   return plate.kg < 1 ? String(plate.kg).replace(/^0/, '') : String(plate.kg);
+}
+
+// The visualizer block's heights (RBAR-67, ADR-0013). SLEEVE_BLOCK_PX is the handoff's
+// fixed 204px block -- the standalone default (the fullscreen card); the console flexes
+// the sleeve between SLEEVE_MIN_PX and it. SLEEVE_PAD_PX is the breathing room the fit
+// keeps between a bumper and the host's top and bottom edges.
+export const SLEEVE_BLOCK_PX = 204;
+export const SLEEVE_MIN_PX = 84;
+export const SLEEVE_PAD_PX = 8;
+
+/**
+ * The disc numeral's ink and engrave (handoff section 3): dark ink with a light lip on
+ * the light Plates (white, yellow), light ink with a dark seat on the rest. One source
+ * for the sleeve's CSS and the share picture's canvas (RBAR-70).
+ */
+export const DISC_INK = {
+  dark: '#0f1113',
+  darkEngrave: '0 1px 0 rgba(255,255,255,.3)',
+  light: '#fff',
+  lightEngrave: '0 1px 1px rgba(0,0,0,.4)',
+} as const;
+
+/** Whether a Plate colour takes the dark numeral ink (the light Plates). */
+export function darkInk(color: Plate['color']): boolean {
+  return color === 'white' || color === 'yellow';
+}
+
+/**
+ * The sleeve's fit for a host of `hostW` x `hostH` px (ADR-0004, ADR-0013): the zoom cap
+ * is MAX_SCALE, lowered so a bumper stands SLEEVE_PAD_PX shorter than the host (an
+ * unmeasured height, 0, leaves it at MAX_SCALE); the discs get the width left after the
+ * chrome, the end gap and the gaps between discs. `<rack-sleeve>` and the share picture
+ * both fit through this.
+ */
+export function sleeveFit(plates: readonly Plate[], hostW: number, hostH: number): RowFit {
+  const cap =
+    hostH > 0 ? Math.min(MAX_SCALE, Math.max(0, hostH - SLEEVE_PAD_PX) / BUMPER_MM) : MAX_SCALE;
+  const discGaps = DISC_GAP_PX * Math.max(0, plates.length - 1);
+  return fitRow(plates, hostW - CHROME_PX - END_GAP_PX - discGaps, cap);
+}
+
+/** The pieces of one sleeve, in their left-to-right order. */
+export type SleevePartKind = 'shaft' | 'collar-inner' | 'disc' | 'empty' | 'collar-end' | 'cap';
+
+/** One piece of the sleeve, in host px. Discs carry their Plate and numeral. */
+export interface SleevePart {
+  readonly kind: SleevePartKind;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  /** The Plate a disc draws (discs only). */
+  readonly plate?: Plate;
+  /** The disc's engraved numeral (sleeve px), or null when it would not fit (discs only). */
+  readonly numeral?: { readonly px: number; readonly text: string } | null;
+}
+
+/**
+ * Where `<rack-sleeve>` puts each piece in a `hostW` x `hostH` host (RBAR-70): the same
+ * flex row the element's CSS lays out -- shaft, inner collar, the discs heaviest-first
+ * (or the dashed empty box on a bare Bar), end collar, cap -- centred on both axes, at
+ * the `sleeveFit` scale. The share picture draws from this; the element keeps its CSS,
+ * and both read the same constants.
+ */
+export function sleeveLayout(
+  plates: readonly Plate[],
+  hostW: number,
+  hostH: number,
+): readonly SleevePart[] {
+  const { scale, shrink } = sleeveFit(plates, hostW, hostH);
+  const discW = (p: Plate) => Math.max(p.widthMm * scale, MIN_DISC_PX) * shrink;
+  const discH = (p: Plate) => p.diameterMm * scale * shrink;
+  const rowW =
+    plates.length > 0
+      ? plates.reduce((w, p) => w + discW(p), 0) + DISC_GAP_PX * (plates.length - 1)
+      : EMPTY_INSET_PX + EMPTY_W_PX;
+  const contentW = SHAFT_PX + COLLAR_INNER_PX + rowW + END_GAP_PX + COLLAR_END_PX + CAP_PX;
+  const cy = hostH / 2;
+  let x = (hostW - contentW) / 2;
+  const parts: SleevePart[] = [];
+  const piece = (kind: SleevePartKind, w: number, h: number, extra: Partial<SleevePart> = {}) => {
+    parts.push({ kind, x, y: cy - h / 2, w, h, ...extra });
+    x += w;
+  };
+  piece('shaft', SHAFT_PX, SHAFT_H_PX);
+  piece('collar-inner', COLLAR_INNER_PX, COLLAR_INNER_H_PX);
+  if (plates.length === 0) {
+    x += EMPTY_INSET_PX;
+    piece('empty', EMPTY_W_PX, EMPTY_MM * scale);
+  } else {
+    plates.forEach((p, i) => {
+      if (i > 0) x += DISC_GAP_PX;
+      const w = discW(p);
+      const h = discH(p);
+      const text = plateLabel(p);
+      const numeral = numeralFits(w, h, text) ? { px: numeralPx(w), text } : null;
+      piece('disc', w, h, { plate: p, numeral });
+    });
+  }
+  x += END_GAP_PX;
+  piece('collar-end', COLLAR_END_PX, COLLAR_END_H_PX);
+  piece('cap', CAP_PX, CAP_H_PX);
+  return parts;
 }

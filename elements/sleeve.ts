@@ -22,15 +22,14 @@ import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
 import {
-  BUMPER_MM,
   CAP_H_PX,
   CAP_PX,
-  CHROME_PX,
   COLLAR_END_H_PX,
   COLLAR_END_PX,
   COLLAR_INNER_H_PX,
   COLLAR_INNER_PX,
   DISC_GAP_PX,
+  DISC_INK,
   EMPTY_INSET_PX,
   EMPTY_MM,
   EMPTY_W_PX,
@@ -39,10 +38,11 @@ import {
   MIN_DISC_PX,
   SHAFT_H_PX,
   SHAFT_PX,
-  fitRow,
+  SLEEVE_BLOCK_PX,
   numeralFits,
   numeralPx,
   plateLabel,
+  sleeveFit,
 } from '../lib/sleevefit.ts';
 
 // The sizing rules (fit-to-width scale, chrome, gaps, the disc floor, the numeral
@@ -50,18 +50,12 @@ import {
 // by the same rules. A bumper is 450 mm; MAX_SCALE caps the zoom so a normal load
 // renders at a comfortable fixed size and only a genuinely huge bar zooms below it.
 //
-// The visualizer block reserves the handoff's fixed height (README section 3: "204px
-// tall block") so the console column doesn't jump as the load grows and shrinks. That is
-// the standalone default (the fullscreen card); the console overrides it (RBAR-67) and
-// lets the sleeve flex between SLEEVE_MIN_PX and this block as the viewport allows, so a
-// short phone gets a shorter Bar picture instead of a page that scrolls.
-export const SLEEVE_BLOCK_PX = 204;
-// The shortest the console lets the sleeve get: a bumper still stands 76px tall, so the
-// Plates and their numerals stay readable (RBAR-67 AC).
-export const SLEEVE_MIN_PX = 84;
-// The vertical breathing room fit() keeps between a bumper and the host's edges (the
-// prototype's 4px bar-row padding, top and bottom).
-export const SLEEVE_PAD_PX = 8;
+// The visualizer block's heights live in lib/sleevefit.ts too (RBAR-70): the handoff's
+// fixed 204px block (README section 3) is the standalone default (the fullscreen card),
+// and the console flexes the sleeve between SLEEVE_MIN_PX and it (RBAR-67), so a short
+// phone gets a shorter Bar picture instead of a page that scrolls. Re-exported here for
+// the console, which sizes its bar block from them.
+export { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from '../lib/sleevefit.ts';
 const FALLBACK_SCALE = MAX_SCALE; // used when the host has no measured width yet
 
 class RackSleeve extends HTMLElement {
@@ -202,8 +196,8 @@ class RackSleeve extends HTMLElement {
           letter-spacing: .04em; white-space: nowrap;
           transform: rotate(-90deg);
           display: none;
-          color: #0f1113;
-          text-shadow: 0 1px 0 rgba(255,255,255,.3);
+          color: ${DISC_INK.dark};
+          text-shadow: ${DISC_INK.darkEngrave};
         }
         .disc[data-numeral="11"] .label { display: block; font-size: 11px; }
         .disc[data-numeral="9"] .label { display: block; font-size: 9px; }
@@ -212,8 +206,8 @@ class RackSleeve extends HTMLElement {
         .disc[data-color="blue"] .label,
         .disc[data-color="green"] .label,
         .disc[data-color="iron"] .label {
-          color: #fff;
-          text-shadow: 0 1px 1px rgba(0,0,0,.4);
+          color: ${DISC_INK.light};
+          text-shadow: ${DISC_INK.lightEngrave};
         }
         /* When interactive the disc is a <button>: strip the button chrome so it looks
            identical to the inert <div> disc, but keep it tappable. */
@@ -255,17 +249,9 @@ class RackSleeve extends HTMLElement {
       this.styleNumerals(FALLBACK_SCALE, 1);
       return;
     }
-    const hostHeight = this.clientHeight;
-    const cap =
-      hostHeight > 0
-        ? Math.min(MAX_SCALE, Math.max(0, hostHeight - SLEEVE_PAD_PX) / BUMPER_MM)
-        : MAX_SCALE;
-    // Reserve the fixed chrome (shaft + both collars + cap) plus the gaps the discs add:
-    // END_GAP_PX before the end collar, and DISC_GAP_PX between each adjacent disc pair (the
-    // first disc sits flush to the inner collar, so N discs add N-1 inter-disc gaps).
-    const discGaps = DISC_GAP_PX * Math.max(0, this.plates.length - 1);
-    const avail = hostWidth - CHROME_PX - END_GAP_PX - discGaps;
-    const { scale, shrink } = fitRow(this.plates, avail, cap);
+    // The height-bounded zoom cap and the width fit are lib/sleevefit's sleeveFit, the
+    // same fit the share picture draws with (RBAR-70).
+    const { scale, shrink } = sleeveFit(this.plates, hostWidth, this.clientHeight);
     // Set each property only when it changed -- a new Side Load re-fits at the same
     // width without churning the host's inline style. (Layout can't feed back into a
     // resize loop regardless: the host width is parent-bounded, and its height is either

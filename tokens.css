@@ -115,6 +115,12 @@
   --rack-sleeve-empty-glyph: #3f454c; /* the + glyph inside it (prototype L106; RBAR-34 --
                                          between text-disabled 41464c and sleeve-empty) */
 
+  /* Fullscreen rack card backdrop (RBAR-18, handoff section 8): the radial wash's
+     lit centre and its deep edge. Inlined in the prototype; captured here so the card
+     and the share picture that reproduces it (RBAR-70) read one source. */
+  --rack-fullscreen-glow: #16181c;
+  --rack-fullscreen-deep: #0a0b0d;
+
   /* Help popover (RBAR-34, prototype L84-L87). Its border and body ink sit between
      the named border/text tiers, inlined in the prototype only -- captured here per
      ADR-0001. Body text is two-tier: --rack-popover-ink for the running copy, plain

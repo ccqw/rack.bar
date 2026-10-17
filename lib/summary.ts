@@ -149,8 +149,8 @@ const BARE_BAR_LINE = 'Bare bar';
 /**
  * The format-D Plate lines for one Side (RBAR-64): one `emoji face x count` line per
  * `groupSide` group, heaviest first, or a single `Bare bar` line when nothing is loaded.
- * Shared by the text the share button sends (`loadingSummary`) and the picture it
- * attaches (RBAR-70, elements/shareimage.ts), so the two cannot drift.
+ * The body of the text the share button sends (`loadingSummary`); exported so the
+ * lines can be tested on their own.
  */
 export function plateLines(side: readonly Plate[]): readonly string[] {
   if (side.length === 0) return [BARE_BAR_LINE];
