@@ -183,6 +183,14 @@ describe('parseLink: accepted links (ADR-0014)', () => {
   it('ignores unknown keys (an additive later v1 field) and empty segments', () => {
     expect(serializeLink(parse(`${BASE}&zz=whatever&q`)!)).toBe(BASE);
     expect(serializeLink(parse(`${BASE}&`)!)).toBe(BASE);
+    expect(serializeLink(parse(`&${BASE.replace('&s=', '&&s=')}`)!)).toBe(BASE);
+  });
+
+  it('tolerates leading and trailing zeros in a decimal, writing the plain value back', () => {
+    for (const [c, t] of [['2.50', '0140'], ['02.5', '140.0'], ['2.5', '140.00']] as const) {
+      const s = parse(`v=1&s=comp&b=20kg&m=w&c=${c}&u=kg&p=2x25,10&t=${t}`)!;
+      expect(serializeLink(s)).toBe('v=1&s=comp&b=20kg&m=w&c=2.5&u=kg&p=2x25,10&t=140');
+    }
   });
 
   it('ignores unknown keys even when duplicated, valueless or badly escaped', () => {
@@ -238,6 +246,9 @@ describe('parseLink: every rejection is all-or-nothing null (ADR-0014)', () => {
     ['kg face on the iron set', 'v=1&s=training&b=45lb&m=p&p=20'],
     ['count 0', BASE.replace('2x25', '0x25')],
     ['count 100', BASE.replace('2x25', '100x25')],
+    // Past 2^32 an unbounded count would make Array(n) throw -- the 1..99 bound is what
+    // keeps this a null rather than a crash.
+    ['count past 2^32', 'v=1&s=comp&b=20kg&m=p&p=4294967296x25'],
     ['count leading zero', BASE.replace('2x25', '02x25')],
     ['count negative', BASE.replace('2x25', '-2x25')],
     ['empty plate token', BASE.replace('2x25,10', '2x25,,10')],
@@ -251,6 +262,9 @@ describe('parseLink: every rejection is all-or-nothing null (ADR-0014)', () => {
     ['t not a number', BASE.replace('t=140', 't=abc')],
     ['t Infinity', BASE.replace('t=140', 't=Infinity')],
     ['t exponent', BASE.replace('t=140', 't=1e2')],
+    ['t with a plus sign', BASE.replace('t=140', 't=+5')],
+    ['t hex', BASE.replace('t=140', 't=0x10')],
+    ['t with a leading space', BASE.replace('t=140', 't=%205')],
     ['t empty', BASE.replace('t=140', 't=')],
     ['t over the cap', BASE.replace('t=140', 't=1000.01')],
     ['known key without =', 'v=1&s=comp&b=20kg&m=w&p'],
@@ -272,6 +286,8 @@ describe('parseLink: every rejection is all-or-nothing null (ADR-0014)', () => {
     expect(frag.length).toBe(MAX_LINK_LENGTH);
     expect(parse(frag)).not.toBeNull();
     expect(parse(`${frag}a`)).toBeNull();
+    // The cap counts the fragment after a leading `#` is stripped.
+    expect(parse(`#${frag}`)).not.toBeNull();
   });
 });
 
@@ -302,6 +318,8 @@ describe('serializeLink: refuses a load it cannot represent exactly (ADR-0014)',
     ['a Target that rounds to 0', { ...ok, targetKg: 0.004 }],
     ['a NaN Target', { ...ok, targetKg: NaN }],
     ['a Target over the cap', { ...ok, targetKg: 1200 }],
+    ['an unknown Unit', { ...ok, unit: 'st' as unknown as 'kg' }],
+    ['an unoffered set', { ...ok, set: 'bumper' as unknown as 'comp' }],
   ];
   for (const [name, state] of refusals) {
     it(`refuses: ${name}`, () => {

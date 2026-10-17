@@ -738,9 +738,16 @@ describe('Share link properties (ADR-0014)', () => {
           grammarArb,
           linkStateArb.map((s) => serializeLink(s)!.slice(0, -1)),
         ),
-        (x) => {
-          const s = parseLink(x, 'kg');
-          if (s !== null) expectValid(s);
+        unitArb,
+        (x, primary) => {
+          const s = parseLink(x, primary);
+          if (s === null) return;
+          expectValid(s);
+          // With no `u` in the link, the load reads in the recipient's Primary unit.
+          const raw = x.startsWith('#') ? x.slice(1) : x;
+          if (!raw.split('&').some((seg) => seg === 'u' || seg.startsWith('u='))) {
+            expect(s.unit).toBe(primary);
+          }
         },
       ),
       { ...opts, numRuns: 1000 },
