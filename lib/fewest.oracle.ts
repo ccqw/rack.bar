@@ -30,25 +30,29 @@ export interface FewestOracle {
   /** The Plates, heaviest first, that the oracle indexes into. */
   readonly plates: readonly Plate[];
   readonly gridKg: number;
-  /** Every loadable Side sum, in grid units, ascending (0 included). */
+  /** Every loadable Side sum, in grid units (NOT kg), ascending (0 included). */
   readonly sums: readonly number[];
-  /** The fewest Plates reaching `s` grid units within the Sleeve, or null. */
-  fewest(s: number): number | null;
-  /** The heaviest-first fewest-Plate stack for `s` grid units, or null when unloadable. */
-  pick(s: number): Plate[] | null;
-  /** The fewest Plates for `s` with NO Sleeve limit (to see where the Sleeve binds). */
-  fewestUncapped(s: number): number | null;
+  /** The fewest Plates reaching `units` grid units within the Sleeve, or null. */
+  fewest(units: number): number | null;
+  /** The heaviest-first fewest-Plate stack for `units` grid units, or null if unloadable. */
+  pick(units: number): Plate[] | null;
+  /** The fewest Plates for `units` with NO Sleeve limit (to see where the Sleeve binds). */
+  fewestUncapped(units: number): number | null;
 }
 
-const cache = new Map<string, FewestOracle>();
+const cache = new WeakMap<readonly Plate[], Map<string, FewestOracle>>();
 
 export function fewestOracle(
   inventory: readonly Plate[],
   gridKg: number,
   sleeveMm: number = SLEEVE_MM,
 ): FewestOracle {
-  const key = `${inventory.map((p) => `${p.kg}/${p.widthMm}`).join(',')}#${gridKg}@${sleeveMm}`;
-  const hit = cache.get(key);
+  // Cached per Inventory ARRAY (and grid, Sleeve): pick() hands back that array's own
+  // Plate objects, so two Inventories must never share an entry.
+  const byInventory = cache.get(inventory) ?? new Map<string, FewestOracle>();
+  cache.set(inventory, byInventory);
+  const key = `${gridKg}@${sleeveMm}`;
+  const hit = byInventory.get(key);
   if (hit) return hit;
 
   const plates = [...inventory].sort((a, b) => b.kg - a.kg);
@@ -99,13 +103,13 @@ export function fewestOracle(
     plates,
     gridKg,
     sums,
-    fewest: (s) => fewestIn(s, sleeveMm),
-    fewestUncapped: (s) => fewestIn(s, Infinity),
-    pick(s) {
-      const count = fewestIn(s, sleeveMm);
+    fewest: (units) => fewestIn(units, sleeveMm),
+    fewestUncapped: (units) => fewestIn(units, Infinity),
+    pick(target) {
+      const count = fewestIn(target, sleeveMm);
       if (count === null) return null;
       const out: Plate[] = [];
-      let left = s;
+      let left = target;
       let mmLeft = sleeveMm;
       let from = 0;
       for (let c = count; c > 0; c--) {
@@ -127,7 +131,7 @@ export function fewestOracle(
       return out;
     },
   };
-  cache.set(key, oracle);
+  byInventory.set(key, oracle);
   return oracle;
 }
 

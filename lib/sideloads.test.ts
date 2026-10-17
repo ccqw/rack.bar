@@ -6,7 +6,7 @@ import { lbToKg } from './units.ts';
 
 // The first `limit` ranked Side Loads (what RBAR-66's alternates will take).
 const rankSides = (sideKg: number, inv: readonly Plate[], sleeveMm = SLEEVE_MM, limit = 1) => {
-  const out: Plate[][] = [];
+  const out: (readonly Plate[])[] = [];
   if (limit < 1) return out;
   for (const side of sideLoads(sideKg, inv, sleeveMm)) {
     out.push(side);
@@ -36,6 +36,8 @@ describe('plateGridKg: the step every Side sum lies on', () => {
     expect(() => plateGridKg([ELEIKO_KG[0], odd])).toThrow(RangeError);
     expect(() => plateGridKg([{ ...odd, kg: 0 }])).toThrow(RangeError);
     expect(() => plateGridKg([{ ...odd, kg: Number.NaN }])).toThrow(RangeError);
+    expect(() => plateGridKg([{ ...ELEIKO_KG[0], widthMm: 0 }])).toThrow(RangeError);
+    expect(() => [...sideLoads(25, [{ ...ELEIKO_KG[0], widthMm: 0 }])]).toThrow(RangeError);
   });
 
   it('every shipped set and every single-size reduction has a grid (never throws in the app)', () => {
@@ -97,6 +99,15 @@ describe('sideLoads: every Side Load reaching an exact Side sum, ranked (RBAR-69
     expect(rankSides(10, [])).toEqual([]);
   });
 
+  it('ranks two same-mass sizes narrower-first, whatever the Inventory order', () => {
+    const wide: Plate = { kg: 20, color: 'iron', diameterMm: 450, widthMm: 60 };
+    const slim: Plate = { kg: 20, color: 'blue', diameterMm: 450, widthMm: 50 };
+    for (const inv of [[wide, slim], [slim, wide]]) {
+      const ranked = rankSides(40, inv, SLEEVE_MM, 5);
+      expect(ranked).toEqual([[slim, slim], [slim, wide], [wide, wide]]);
+    }
+  });
+
   it('returns Plates from the given Inventory (same objects), whatever its order', () => {
     const shuffled = [...IRON_LB].reverse();
     const [best] = rankSides(lbToKg(60), shuffled);
@@ -114,8 +125,8 @@ describe('canonicalSide / sideAtOrUnder / sideAbove: the picks decode makes', ()
 
   it('enumerates lazily: the first Side Load needs no full enumeration', () => {
     const it = sideLoads(100, ELEIKO_KG);
-    expect(kgs(it.next().value as Plate[])).toEqual([25, 25, 25, 25]);
-    expect(kgs(it.next().value as Plate[])).toEqual([25, 25, 25, 20, 5]);
+    expect(kgs(it.next().value as readonly Plate[])).toEqual([25, 25, 25, 25]);
+    expect(kgs(it.next().value as readonly Plate[])).toEqual([25, 25, 25, 20, 5]);
   });
 
   it('fills the greatest loadable sum at or under the budget, fewest Plates', () => {

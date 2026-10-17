@@ -18,6 +18,13 @@
 //
 // Pure and stateless (ADR-0001): no memo, nothing cached between calls. Bar and Collar
 // arithmetic stays with the callers -- a Side sum is (Total - Bar baseline) / 2.
+//
+// `inventory` here is the v1 unlimited Inventory (ADR-0002): a list of Plate SIZES,
+// each available in any count; the Sleeve is the only limit. A finite Inventory (pair
+// counts, RBAR-6) is not supported -- it would need a per-size cap in the walk. Two
+// sizes with the same mass but different widths are distinct denominations (a
+// different physical stack); they rank narrower-first so the order never depends on
+// the Inventory's own order. No shipped set has such a pair.
 import { SLEEVE_MM, plateFitsMm } from './plates.ts';
 import type { Plate } from './plates.ts';
 
@@ -29,21 +36,37 @@ const EPS = 1e-9;
 const MAX_GRID_DIVISOR = 1000;
 
 /**
+ * Reject an Inventory the search cannot reason about: a Plate whose mass or width is
+ * not a positive finite number (a zero width would make the Sleeve bound infinite).
+ */
+function assertPlates(inventory: readonly Plate[]): void {
+  for (const p of inventory) {
+    if (!(p.kg > 0) || !Number.isFinite(p.kg)) {
+      throw new RangeError(`sideloads: Plate mass ${p.kg} kg is not a positive number`);
+    }
+    if (!(p.widthMm > 0) || !Number.isFinite(p.widthMm)) {
+      throw new RangeError(`sideloads: Plate width ${p.widthMm} mm is not a positive number`);
+    }
+  }
+}
+
+// Heaviest first; equal masses narrower-first, so the rank order is total.
+function heaviestFirst(inventory: readonly Plate[]): Plate[] {
+  return [...inventory].sort((a, b) => b.kg - a.kg || a.widthMm - b.widthMm);
+}
+
+/**
  * The step every Side sum on `inventory` lies on: the largest g with every Plate an
  * integer multiple of it. The smallest Plate when it divides the rest (0.5 kg Eleiko,
  * 2.5 lb iron); finer when it does not (Eleiko without its 0.5s still makes half-kg
  * sums from 2.5 and 1.5). Throws a RangeError for an empty Inventory, a non-positive or
- * non-finite Plate mass, or Plates with no common grid down to 1/1000 of the smallest:
+ * non-finite Plate mass or width, or Plates with no common grid down to 1/1000 of the smallest:
  * no shipped set does any of these (test-locked), and the exact search cannot run
  * without a grid -- a silent fallback would hide the broken Inventory.
  */
 export function plateGridKg(inventory: readonly Plate[]): number {
   if (inventory.length === 0) throw new RangeError('plateGridKg: empty Inventory');
-  for (const p of inventory) {
-    if (!(p.kg > 0) || !Number.isFinite(p.kg)) {
-      throw new RangeError(`plateGridKg: Plate mass ${p.kg} kg is not a positive number`);
-    }
-  }
+  assertPlates(inventory);
   const smallest = Math.min(...inventory.map((p) => p.kg));
   for (let d = 1; d <= MAX_GRID_DIVISOR; d++) {
     const g = smallest / d;
@@ -56,7 +79,8 @@ export function plateGridKg(inventory: readonly Plate[]): number {
  * Every distinct Side Load that reaches exactly `sideKg` and fits `sleeveMm`, lazily,
  * in rank order (fewest Plates, then heaviest-first). The first is the canonical Side
  * Load; RBAR-66 takes the first few. Each stack is heaviest-first, a fresh array, and
- * holds the Inventory's own Plate objects. A zero sum yields one empty stack (the bare
+ * holds the Inventory's own Plate objects. Throws a RangeError for a Plate with a bad
+ * mass or width (see plateGridKg); an off-grid sum is simply unreachable. A zero sum yields one empty stack (the bare
  * Bar); nothing is yielded when no stack reaches the sum (off-grid, negative, heavier
  * than the Sleeve can carry, or an empty Inventory).
  *
@@ -67,11 +91,20 @@ export function plateGridKg(inventory: readonly Plate[]): number {
  * one per slot), and the rest must fit the Sleeve at its narrowest and be carriable at
  * the densest remaining kg-per-mm.
  */
-export function* sideLoads(
+export function sideLoads(
   sideKg: number,
   inventory: readonly Plate[],
   sleeveMm: number = SLEEVE_MM,
-): Generator<Plate[], void, undefined> {
+): IterableIterator<readonly Plate[]> {
+  return walkSides(sideKg, inventory, sleeveMm);
+}
+
+function* walkSides(
+  sideKg: number,
+  inventory: readonly Plate[],
+  sleeveMm: number,
+): Generator<readonly Plate[], void, undefined> {
+  assertPlates(inventory);
   if (!Number.isFinite(sideKg) || sideKg < -EPS) return;
   if (Math.abs(sideKg) <= EPS) {
     yield [];
@@ -79,7 +112,7 @@ export function* sideLoads(
   }
   if (inventory.length === 0) return;
 
-  const plates = [...inventory].sort((a, b) => b.kg - a.kg);
+  const plates = heaviestFirst(inventory);
   const n = plates.length;
   const lightestKg = plates[n - 1].kg;
   // Suffix bounds over plates[j..]: the narrowest width and the densest kg-per-mm.
@@ -98,7 +131,12 @@ export function* sideLoads(
 
   const stack: Plate[] = [];
   // Place `slots` more Plates from plates[from..], summing to `kgLeft`, after `usedMm`.
-  function* walk(from: number, slots: number, kgLeft: number, usedMm: number): Generator<Plate[], void, undefined> {
+  function* walk(
+    from: number,
+    slots: number,
+    kgLeft: number,
+    usedMm: number,
+  ): Generator<readonly Plate[], void, undefined> {
     if (slots === 0) {
       if (Math.abs(kgLeft) <= EPS) yield [...stack];
       return;
@@ -126,7 +164,7 @@ export function canonicalSide(
   sideKg: number,
   inventory: readonly Plate[],
   sleeveMm: number = SLEEVE_MM,
-): Plate[] | null {
+): readonly Plate[] | null {
   for (const side of sideLoads(sideKg, inventory, sleeveMm)) return side;
   return null;
 }
@@ -147,7 +185,7 @@ export function sideAtOrUnder(
   budgetKg: number,
   inventory: readonly Plate[],
   sleeveMm: number = SLEEVE_MM,
-): Plate[] {
+): readonly Plate[] {
   if (inventory.length === 0 || !(budgetKg > 0)) return [];
   const grid = plateGridKg(inventory);
   const cap = Math.min(budgetKg, sleeveBoundKg(inventory, sleeveMm));
@@ -169,7 +207,7 @@ export function sideAbove(
   budgetKg: number,
   inventory: readonly Plate[],
   sleeveMm: number = SLEEVE_MM,
-): Plate[] | null {
+): readonly Plate[] | null {
   if (inventory.length === 0 || Number.isNaN(budgetKg)) return null;
   const grid = plateGridKg(inventory);
   const top = Math.floor((sleeveBoundKg(inventory, sleeveMm) + EPS) / grid);

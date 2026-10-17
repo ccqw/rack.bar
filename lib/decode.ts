@@ -50,9 +50,10 @@ export interface Decoded {
    * The opt-in over-target alternative (ADR-0003): the least achievable Total
    * *strictly above* the solve ceiling, fewest Plates, with a positive `delta`.
    * Present only when `primary` lands strictly under the ceiling and a PHYSICAL
-   * round-up exists -- the refill steps up under the same sleeve cap until a load
-   * exceeds the ceiling (ADR-0012; more than one step in the sleeve-bound band,
-   * RBAR-62), so a sleeve-full shortfall carries no over. Absent for a primary exactly on the ceiling (an exact `decode`), a sub-Bar
+   * round-up exists -- the least Side sum above the budget that some stack loads
+   * within the Sleeve (sideloads.ts sideAbove; in the sleeve-bound band that can be
+   * several grid steps up, RBAR-62), so a sleeve-full shortfall carries no over.
+   * Absent for a primary exactly on the ceiling (an exact `decode`), a sub-Bar
    * Target, an empty Inventory, and -- via the early return below -- a non-finite
    * Target. Note a `decodeWithin` primary sits just under its ceiling, so it usually
    * carries an over even when it DISPLAYS exact; the shell hides the offer then.
@@ -68,6 +69,10 @@ export interface Decoded {
  * for every Bar until real per-Bar data lands). Never overshoots for any Target at
  * or above the Bar; a sub-Bar Target floors at the bare Bar (empty Side Load,
  * positive delta). Always returns a Loadout -- never null.
+ *
+ * Throws a RangeError (from sideloads.ts) only for a malformed Inventory: a Plate with
+ * a non-positive or non-finite mass or width, or Plates with no common grid. No shipped
+ * set or single-size reduction of one can (test-locked), so the shell never sees it.
  */
 export function decode(
   target: number,
@@ -76,8 +81,9 @@ export function decode(
   sleeveMm: number = SLEEVE_MM,
 ): Decoded {
   // A non-finite Target (NaN, or Infinity from a "1e999"-style entry) has no
-  // achievable Total -- and an Infinity budget would walk the fill's grid forever. Degrade to the bare Bar with a zero delta (we make no claim about
-  // how far off an unusable Target is).
+  // achievable Total -- and an Infinity budget would walk the fill's grid forever.
+  // Degrade to the bare Bar with a zero delta (we make no claim about how far off an
+  // unusable Target is).
   if (!Number.isFinite(target)) {
     return { primary: { side: [], total: bar, delta: 0 } };
   }
