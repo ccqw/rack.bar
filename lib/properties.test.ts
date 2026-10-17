@@ -55,17 +55,19 @@ import {
   fewestPlatesFor,
   maxTotal,
   rampTotalsOracle,
-  easyRampOracle,
-  oracleRampCost,
-  oracleMoves,
+  stationRampOracle,
+  oracleStationCost,
+  oracleMoveCost,
+  oracleCaps,
+  legalSides,
 } from './properties.oracle.ts';
-import type { MovesRule } from './properties.oracle.ts';
+import type { StationRule } from './properties.oracle.ts';
 import {
   planEasyRamp,
-  RAMP_TOLERANCE,
-  EXTRA_PLATES,
-  CHANGE_PLATE_MAX_KG,
-  CHANGE_PLATE_MOVE_COST,
+  RAMP_BAND,
+  RAMP_COST,
+  PLATES_PER_SIZE,
+  BIG_PLATE_DIAMETER_MM,
 } from './moves.ts';
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import type { RampStep } from './plan.ts';
@@ -555,8 +557,8 @@ describe('Plate limit properties (ADR-0016, ADR-0003)', () => {
 });
 
 describe('Warm-up Ramp properties (ADR-0015)', () => {
-  // A template: up to two leading bare-Bar steps, then up to six percentages in any
-  // order (the planner forces Totals non-decreasing itself), whole or fractional.
+  // A template: up to two leading bare-Bar steps, then up to six percentages that never
+  // fall (planRamp rejects a falling one, ADR-0015 as amended), whole or fractional.
   const pctArb = fc.oneof(
     fc.integer({ min: 1, max: 100 }),
     fc.double({ min: 0.01, max: 100, noNaN: true }),
@@ -568,7 +570,7 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
     )
     .map(([bars, pcts]) => [
       ...Array.from({ length: bars }, (): RampStep => ({ kind: 'bar' })),
-      ...pcts.map((pct): RampStep => ({ kind: 'pct', pct })),
+      ...[...pcts].sort((x, y) => x - y).map((pct): RampStep => ({ kind: 'pct', pct })),
     ]);
   const caseArb = fc.record({ rt: rigTargetArb, u: unitArb, steps: fc.oneof(stepsArb, fc.constant([...DEFAULT_RAMP])) });
 
@@ -696,33 +698,71 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
   });
 });
 
-describe('Fewest Plate moves properties (ADR-0015 as amended 2026-10-17)', () => {
-  // Each full-rig run solves a whole-Ramp DP, so these take fewer runs than the rest.
-  const movesOpts = { seed: SEED, numRuns: 100 };
-  const RULE: MovesRule = {
-    toleranceShare: RAMP_TOLERANCE,
-    extraPlates: EXTRA_PLATES,
-    changeMaxKg: CHANGE_PLATE_MAX_KG,
-    changeCost: CHANGE_PLATE_MOVE_COST,
+describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's station rule)", () => {
+  // Each full-rig run plans a whole Ramp, so these take fewer runs than the rest.
+  const rampOpts = { seed: SEED, numRuns: 100 };
+  // The ADR-0015 numbers, stated here rather than read from moves.ts, so a changed
+  // weight in the planner fails the oracle instead of moving it too.
+  const RULE: StationRule = {
+    band: 0.05,
+    cap: 2,
+    bigDiameterMm: 450,
+    missPerKg: 1,
+    overFactor: 1.5,
+    perPlate: 1,
+    bigOff: 2,
+    perMove: 0.2,
+    perStationPlate: 0.2,
   };
+  it('the planner\'s constants are the ADR-0015 numbers the oracle states', () => {
+    expect({ band: RAMP_BAND, cap: PLATES_PER_SIZE, bigDiameterMm: BIG_PLATE_DIAMETER_MM, ...RAMP_COST }).toEqual(RULE);
+  });
+  // Percentages ascending, as the template editor saves them (RBAR-65 Q15).
   const pctStepsArb: fc.Arbitrary<RampStep[]> = fc
-    .tuple(fc.integer({ min: 0, max: 1 }), fc.array(fc.integer({ min: 1, max: 100 }), { maxLength: 4 }))
+    .tuple(fc.integer({ min: 0, max: 1 }), fc.uniqueArray(fc.integer({ min: 1, max: 99 }), { maxLength: 4 }))
     .map(([bars, pcts]) => [
       ...Array.from({ length: bars }, (): RampStep => ({ kind: 'bar' })),
-      ...pcts.map((pct): RampStep => ({ kind: 'pct', pct })),
+      ...[...pcts].sort((x, y) => x - y).map((pct): RampStep => ({ kind: 'pct', pct })),
     ]);
   const fullCaseArb = fc.record({
     rt: rigTargetArb,
     u: unitArb,
     steps: fc.oneof(pctStepsArb, fc.constant([...DEFAULT_RAMP])),
   });
-  const rigOf = (rig: Rig) => ({ barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory });
-  const nearest = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
-    planRamp(t, steps, rigOf(rig), { ceilingKg: displayCeilingKg(t, u) });
   const easy = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
     planEasyRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
       ceilingKg: displayCeilingKg(t, u),
     });
+  const isBig = (p: Plate) => p.diameterMm >= RULE.bigDiameterMm;
+  // Totals as map keys, to 1e-6 kg (the iron kg are lbToKg products).
+  const key = (total: number) => Math.round(total * 1e6);
+  // Every Total `rig` can load with at most caps(p) of each Plate within the Sleeve: an
+  // order-free walk over capped multisets (order never changes loadability), cached.
+  const cappedCache = new Map<string, Map<number, number>>();
+  const cappedTotals = (rig: Rig, caps: (p: Plate) => number): Map<number, number> => {
+    const id = `${rig.name}|${rig.inventory.map(caps).join(',')}`;
+    const hit = cappedCache.get(id);
+    if (hit) return hit;
+    const out = new Map<number, number>();
+    const walk = (j: number, kg: number, mm: number) => {
+      if (j === rig.inventory.length) {
+        const total = rig.baselineKg + 2 * kg;
+        out.set(key(total), total);
+        return;
+      }
+      const p = rig.inventory[j];
+      for (let c = 0; c <= caps(p); c++) {
+        if (mm + c * p.widthMm > SLEEVE_MM + 1e-9) break;
+        walk(j + 1, kg + c * p.kg, mm + c * p.widthMm);
+      }
+    };
+    walk(0, 0, 0);
+    cappedCache.set(id, out);
+    return out;
+  };
+  const mostOfOne = (side: readonly Plate[]) =>
+    Math.max(0, ...side.map((p) => side.filter((q) => q === p).length));
+  const sumKg = (side: readonly Plate[]) => side.reduce((x, p) => x + p.kg, 0);
 
   // Small rigs the brute force can exhaust: a few Plates of each set (the Inventory's
   // own Plate objects, so Plate identity -- what a move compares -- is shared).
@@ -732,7 +772,7 @@ describe('Fewest Plate moves properties (ADR-0015 as amended 2026-10-17)', () =>
     { set: 'comp' as const, barKg: 20, collarKg: 0, inventory: pick('comp', (p) => [20, 10, 5, 2.5].includes(p.kg)) },
     { set: 'comp' as const, barKg: 20, collarKg: 2.5, inventory: pick('comp', (p) => [15, 5, 2.5].includes(p.kg)) },
     { set: 'comp' as const, barKg: 15, collarKg: 0, inventory: pick('comp', (p) => [25, 10, 5].includes(p.kg)) },
-    { set: 'comp' as const, barKg: 20, collarKg: 0, inventory: pick('comp', (p) => [20, 5, 1, 0.5].includes(p.kg)) },
+    { set: 'comp' as const, barKg: 20, collarKg: 0, inventory: pick('comp', (p) => [25, 15, 1].includes(p.kg)) },
     { set: 'training' as const, barKg: lbToKg(45), collarKg: 0, inventory: pick('training', (p) => ['45', '25', '10', '5'].includes(p.label!)) },
   ].map((r) => ({ ...r, baselineKg: r.barKg + 2 * r.collarKg, name: `small ${r.set} ${r.inventory.map((p) => p.label ?? p.kg).join('/')} collar ${r.collarKg}` }));
   const smallCaseArb = fc
@@ -745,94 +785,80 @@ describe('Fewest Plate moves properties (ADR-0015 as amended 2026-10-17)', () =>
           fc.constantFrom(...achievableTotals(rig).filter((x) => x <= 140)),
         ),
         u: unitArb,
-        steps: fc.oneof(
-          fc.constant([...DEFAULT_RAMP]),
-          pctStepsArb.map((s) => s.slice(0, 4)),
-        ),
+        steps: fc.oneof(fc.constant([...DEFAULT_RAMP]), pctStepsArb),
       }),
     );
-  const raws = (rows: readonly { kind: string; targetKg: number }[]) =>
-    rows.map((r) => (r.kind === 'warmup' ? r.targetKg : null));
+  type Row = { kind: string; targetKg: number; side: readonly Plate[]; total: number };
+  const costOf = (rows: readonly Row[], tol: number) =>
+    oracleStationCost(
+      rows.map((r) => r.side),
+      rows.map((r) => r.total),
+      rows.map((r) => (r.kind === 'warmup' ? r.targetKg : null)),
+      rows.map((r) => r.kind),
+      tol,
+      RULE,
+    );
 
-  it('the Ramp\'s weighted Plate moves are the fewest any Ramp within the rules reaches, ties to closeness then fewer Plates (ADR-0015 as amended; brute force)', () => {
+  it("the planner's cost equals the brute-force minimum on small Inventories (ADR-0015 as amended, station rule)", () => {
     fc.assert(
       fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
         const got = easy(rig, t, u, steps);
-        const { best, tol } = easyRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
-        const cost = oracleRampCost(
-          got.rows.map((r) => r.side),
-          got.rows.map((r) => r.total),
-          raws(got.rows),
-          tol,
-          RULE,
-        );
+        const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+        const cost = costOf(got.rows, tol);
         cost.forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
+        expect(got.cost).toBeCloseTo(cost[2], 6);
       }),
       { seed: SEED, numRuns: 150 },
     );
   });
 
-  it('each row\'s moves are the stack moves from the row before, and they add up (ADR-0015 as amended)', () => {
+  it('no small Plate sits inside a big one, and small Plates go heaviest-first (ADR-0015 as amended)', () => {
     fc.assert(
       fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
-        const got = easy(rig, t, u, steps);
-        let prev: readonly Plate[] = [];
-        let sum = 0;
-        for (const row of got.rows) {
-          expect(row.moves.cost).toBeCloseTo(oracleMoves(prev, row.side, RULE), 9);
-          // Off then on turns the previous Side into this one.
-          const kept = prev.slice(0, prev.length - row.moves.off.length);
-          expect([...kept, ...row.moves.on]).toEqual(row.side);
-          sum += row.moves.cost;
-          prev = row.side;
+        for (const row of easy(rig, t, u, steps).rows) {
+          const firstSmall = row.side.findIndex((p) => !isBig(p));
+          if (firstSmall < 0) continue;
+          const outside = row.side.slice(firstSmall);
+          expect(outside.some(isBig)).toBe(false);
+          outside.forEach((p, i) => i > 0 && expect(outside[i - 1].kg).toBeGreaterThanOrEqual(p.kg));
         }
-        expect(got.totalMoves).toBeCloseTo(sum, 9);
       }),
-      movesOpts,
+      rampOpts,
     );
   });
 
-  it('every Warm-up set is within the tolerance of its percentage, or on planRamp\'s nearest Total when the floor forces it (ADR-0015 as amended)', () => {
+  it('no size exceeds PLATES_PER_SIZE per Side unless the Working Total needs more, and then no more than Decode\'s own Side uses (ADR-0015 as amended)', () => {
     fc.assert(
       fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
         const got = easy(rig, t, u, steps);
-        const near = nearest(rig, t, u, steps).rows;
-        const work = got.rows[got.rows.length - 1].total;
-        const grid = Math.min(...rig.inventory.map((p) => p.kg));
-        const tol = Math.max(RAMP_TOLERANCE * work, grid);
-        got.rows.forEach((row, i) => {
-          if (row.kind !== 'warmup') return;
-          const inside = Math.abs(row.total - row.targetKg) <= tol + 1e-9;
-          expect(inside || Math.abs(row.total - near[i].total) <= 1e-9).toBe(true);
-        });
-      }),
-      movesOpts,
-    );
-  });
-
-  it('Totals never decrease, bare-Bar rows stay bare, and every Side is loadable within the Sleeve (ADR-0015 as amended, ADR-0012)', () => {
-    fc.assert(
-      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
-        const got = easy(rig, t, u, steps);
-        got.rows.forEach((row, i) => {
-          if (i > 0) expect(row.total).toBeGreaterThanOrEqual(got.rows[i - 1].total - EPS);
-          const baseline = row.collars ? rig.baselineKg : rig.barKg;
-          expect(row.total).toBeCloseTo(totalKg(row.side, baseline), 9);
-          expect(sideWidthMm(row.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
-          expect(fromInventory(row.side, rig)).toBe(true);
-          expect(isHeaviestFirst(row.side)).toBe(true);
-          if (row.kind === 'bar') {
-            expect(row.side).toEqual([]);
-            expect(row.total).toBe(rig.barKg);
+        if (Math.max(...got.rows.map((r) => mostOfOne(r.side))) <= PLATES_PER_SIZE) return;
+        // A raised cap: 2 of each must not load the Working Total within the Sleeve (an
+        // order-free capped walk), and no Plate goes past its count in Decode's own Side.
+        const work = got.rows[got.rows.length - 1];
+        expect(cappedTotals(rig, () => RULE.cap).has(key(work.total))).toBe(false);
+        const own = got.working.primary.side;
+        for (const r of got.rows) {
+          for (const p of r.side) {
+            const n = r.side.filter((q) => q === p).length;
+            expect(n).toBeLessThanOrEqual(Math.max(PLATES_PER_SIZE, own.filter((q) => q === p).length));
           }
-          if (i > 0) expect(row.sameAsPrevious).toBe(Math.abs(row.total - got.rows[i - 1].total) <= EPS);
-        });
+        }
       }),
-      movesOpts,
+      rampOpts,
+    );
+    fc.assert(
+      fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const caps = oracleCaps(rig, got.rows[got.rows.length - 1].total, RULE);
+        for (const r of got.rows) {
+          for (const p of r.side) expect(r.side.filter((q) => q === p).length).toBeLessThanOrEqual(caps(p));
+        }
+      }),
+      { seed: SEED, numRuns: 60 },
     );
   });
 
-  it('the Working set\'s Total is exactly the at-or-under solve as read; only its Side may differ (ADR-0015 as amended, ADR-0003)', () => {
+  it('the Working Total equals the at-or-under Total as read; only its Side may differ (ADR-0015 as amended, ADR-0003)', () => {
     fc.assert(
       fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
         const got = easy(rig, t, u, steps);
@@ -842,27 +868,116 @@ describe('Fewest Plate moves properties (ADR-0015 as amended 2026-10-17)', () =>
         expect(last.total).toBeCloseTo(solved.primary.total, 9);
         expect(got.working).toEqual(solved);
       }),
-      movesOpts,
+      rampOpts,
     );
   });
 
-  it('never needs more moves than the nearest-Total Ramp when that Ramp is within tolerance (ADR-0015 as amended)', () => {
+  it('every Warm-up set is within the band of its percentage unless no loadable Total in the band can climb to it (ADR-0015 as amended)', () => {
+    const check = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[], small: boolean) => {
+        const got = easy(rig, t, u, steps);
+        const work = got.rows[got.rows.length - 1].total;
+        const tol = Math.max(RULE.band * work, Math.min(...rig.inventory.map((p) => p.kg)));
+        // The caps: brute force on a small rig; on a full one, 2 of each when that loads
+        // the Working Total, else Decode's own counts (an order-free capped walk).
+        const own = got.working.primary.side;
+        const caps: (p: Plate) => number = small
+          ? oracleCaps(rig, work, RULE)
+          : cappedTotals(rig, () => RULE.cap).has(key(work))
+            ? () => RULE.cap
+            : (p) => Math.max(RULE.cap, own.filter((q) => q === p).length);
+        const loadable = small
+          ? legalSides(rig.inventory, RULE, caps).map((s) => rig.baselineKg + 2 * sumKg(s))
+          : [...cappedTotals(rig, caps).values()];
+        got.rows.forEach((row, i) => {
+          if (row.kind !== 'warmup') return;
+          if (Math.abs(row.total - row.targetKg) <= tol + 1e-9) return;
+          const floor = Math.max(rig.baselineKg, i > 0 ? got.rows[i - 1].total : -Infinity);
+          const forced = !loadable.some(
+            (x) => x >= floor - 1e-9 && x <= work + 1e-9 && Math.abs(x - row.targetKg) <= tol + 1e-9,
+          );
+          expect(forced).toBe(true);
+        });
+    };
+    fc.assert(fc.property(smallCaseArb, ({ rig, t, u, steps }) => check(rig, t, u, steps, true)), { seed: SEED, numRuns: 150 });
+    fc.assert(fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => check(rig, t, u, steps, false)), rampOpts);
+  });
+
+  it('the pruned search reaches the brute-force minimum on the full iron set (ADR-0015 as amended, station rule)', () => {
+    // 6 iron sizes are 729 capped multisets, past EXHAUSTIVE_LIMIT: this is the pruned
+    // path. Only the 45 is big, so the oracle stays tractable up to 100 kg.
+    const ironRigs = RIGS.filter((r) => r.set === 'training');
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...ironRigs).chain((rig) => fc.record({
+          rig: fc.constant(rig),
+          t: fc.constantFrom(...achievableTotals(rig).filter((x) => x <= 100)),
+          u: unitArb,
+          steps: fc.oneof(fc.constant([...DEFAULT_RAMP]), pctStepsArb),
+        })),
+        ({ rig, t, u, steps }) => {
+          const got = easy(rig, t, u, steps);
+          const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+          costOf(got.rows, tol).forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
+        },
+      ),
+      { seed: SEED, numRuns: 40 },
+    );
+  }, 60000);
+
+  it('the search never falls back to planRamp\'s own Ramp (degraded) (ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        expect(easy(rig, t, u, steps).degraded).toBe(false);
+      }),
+      rampOpts,
+    );
+    fc.assert(
+      fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
+        expect(easy(rig, t, u, steps).degraded).toBe(false);
+      }),
+      { seed: SEED, numRuns: 60 },
+    );
+  });
+
+  it('each row carries its stack moves from the row before, and they add up (ADR-0015 as amended)', () => {
     fc.assert(
       fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
         const got = easy(rig, t, u, steps);
-        const near = nearest(rig, t, u, steps).rows;
         let prev: readonly Plate[] = [];
-        let nearMoves = 0;
-        for (const r of near) {
-          nearMoves += oracleMoves(prev, r.side, RULE);
-          prev = r.side;
+        let sum = 0;
+        for (const row of got.rows) {
+          expect(row.moves.cost).toBeCloseTo(oracleMoveCost(prev, row.side, RULE), 9);
+          const kept = prev.slice(0, prev.length - row.moves.off.length);
+          expect([...kept, ...row.moves.on]).toEqual(row.side);
+          sum += row.moves.cost;
+          prev = row.side;
         }
-        const work = near[near.length - 1].total;
-        const tol = Math.max(RAMP_TOLERANCE * work, Math.min(...rig.inventory.map((p) => p.kg)));
-        const nearInside = near.every((r) => r.kind !== 'warmup' || Math.abs(r.total - r.targetKg) <= tol + 1e-9);
-        if (nearInside) expect(got.totalMoves).toBeLessThanOrEqual(nearMoves + 1e-9);
+        expect(got.totalMoves).toBeCloseTo(sum, 9);
       }),
-      movesOpts,
+      rampOpts,
+    );
+  });
+
+  it('Totals never decrease, Warm-up sets stay at or under the Working set, bare-Bar rows stay bare, and every Side fits the Sleeve (ADR-0015 as amended, ADR-0012)', () => {
+    fc.assert(
+      fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
+        const got = easy(rig, t, u, steps);
+        const work = got.rows[got.rows.length - 1].total;
+        got.rows.forEach((row, i) => {
+          if (i > 0) expect(row.total).toBeGreaterThanOrEqual(got.rows[i - 1].total - EPS);
+          const baseline = row.collars ? rig.baselineKg : rig.barKg;
+          expect(row.total).toBeCloseTo(totalKg(row.side, baseline), 9);
+          expect(sideWidthMm(row.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+          expect(fromInventory(row.side, rig)).toBe(true);
+          if (row.kind === 'warmup') expect(row.total).toBeLessThanOrEqual(work + EPS);
+          if (row.kind === 'bar') {
+            expect(row.side).toEqual([]);
+            expect(row.total).toBe(rig.barKg);
+          }
+          if (i > 0) expect(row.sameAsPrevious).toBe(Math.abs(row.total - got.rows[i - 1].total) <= EPS);
+        });
+      }),
+      rampOpts,
     );
   });
 });

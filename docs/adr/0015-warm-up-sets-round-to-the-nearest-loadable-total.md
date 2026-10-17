@@ -136,3 +136,131 @@ Tests: `lib/moves.test.ts`, plus the "Fewest Plate moves" properties in
 `lib/properties.test.ts`. They check against `easyRampOracle`, which brute-forces
 every Ramp over every Side of small Inventories without calling sideloads.ts or the
 planner.
+
+## 2026-10-17 (later) -- Caitlin's station rule (RBAR-65 slice 4b)
+
+This replaces the lexicographic fewest-moves rule above (decisions 1-5 of the earlier
+2026-10-17 amendment: the heaviest-inside stack, half-cost change Plates, the 2.5%
+tolerance and the moves-first ranking). That rule loaded a 75 kg Working set as
+20+2.5+2.5+2.5. Caitlin wrote down how she really loads six Ramps by hand (Linear
+RBAR-65, 2026-10-17 05:56), and this rule is fitted to them.
+
+Her words: "I've gathered a few plates at my station that I thought would be
+useful... I'll be willing to load on a large diameter plate that's heavier than the
+innermost one as I go up in weight, but I wouldn't put a little plate on the inside
+with a big plate outside it. I probably don't have more than 4 of most things. I'm
+willing to be a little off and inexact in warmups but not in working weight. I'd
+prefer to make fewer swaps and use fewer plates at my station than more, but it's not
+to the point of messing up my ramp up completely."
+
+`lib/moves.ts` `planEasyRamp` keeps its signature and row shapes.
+
+1. **The stack.** A big Plate is full diameter (`BIG_PLATE_DIAMETER_MM` = 450:
+   Eleiko 25-10 kg, the iron 45 lb). It is derived from the diameter, not a kg list.
+   Big Plates go on in any order, so a heavier one may sit outside a lighter one.
+   Every other Plate sits outside all the big ones, heaviest-first. A Side is
+   therefore an ordered stack that is not always heaviest-first. The sleeve and the
+   share text draw the order given and never re-sort it.
+2. **The Plate limit.** At most `PLATES_PER_SIZE` (2) of each size per Side, her
+   "4 of most things". This is the default until RBAR-72 brings a real Inventory.
+   When 2 of each cannot load the Working Total (iron past about 535 lb, Competition
+   past about 350 kg), each size may go up to the count Decode's own Side uses for
+   that Total, and no further.
+3. **The Working set** stays exactly Decode's at-or-under Total (ADR-0003). Its Side
+   may be any legal stack.
+4. **Warm-up sets.** Each one sits within `RAMP_BAND` (5%) of the Working Total of
+   pct x Working Total. The band is never narrower than one Plate-grid step. Totals
+   stay at or above the bare rig and at or under the Working Total, and never
+   decrease. A row may repeat the row before (`sameAsPrevious`, the 30 kg case), but
+   each repeat counts against the Ramp, so Totals rise strictly wherever the band
+   allows. A row with nothing loadable in its band falls back to the nearest loadable
+   Totals either side of it. These rank first, in this order: band excess, then
+   repeated Totals.
+
+   **Percentages must not fall.** `planRamp` throws a RangeError for a percentage
+   step below the one before it. This replaces decision 4's "forced non-decreasing"
+   handling of an out-of-order template. A falling template would force a lighter set
+   to repeat a heavier one, and the band could not stay exact. The template editor
+   (slice 3) saves percentages ascending. Equal percentages are allowed.
+5. **The cost** is a weighted sum over the whole Ramp (`RAMP_COST`), minimised:
+   - 1 per kg of Total from the percentage, x 1.5 when over;
+   - 1 per Plate on each Warm-up set;
+   - 2 per big Plate taken off;
+   - 0.2 per Plate moved (on or off);
+   - 0.2 per Plate at the **station**: for each size, the most of it the Ramp ever
+     needs on one Side, summed.
+
+   Ties go to fewer moves, then closeness, then fewer Plates. The Working set's own
+   Plate count is not charged. Charging it (her simulation did not) breaks her 100 kg
+   Ramp, since it pulls the 70% set to 25.
+6. **The search.** It is a dynamic programme over rows. A state is (this row's Side,
+   the station so far). A state is dropped only when another beats it for every
+   possible future. The station term is not local, and this dominance test keeps the
+   DP exact over its candidates. On a small Inventory, the candidates are every legal
+   Side in every order, so the plan is exact. "Small" (`EXHAUSTIVE_LIMIT`) means at
+   most 256 ordered Sides: every capped multiset, counted once per distinct order of
+   its big Plates. A bumpers-only set has few multisets but many orders, so it takes
+   the pruned path. On a full set, the candidates are pruned to:
+   - the 30 multisets cheapest on their own;
+   - each of those in all big-Plate orders, up to 6 orders;
+   - every Side that keeps the previous row's stack, or its big Plates, and adds up
+     to 2 Plates.
+
+   Only the best 60 states go on to the next row.
+
+   Timing on an M-series laptop, warm, DEFAULT_RAMP, every whole-kg Working Total from
+   20 to 300 kg:
+
+   | Set | Mean | Worst |
+   |---|---|---|
+   | Competition | about 2 ms | about 6 ms |
+   | Training (iron) | under 0.5 ms | about 1 ms |
+
+   Sleeve-capped Ramps up to 500 kg take about 4 ms. A cold first call takes about
+   5 ms. The pruned search was checked against a search about 10x wider on 1124
+   Ramps. It found the same cost on 1086 of them. The worst gap was 1.6 cost units,
+   about one extra Plate move or kg.
+7. **No Plates to load.** With an empty Inventory, or when planRamp loads nothing on
+   any row, every row is planRamp's bare-rig row. In that case the planner never
+   asks for a Plate grid.
+8. **Degraded.** If beam pruning ever leaves a row with no state it can climb from,
+   the planner does not throw and does not quietly repeat a row. It returns planRamp's
+   own Ramp (nearest Totals, Decode's Working Side), which is always valid, and sets
+   `degraded: true`. The property suite asserts that this never happens.
+9. **What a caption says.** Each row's `moves` describes the Plate moves the cost
+   charges:
+   - `off`: everything outside the longest common inside run, outermost first;
+   - `on`: the rest of the new Side, inside to outside.
+
+   The Warm up captions (RBAR-65 slice 2) read `moves` directly, not a set difference
+   of the two Sides. Following a caption literally, taking `off` from the outside and
+   then putting `on` on, rebuilds the next Side exactly. On Caitlin's 75 kg Ramp,
+   15+1 -> 15+5+2.5+1 is "off 1, then on 5, 2.5 and 1". A set difference would say
+   "+5 +2.5", and following that literally gives the illegal stack 15+1+5+2.5.
+
+Bumpers-only timing (Eleiko 25-10 kg, 20 kg Bar, warm, 20-420 kg): about 0.4 ms mean
+and about 1 ms worst, including 350 kg.
+
+Her loads against the planner (Competition, 20 kg Bar, per Side, 50 / 70 / 90%):
+
+| Working | Hers | Planner |
+|---|---|---|
+| 60 | 5 / 10+1 / 10+5+2 | same |
+| 75 | 5+2.5+1 / 15+1 / 15+5+2.5+1 | same |
+| 80 | 10 / 10+5+2.5 / 10+15+1 | same |
+| 100 | 15 / 15+10 / 15+10+10 | same |
+| 120 | 20 / 20+10+2 / 20+20+2.5 | 20 / 20+10+2 / **20+10+15** |
+| 140 | 25 / 25+15 / 25+15+15 | 25 / 25+15 / **25+15+10+2.5** |
+
+That is 16 of 18 sets. The planner misses two. At 120 kg and 90%, it prefers 110 kg
+(2 kg over, two small moves) to her 105 kg (3 kg under, with a 10 taken off). At
+140 kg and 90%, it prefers 125 kg (1 kg under, four Plates) to her 130 kg (4 kg over,
+three Plates). Both misses are
+`it.todo` in `lib/moves.test.ts`.
+
+Tests:
+- `lib/moves.test.ts` has her table, the stack and cost examples, and the timing test.
+- The "Station rule" properties in `lib/properties.test.ts` check the rule against
+  `stationRampOracle`. That oracle enumerates every legal Side of a small Inventory by
+  plain recursion and runs an unpruned DP over (Side, station) states. It never calls
+  sideloads.ts or the planner.

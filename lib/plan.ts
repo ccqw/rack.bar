@@ -138,6 +138,7 @@ function assertPlan(steps: readonly RampStep[], rig: RampRig, workingReps?: numb
     throw new RangeError(`planRamp: Working-set reps ${workingReps} is not a positive integer`);
   }
   let sawPct = false;
+  let lastPct = -Infinity;
   for (const step of steps) {
     if (!isReps(step.reps)) {
       throw new RangeError(`planRamp: reps ${step.reps} is not a positive integer`);
@@ -146,6 +147,12 @@ function assertPlan(steps: readonly RampStep[], rig: RampRig, workingReps?: numb
       if (!(step.pct > 0 && step.pct <= 100)) {
         throw new RangeError(`planRamp: ${step.pct}% is not in (0, 100]`);
       }
+      // Percentages never fall (ADR-0015): a falling step would force a lower set to
+      // repeat a heavier one, which no Ramp means (the editor saves them ascending).
+      if (step.pct < lastPct) {
+        throw new RangeError(`planRamp: ${step.pct}% comes after ${lastPct}%; percentages must not fall`);
+      }
+      lastPct = step.pct;
       sawPct = true;
     } else if (sawPct) {
       // A bare-Bar step after a warm-up would break the non-decreasing rule.
@@ -199,9 +206,10 @@ function nearestSide(
  *
  * Never returns fewer rows than `steps.length + 1`. A non-finite Working Target
  * degrades to the bare rig as Decode does. Throws a RangeError for a malformed
- * template (a percentage outside (0, 100], reps that are not a positive integer, a
- * bare-Bar step after a percentage step) or rig (a non-positive Bar, a negative
- * Collar), and -- from sideloads.ts -- for malformed Plates or Sleeve.
+ * template (a percentage outside (0, 100], a percentage below the one before it, reps
+ * that are not a positive integer, a bare-Bar step after a percentage step) or rig (a
+ * non-positive Bar, a negative Collar), and -- from sideloads.ts -- for malformed
+ * Plates or Sleeve.
  */
 export function planRamp(
   workingTarget: number,
