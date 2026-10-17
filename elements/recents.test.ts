@@ -451,6 +451,31 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     expect(faces(root)).toEqual(['80']);
   });
 
+  it('only the slot just removed fades in; the Undos already showing never re-blink', () => {
+    const { el, root } = owned([120, 100, 80]);
+    chips(root)[0].dispatchEvent(del()); // 120
+    chips(root)[0].dispatchEvent(del()); // 100
+    const fresh = () =>
+      [...root.querySelectorAll<HTMLElement>('[data-undo]')].map((u) => u.classList.contains('fresh'));
+    expect(fresh()).toEqual([false, true]);
+    el.target = 80; // a re-render (the console feeds the Target on every keystroke)
+    expect(fresh()).toEqual([false, true]);
+  });
+
+  it('a re-render mid-collapse never rebuilds the collapsing slots; the plain list follows', () => {
+    const { el, root } = owned([120, 100]);
+    chips(root)[0].dispatchEvent(del());
+    vi.advanceTimersByTime(UNDO_MS);
+    const collapsing = undoBtn(root)!;
+    expect(collapsing.classList.contains('collapsing')).toBe(true);
+    el.target = 100; // the console re-renders during the 200 ms
+    el.unit = 'lb';
+    expect(undoBtn(root)).toBe(collapsing); // same node: the transition keeps running
+    vi.advanceTimersByTime(COLLAPSE_MS);
+    expect(undoBtn(root)).toBeNull();
+    expect(chips(root)[0].classList.contains('selected')).toBe(true); // caught up
+  });
+
   it('the shared timer restarts on every removal; all slots collapse together after the last', () => {
     const { root } = owned([120, 100, 80]);
     chips(root)[0].dispatchEvent(del());

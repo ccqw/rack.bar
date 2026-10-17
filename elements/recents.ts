@@ -91,7 +91,11 @@ class RackRecents extends HTMLElement {
   // screen when the cleanup began, in order, each either live or removed (an Undo slot).
   // The live slots, in order, are always exactly `_targets` -- so a slot's list index is
   // the count of live slots before it. Null when nothing is pending.
-  private slots: { kg: number; removed: boolean; width: number }[] | null = null;
+  // `fresh` marks the slot removed last: only its Undo fades in, so a re-render (each
+  // removal renders, and so does every keystroke's Target feed) never re-blinks the
+  // Undos already showing.
+  private slots: { kg: number; removed: boolean; width: number; fresh: boolean }[] | null =
+    null;
   // The shared lapse timer (reset by every removal) and the collapse in flight.
   private undoTimer: ReturnType<typeof setTimeout> | undefined;
   private collapseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -229,8 +233,9 @@ class RackRecents extends HTMLElement {
           color: var(--rack-accent);
           border-color: color-mix(in srgb, var(--rack-accent) 55%, transparent);
           background: color-mix(in srgb, var(--rack-accent) 10%, transparent);
-          animation: rack-undo-in .16s ease;
         }
+        /* Only the slot just removed fades in (see slots.fresh). */
+        .undo.fresh .face { animation: rack-undo-in .16s ease; }
         @keyframes rack-undo-in { from { opacity: 0; } to { opacity: 1; } }
         /* The one moment chips move: every pending Undo slot collapses together once the
            lifter has stopped (width + fade, ease-out). The negative margin eats the rail
@@ -336,18 +341,23 @@ class RackRecents extends HTMLElement {
   // no Targets -> hide the whole element (no bare "Recent" label or empty rail). The face
   // is the bare number in the display Unit; the accessible name keeps "<n> <unit>".
   private renderChips(): void {
+    // Mid-collapse the slots are animating shut: a rebuild would restart them at width 0
+    // (a snap, the very jump the collapse exists to avoid). finishCollapse renders the
+    // plain list -- with any selection or new history that arrived -- within COLLAPSE_MS.
+    if (this.collapsing) return;
     this.hidden = this._targets.length === 0 && this.slots === null;
     // Preserve the horizontal scroll position across the re-render (as loaded.ts
     // does): replacing innerHTML resets scrollLeft to 0, which would yank a
     // nudged-along rail back to the newest end whenever the console re-renders.
     const scrollLeft = this.rail.scrollLeft;
-    const slots = this.slots ?? this._targets.map((kg) => ({ kg, removed: false, width: 0 }));
+    const slots =
+      this.slots ?? this._targets.map((kg) => ({ kg, removed: false, width: 0, fresh: false }));
     this.rail.innerHTML = slots
-      .map(({ kg, removed, width }, i) => {
+      .map(({ kg, removed, width, fresh }, i) => {
         if (removed) {
           const w = width > 0 ? ` style="width:${width}px"` : '';
           return `
-        <button type="button" class="undo${this.collapsing ? ' collapsing' : ''}"
+        <button type="button" class="undo${fresh ? ' fresh' : ''}"
                 role="listitem" data-undo data-slot="${i}"${w}
                 aria-label="Undo remove ${format(kg, this._unit)}"><span
                 class="face">Undo</span></button>`;
@@ -511,11 +521,13 @@ class RackRecents extends HTMLElement {
   private removeTarget(kg: number): void {
     if (this.collapsing) this.finishCollapse(); // a removal right as the slots collapse
     if (!this._targets.includes(kg)) return;
-    this.slots ??= this._targets.map((t) => ({ kg: t, removed: false, width: 0 }));
+    this.slots ??= this._targets.map((t) => ({ kg: t, removed: false, width: 0, fresh: false }));
+    for (const sl of this.slots) sl.fresh = false;
     const at = this.slots.findIndex((sl) => sl.kg === kg && !sl.removed);
     if (at < 0) return;
     const slot = this.slots[at];
     slot.removed = true;
+    slot.fresh = true;
     // The exact (sub-pixel) width: a rounded offsetWidth would nudge neighbours by 1px.
     slot.width = this.chipFor(kg)?.getBoundingClientRect().width ?? 0;
     clearTimeout(this.undoTimer);
@@ -534,6 +546,7 @@ class RackRecents extends HTMLElement {
     if (!slot || !slot.removed || this.collapsing) return;
     const index = this.liveIndex(at);
     slot.removed = false;
+    slot.fresh = false;
     if (!this.slots!.some((sl) => sl.removed)) this.clearPending();
     this.emit('recentrestore', slot.kg, index);
     this.renderChips();
@@ -556,7 +569,7 @@ class RackRecents extends HTMLElement {
   // Reduced motion skips straight to the end.
   private startCollapse(): void {
     if (this.slots === null || this.collapsing) {
-      if (this.rail && !this.collapsing) this.renderChips();
+      if (this.rail) this.renderChips(); // a no-op mid-collapse (see renderChips)
       return;
     }
     clearTimeout(this.undoTimer);
