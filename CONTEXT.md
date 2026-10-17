@@ -55,6 +55,16 @@ _Avoid_: shaft, loadable zone.
 The total Plate weight on one Side (not counting the Bar).
 _Avoid_: per-side weight (descriptive, not canonical).
 
+**Way**:
+One Side Load that makes a given Total. A Total usually has several: 140 kg on a
+20 kg Bar is 25 + 25 + 10, or 25 + 20 + 15, or 20 + 20 + 20 per Side. Decode loads
+the first way (fewest Plates, then heaviest-first, ADR-0003); the others are offered
+in that same order, at most five, all fitting the Sleeve and the Plate limits, never
+a different Total (RBAR-66). The UI says **"Another way"**; tapping the Bar steps to
+the next way.
+_Avoid_: alternate loadout, alternative (the round-up is ADR-0003's "alternative"),
+option, variant, permutation.
+
 **Target**:
 The total weight the lifter _wants_ on the Bar (Bar + all Plates).
 _Avoid_: goal, working weight.
@@ -154,6 +164,7 @@ _Avoid_: pile, stash, plate tree.
 - A **Bar** plus a symmetric **Side Load** on each **Side** produces a **Total**.
 - A **Side Load** is built from **Plates** drawn from the **Inventory**.
 - **Decode**: a **Target** maps to a **Side Load** (and the **Total** it achieves).
+  That Side Load is the first **Way** to that Total; the lifter may load another.
 - **Encode**: a tapped-on **Side Load** maps to its **Total**.
 - A **Ramp** is **Warm-up sets** then a **Working set**; each Warm-up set's Total is
   a percentage of the Working set's Total, rounded to a loadable one.

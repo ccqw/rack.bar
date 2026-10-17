@@ -123,3 +123,18 @@ reduction.
 This rule governs Decode and, through it, a Ramp's Working set, which is still the
 at-or-under solve. Warm-up sets are carved out: they round to the nearest loadable
 Total, ties down, between the previous row and the Working set. See ADR-0015.
+
+## 2026-10-17 -- the other ways to the same Total (RBAR-66, "Another way")
+
+The canonical pick (Sleeve fit, greatest Total, fewest Plates, heaviest-first) stays the
+default. The lifter may now load a different stack of the SAME Total: the ways are
+`sideLoads` for that Side sum in its own rank order, at most five (the canonical stack
+plus four), on the console's Inventory, so they honour the Sleeve (ADR-0012) and Plate
+limits (ADR-0016). `lib/ways.ts` `waysFor` lists them; the first is always Decode's own
+stack. A way never changes the Total, so this ADR's at-or-under rule and the round-up
+are untouched: the round-up (`over`) has ways of its own, cycled the same way.
+
+Which way is loaded is shell state, reset to the first on every re-solve (Target, Bar,
+Collar, Plate set, Round up, the Inventory) and kept across a kg|lb toggle that leaves
+the Total as it was. The loaded way is what the share card, Copy summary, fullscreen
+and share link carry; a link to another way reopens on that way.

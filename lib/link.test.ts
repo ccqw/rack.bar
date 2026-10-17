@@ -10,6 +10,8 @@ import { ELEIKO_KG, IRON_LB } from './plates.ts';
 import type { Plate } from './plates.ts';
 import { lbToKg, shownIn } from './units.ts';
 import { SHARE_LINK } from './summary.ts';
+import { decode } from './decode.ts';
+import { waysFor } from './ways.ts';
 
 const kg = (w: number): Plate => {
   const p = ELEIKO_KG.find((x) => x.kg === w);
@@ -394,5 +396,35 @@ describe('the Target reading `d` (RBAR-50 slice 3, ADR-0014 additive key)', () =
 
   it('a link without `d` still opens (older or hand-written links)', () => {
     expect(targetOf(parse(`${W}&u=lb&p=25&t=23.81`))).toBe(23.81);
+  });
+});
+
+describe('Another way loads round-trip (RBAR-66)', () => {
+  it('every way of a Total serializes to its own Plates and parses back to them', () => {
+    const ways = waysFor(decode(140, 20, ELEIKO_KG).primary.side, ELEIKO_KG);
+    expect(ways.length).toBeGreaterThan(1);
+    const links = ways.map((side) => {
+      const s: LinkState = {
+        set: 'comp', barKg: 20, collarKg: 0, unit: 'kg', mode: 'decode', side, targetKg: 140,
+      };
+      const x = serializeLink(s)!;
+      expect(parse(x)).toEqual(s);
+      return x;
+    });
+    // 25 + 20 + 15 travels as itself, not as the canonical 2x25,10.
+    expect(links[1]).toBe('v=1&s=comp&b=20kg&m=w&c=0&u=kg&p=25,20,15&t=140');
+    expect(new Set(links).size).toBe(links.length);
+  });
+
+  it('an iron way (the greedy stack RBAR-69 replaced) round-trips too', () => {
+    const bar = lbToKg(45);
+    const ways = waysFor(decode(lbToKg(165), bar, IRON_LB).primary.side, IRON_LB);
+    const greedy = ways.find((w) => w.map((p) => p.label).join(',') === '45,10,5');
+    expect(greedy).toEqual([lb('45'), lb('10'), lb('5')]);
+    const s: LinkState = {
+      set: 'training', barKg: bar, collarKg: 0, unit: 'lb', mode: 'decode', side: greedy!,
+      targetKg: Number(lbToKg(165).toFixed(2)),
+    };
+    expect(parse(serializeLink(s)!)).toEqual(s);
   });
 });

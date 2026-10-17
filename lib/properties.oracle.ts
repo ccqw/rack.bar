@@ -12,7 +12,7 @@
 // The property tests compare the real solver to THESE answers, so a loader change that
 // still passes the example tests but breaks a rule somewhere in the space fails here.
 import { SLEEVE_MM } from './plates.ts';
-import type { Plate } from './plates.ts';
+import type { InventoryEntry, Plate } from './plates.ts';
 import { PLATE_SETS, PLATE_SET_KEYS } from './platesets.ts';
 import type { PlateSetKey } from './platesets.ts';
 
@@ -455,4 +455,63 @@ export function storedPairsOracle(raw: string | null, set: PlateSetKey, face: st
   if (!obj(limits) || !Object.prototype.hasOwnProperty.call(limits, face)) return Infinity;
   const n = limits[face];
   return typeof n === 'number' && [0, 1, 2, 3, 4].includes(n) ? n : Infinity;
+}
+
+/**
+ * The first `limit` ways to load a Side sum (RBAR-66), by brute force from the rule
+ * alone (ADR-0003 as amended by RBAR-69, ADR-0012, ADR-0016) -- no call into the search
+ * under test. For each Plate count c, ascending, it lists every heaviest-first stack of
+ * c Plates (sizes heaviest first, equal masses narrower first) in lexicographic order,
+ * keeping those that reach `sideKg`, fit the Sleeve and hold no more of a size than its
+ * `maxPerSide`. The only pruning is arithmetic that cannot drop a qualifying stack: the
+ * slots left must be able to add exactly what is missing (no less than the lightest
+ * Plate each, no more than the one just placed, since the stack is heaviest-first) and
+ * must fit the Sleeve at the narrowest Plate; a count that cannot reach the sum with
+ * the heaviest Plate, must pass it with the lightest, or overflows the Sleeve at the
+ * narrowest is skipped.
+ */
+export function waysOracle(
+  inventory: readonly InventoryEntry[],
+  sideKg: number,
+  limit: number,
+  sleeveMm: number = SLEEVE_MM,
+): (readonly Plate[])[] {
+  const tol = 1e-6;
+  const sizes = inventory
+    .filter((p) => p.maxPerSide !== 0)
+    .sort((a, b) => b.kg - a.kg || a.widthMm - b.widthMm);
+  if (Math.abs(sideKg) <= tol) return limit > 0 ? [[]] : [];
+  if (sizes.length === 0 || sideKg < 0) return [];
+  const heaviest = sizes[0].kg;
+  const lightest = Math.min(...sizes.map((p) => p.kg));
+  const narrowest = Math.min(...sizes.map((p) => p.widthMm));
+  const out: (readonly Plate[])[] = [];
+  const stack: Plate[] = [];
+  const counts = new Map<Plate, number>();
+  function walk(from: number, slots: number, kg: number, mm: number): void {
+    if (out.length >= limit) return;
+    if (slots === 0) {
+      if (Math.abs(kg - sideKg) <= tol) out.push([...stack]);
+      return;
+    }
+    for (let j = from; j < sizes.length; j++) {
+      const p = sizes[j];
+      const rest = sideKg - kg - p.kg; // what the other slots - 1 Plates must add
+      if (rest < (slots - 1) * lightest - tol) continue; // too heavy to finish
+      if (rest > (slots - 1) * p.kg + tol) continue; // later Plates are no heavier
+      if (mm + p.widthMm + (slots - 1) * narrowest > sleeveMm + 1e-9) continue;
+      const n = counts.get(p) ?? 0;
+      if (n >= (p.maxPerSide ?? Infinity)) continue;
+      counts.set(p, n + 1);
+      stack.push(p);
+      walk(j, slots - 1, kg + p.kg, mm + p.widthMm);
+      stack.pop();
+      counts.set(p, n);
+    }
+  }
+  for (let c = 1; c * lightest <= sideKg + tol && c * narrowest <= sleeveMm && out.length < limit; c++) {
+    if (c * heaviest < sideKg - tol) continue;
+    walk(0, c, 0, 0);
+  }
+  return out;
 }

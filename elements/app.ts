@@ -4,6 +4,8 @@
 // <rack-setup> sheet, and wires the three together.
 //
 //   pill tap                -> open the Setup sheet
+//   console `opensetup`     -> open the Setup sheet too (Another way's "Set Plate
+//                              Inventory", RBAR-66)
 //   sheet `barchange`       -> adopt the Bar: persist it, push it to the console, relabel
 //                              the pill, reflect the active tile
 //   sheet `collarchange`    -> adopt the Collar: persist it, push it to the console,
@@ -29,6 +31,7 @@ import { persistedPrimaryUnit } from './console.ts';
 import type { LinkLoad } from './console.ts';
 import './setup.ts';
 import './help.ts';
+import { SLIDERS_GLYPH } from './sliders.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { BOX_SIZING } from './boxsizing.ts';
@@ -199,16 +202,7 @@ class RackApp extends HTMLElement {
         <button type="button" class="pill" data-setup-pill
                 aria-haspopup="dialog" aria-expanded="false">
           <svg class="sliders" data-pill-icon width="13" height="13" viewBox="0 0 16 16"
-               fill="none" aria-hidden="true">
-            <line x1="2.5" y1="5" x2="13.5" y2="5" stroke="var(--rack-accent)"
-                  stroke-width="1.6" stroke-linecap="round"></line>
-            <line x1="2.5" y1="11" x2="13.5" y2="11" stroke="var(--rack-accent)"
-                  stroke-width="1.6" stroke-linecap="round"></line>
-            <circle cx="10" cy="5" r="2.3" fill="var(--rack-raised)"
-                    stroke="var(--rack-accent)" stroke-width="1.6"></circle>
-            <circle cx="6" cy="11" r="2.3" fill="var(--rack-raised)"
-                    stroke="var(--rack-accent)" stroke-width="1.6"></circle>
-          </svg>
+               fill="none" aria-hidden="true">${SLIDERS_GLYPH}</svg>
           <span data-pill-label></span>
           <svg class="chev" width="11" height="11" viewBox="0 0 16 16" fill="none"
                aria-hidden="true">
@@ -241,9 +235,12 @@ class RackApp extends HTMLElement {
     this.setup.plateSet = this.plateSetKey;
     this.relabel();
 
-    this.pill.addEventListener('click', () => {
-      this.setup.open();
-      this.pill.setAttribute('aria-expanded', 'true');
+    this.pill.addEventListener('click', () => this.openSetup());
+    // The Another way sheet's "Set Plate Inventory" door (RBAR-66) opens the same sheet.
+    // Focus follows into Setup (its Done), since the sheet it came from has closed.
+    this.console.addEventListener('opensetup', () => {
+      this.openSetup();
+      this.setup.shadowRoot?.querySelector<HTMLButtonElement>('[data-done]')?.focus();
     });
     this.setup.addEventListener('barchange', (e) =>
       this.adopt((e as CustomEvent<{ barKg: number }>).detail.barKg),
@@ -275,6 +272,12 @@ class RackApp extends HTMLElement {
     // before applying, so a throw in the boot-time apply cannot also cost the listener.
     window.addEventListener('hashchange', this.onHashChange);
     if (link) this.applyLink(link);
+  }
+
+  // Open the Setup sheet, from the header pill or another door into it (RBAR-66).
+  private openSetup(): void {
+    this.setup.open();
+    this.pill.setAttribute('aria-expanded', 'true');
   }
 
   disconnectedCallback(): void {

@@ -1,7 +1,7 @@
 // The exact Side Loads for an Inventory under a Sleeve (RBAR-69; ADR-0003 as amended
 // 2026-10-16, ADR-0012): which Plates go on one Side. Decode's primary and round-up use
-// it today; RBAR-66's alternate loadouts ("Another way") and RBAR-65's ramps are meant
-// to call the same functions, so every loadout the app shows is ranked by one rule:
+// it; RBAR-66's ways ("Another way", lib/ways.ts) and RBAR-65's ramps call the same
+// functions, so every loadout the app shows is ranked by one rule:
 //
 //   1. a stack must fit the Sleeve (ADR-0012) -- a hard filter, never a ranking key;
 //   2. the Side sum comes first: the greatest one at or under the budget (ADR-0003);
@@ -118,7 +118,7 @@ export function plateGridKg(all: readonly InventoryEntry[]): number {
 /**
  * Every distinct Side Load that reaches exactly `sideKg` and fits `sleeveMm`, lazily,
  * in rank order (fewest Plates, then heaviest-first). The first is the canonical Side
- * Load; RBAR-66 takes the first few. Each stack is heaviest-first, a fresh array, and
+ * Load; RBAR-66's waysFor (lib/ways.ts) takes the first few. Each stack is heaviest-first, a fresh array, and
  * holds the Inventory's own Plate objects. A zero sum yields one empty stack (the bare
  * Bar); nothing is yielded when no stack reaches the sum (off-grid, negative, heavier
  * than the Sleeve or the Plate limits can carry, or an empty Inventory). No stack holds

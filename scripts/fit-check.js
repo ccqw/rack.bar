@@ -68,14 +68,28 @@ async (shared) => {
       // top (0 = the whole sheet shows) and how far its Bar row scrolls sideways (the
       // custom Bars scroll inside the row, never the page).
       const setup = document.querySelector('rack-app').shadowRoot.querySelector('rack-setup');
-      const panel = setup.hidden ? null : setup.shadowRoot.querySelector('[data-panel]');
       const row = setup.shadowRoot.querySelector('[data-bar-tiles]');
+      // The Another way sheet (RBAR-66) is measured the same way when it is the open one;
+      // it scrolls inside itself, so `inner` is how far its own list would scroll.
+      const ways = con.querySelector('rack-ways');
+      const open = !setup.hidden ? setup : !ways.hidden ? ways : null;
+      const panel = open ? open.shadowRoot.querySelector('[data-panel]') : null;
+      // The round-up row (RBAR-66 adds Another way beside the round-up): its shown items
+      // plus gaps must fit its width on one line, or the row would wrap or clip.
+      const ru = con.querySelector('[data-roundup-row]');
+      const items = [...ru.children].filter((k) => k.getClientRects().length > 0);
+      const itemsW = items.reduce((s, k) => s + k.getBoundingClientRect().width, 0);
+      const gap = parseFloat(getComputedStyle(ru).columnGap) || 0;
+      const ruOver = items.length
+        ? Math.max(0, Math.ceil(itemsW + gap * (items.length - 1) - ru.clientWidth))
+        : 0;
       return {
+        ruOver,
         iconsMissing,
         iconsHit,
         sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
         sheetH: panel ? Math.round(panel.getBoundingClientRect().height) : 0,
-        rowScroll: panel ? row.scrollWidth - row.clientWidth : 0,
+        rowScroll: open === setup ? row.scrollWidth - row.clientWidth : 0,
         sheetScroll: panel ? panel.scrollHeight - panel.clientHeight : 0,
         scrollH: d.scrollHeight,
         innerH: window.innerHeight,
@@ -122,8 +136,19 @@ async (shared) => {
         await record('weight: recents, no Target');
         await chip(142);
         await record('weight: recents + loaded');
+        // Another way (RBAR-66): a bar tap puts "Another way 2/5" in the round-up row.
+        const tapBar = () => inConsole(`con.querySelector('rack-sleeve').click()`);
+        await tapBar();
+        await record('weight: another way 2/5');
         await chip(100.3);
         await record('weight: round-up offered');
+        await tapBar();
+        await record('weight: round-up + another way 2/5');
+        await inConsole(`con.querySelector('[data-another]').click()`);
+        await record('weight: another way sheet');
+        await inConsole(
+          `con.querySelector('rack-ways').shadowRoot.querySelector('[data-done]').click()`,
+        );
         await chip(1000);
         await record('weight: at capacity');
         await inConsole(`con.querySelector('[data-mode="encode"]').click()`);
@@ -213,8 +238,10 @@ async (shared) => {
         iconsHit: r.iconsHit && (prev?.iconsHit ?? true),
         iconsMissing: r.iconsMissing || (prev?.iconsMissing ?? false),
         sheetScroll: Math.max(r.sheetScroll, prev?.sheetScroll ?? 0),
+        ruOver: Math.max(r.ruOver, prev?.ruOver ?? 0),
       });
     } else {
+      prev.ruOver = Math.max(prev.ruOver, r.ruOver);
       if (!r.iconsHit) prev.iconsHit = false;
       if (r.iconsMissing) prev.iconsMissing = true;
       prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
@@ -225,6 +252,7 @@ async (shared) => {
       `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
       `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
       `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}` +
+      `${r.ruOver ? ` ROUND-UP ROW OVER ${r.ruOver}px` : ''}` +
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
