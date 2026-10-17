@@ -48,6 +48,7 @@ import { plateFace, withLimits } from './plates.ts';
 import type { InventoryEntry } from './plates.ts';
 import { cappedFewestOracle, greatestSumAtOrUnder } from './fewest.oracle.ts';
 import { sideLoads } from './sideloads.ts';
+import { MAX_WAYS, waysFor } from './ways.ts';
 import {
   RIGS,
   achievableTotals,
@@ -62,6 +63,7 @@ import {
   oracleCaps,
   legalSides,
   storedPairsOracle,
+  waysOracle,
 } from './properties.oracle.ts';
 import type { StationRule } from './properties.oracle.ts';
 import {
@@ -1989,5 +1991,82 @@ describe('Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', () => {
       expect(inventoryOnHand(none, set)).toBe(PLATE_SETS[set].inventory);
       expect(inventoryOnHand(parsePlatesOnHand(null), set)).toBe(PLATE_SETS[set].inventory);
     }
+  });
+});
+
+describe('Another way properties (RBAR-66, ADR-0003, ADR-0012, ADR-0016)', () => {
+  // A Decode answer to list the ways of: a Target on a rig, solved as read in a unit
+  // (decodeWithin, as the console does), optionally with Plate limits, and either the
+  // at-or-under primary or the round-up. Targets stay where the brute-force oracle is
+  // quick (a Side up to ~80 kg); the ranking is the same everywhere (RBAR-69).
+  const capArb = fc.oneof(fc.integer({ min: 0, max: 3 }), fc.constant(Infinity));
+  const caseArb = rigArb.chain((rig) =>
+    fc.record({
+      rig: fc.constant(rig),
+      u: unitArb,
+      t: fc.integer({ min: 0, max: Math.round((rig.baselineKg + 160) * 100) }).map((c) => c / 100),
+      caps: fc.option(
+        fc.array(capArb, { minLength: rig.inventory.length, maxLength: rig.inventory.length }),
+      ),
+      useOver: fc.boolean(),
+    }),
+  );
+  interface WayCase {
+    rig: Rig;
+    u: Unit;
+    t: number;
+    caps: number[] | null;
+    useOver: boolean;
+  }
+  const solveCase = ({ rig, u, t, caps, useOver }: WayCase) => {
+    const inv: readonly InventoryEntry[] = caps
+      ? withLimits(rig.inventory, Object.fromEntries(rig.inventory.map((p, i) => [plateFace(p), caps[i]])))
+      : rig.inventory;
+    const d = decodeWithin(t, displayCeilingKg(t, u), rig.baselineKg, inv);
+    const loaded = useOver && d.over ? d.over : d.primary;
+    return { inv, loaded, ways: waysFor(loaded.side, inv) };
+  };
+
+  it('every way reaches the same Total as the Decode answer, fits the Sleeve, and holds Inventory Plates heaviest-first within their limits (RBAR-66, ADR-0003, ADR-0012, ADR-0016)', () => {
+    fc.assert(
+      fc.property(caseArb, (c) => {
+        const { inv, loaded, ways } = solveCase(c);
+        for (const w of ways) {
+          expect(totalKg(w, c.rig.baselineKg)).toBeCloseTo(loaded.total, 9);
+          expect(sideWidthMm(w)).toBeLessThanOrEqual(SLEEVE_MM);
+          expect(isHeaviestFirst(w)).toBe(true);
+          for (const p of w) {
+            expect(inv).toContain(p);
+            const cap = (p as InventoryEntry).maxPerSide ?? Infinity;
+            expect(w.filter((q) => q === p).length).toBeLessThanOrEqual(cap);
+          }
+        }
+      }),
+      opts,
+    );
+  });
+
+  it("the ways are distinct, at most MAX_WAYS, and the first is Decode's own stack, round-up included (RBAR-66, ADR-0003)", () => {
+    fc.assert(
+      fc.property(caseArb, (c) => {
+        const { loaded, ways } = solveCase(c);
+        expect(ways.length).toBeGreaterThanOrEqual(1);
+        expect(ways.length).toBeLessThanOrEqual(MAX_WAYS);
+        expect(ways[0]).toEqual(loaded.side);
+        const keys = ways.map((w) => w.map(plateFace).join(','));
+        expect(new Set(keys).size).toBe(ways.length);
+      }),
+      opts,
+    );
+  });
+
+  it("the ways are exactly the oracle's first five stacks: fewest Plates, then heaviest-first (RBAR-66, ADR-0003 as amended by RBAR-69, ADR-0016)", () => {
+    fc.assert(
+      fc.property(caseArb, (c) => {
+        const { inv, loaded, ways } = solveCase(c);
+        expect(ways).toEqual(waysOracle(inv, sideLoadKg(loaded.side), MAX_WAYS));
+      }),
+      { seed: SEED, numRuns: 150 },
+    );
   });
 });
