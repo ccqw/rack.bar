@@ -58,6 +58,31 @@ const CHECK_ICON = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"
     aria-hidden="true"><path d="M1.5 5.5L4 8l4.5-6" stroke="currentColor"
     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+// Keydown origins the physical-keyboard handler defers to (RBAR-49): a text field owns
+// every key typed into it; an activatable control outside the entry owns its Enter.
+const TEXT_FIELD = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+const ACTIVATABLE = 'button, a[href], summary';
+
+// True while an aria-modal dialog is showing anywhere in the composed tree (RBAR-49). The
+// app's modals (Share, Fullscreen, Setup) close by hiding their host element, so a dialog
+// counts as showing when neither it nor any ancestor, across shadow boundaries, is hidden.
+function modalOpen(root: Document | ShadowRoot): boolean {
+  for (const el of root.querySelectorAll<HTMLElement>('*')) {
+    if (el.matches('[aria-modal="true"]') && !hiddenUp(el)) return true;
+    if (el.shadowRoot && modalOpen(el.shadowRoot)) return true;
+  }
+  return false;
+}
+
+function hiddenUp(el: Element): boolean {
+  for (let n: Element | null = el; n; ) {
+    if ((n as HTMLElement).hidden) return true;
+    const root = n.getRootNode();
+    n = n.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+  }
+  return false;
+}
+
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private valueEl!: HTMLButtonElement;
@@ -462,6 +487,63 @@ class RackEntry extends HTMLElement {
     this.renderValue();
   }
 
+  // Drop the physical-keyboard listener if the element leaves the DOM with the sheet open
+  // (RBAR-49): a reconnect rebuilds the markup with the sheet closed, so nothing re-adds it.
+  disconnectedCallback(): void {
+    document.removeEventListener('keydown', this.onKeydown);
+  }
+
+  // Physical keyboard input (RBAR-49): while the sheet is open, keys drive the SAME
+  // press()/step()/closeKeypad() paths as taps (ArrowUp/ArrowDown are the +/- steppers),
+  // so they inherit every tap semantic (replace-on-open, pristine del-discard, the RBAR-38
+  // re-pristine and grid snap, the commit-on-close contract).
+  // Listening only while open (added in openKeypad, removed in closeKeypad) means a closed
+  // sheet never swallows a key. A Cmd/Ctrl/Alt-held key is a browser shortcut and passes
+  // through untouched; so does any key typed into a text field elsewhere. Enter and Escape
+  // are both Done (there is no cancel: every keystroke already emitted). A mapped key is
+  // claimed with preventDefault, which also cancels a focused on-screen key's native Enter
+  // activation -- otherwise Enter would close the pad AND re-press the focused key (or
+  // re-toggle the value button open). Space is not mapped, so a focused key keeps its own
+  // Space activation and enters exactly once. This holds for EVERY control inside the
+  // entry (keys, value, steppers, Clear): a mouse tap leaves focus on it in Chrome, so
+  // Enter must mean Done there too, not a repeat of the last tap; a keyboard user still
+  // activates a focused control with Space. Enter on a focused control OUTSIDE this
+  // element is left to that control.
+  private onKeydown = (e: KeyboardEvent): void => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+    // The console hides the whole entry in By Plates (Encode) without closing the sheet,
+    // so a pad left open across a mode switch must not take keys it cannot show. (Only
+    // the host's own flag: that is how the console hides it.) Likewise, the pad has no
+    // scrim, so Share / Fullscreen / Setup can open OVER it -- content behind an
+    // aria-modal dialog is inert, so keys must not edit or commit the Target back there.
+    if (this.hidden || modalOpen(document)) return;
+    const origin = e.composedPath()[0];
+    if (origin instanceof Element && origin.matches(TEXT_FIELD)) return;
+    const k = e.key;
+    if (k === 'Enter' || k === 'Escape') {
+      const foreign =
+        origin instanceof Element && !this.root.contains(origin) && origin.matches(ACTIVATABLE);
+      if (k === 'Enter' && foreign) return;
+      e.preventDefault();
+      this.closeKeypad();
+    } else if (k === 'Backspace') {
+      e.preventDefault();
+      this.press('del');
+    } else if ((k === 'ArrowUp' || k === 'ArrowDown') && !e.shiftKey) {
+      // A stepper nudge, exactly as a +/- tap (grid snap, RBAR-38); claimed so the page
+      // does not scroll. Shift+Arrow passes through: there is no big-step variant.
+      e.preventDefault();
+      this.step(k === 'ArrowUp' ? 1 : -1);
+    } else if (k === '.' || k === ',') {
+      // Comma is the decimal on comma-locale keyboards and numpads: the same decimal key.
+      e.preventDefault();
+      this.press('.');
+    } else if (/^[0-9]$/.test(k)) {
+      e.preventDefault();
+      this.press(k);
+    }
+  };
+
   /** Open the keypad sheet if closed. The console's Total-tap affordance (RBAR-57):
    * an edit entry point, not a toggle, so an already-open sheet stays open. */
   open(): void {
@@ -478,6 +560,7 @@ class RackEntry extends HTMLElement {
     // the pad on an existing Target and typing starts fresh (does NOT touch `pristine`, so
     // a real value peeked and closed still commits).
     this.replaceNext = true;
+    document.addEventListener('keydown', this.onKeydown);
     this.dispatchEvent(new CustomEvent('keypadopen', { bubbles: true, composed: true }));
   }
 
@@ -489,6 +572,7 @@ class RackEntry extends HTMLElement {
     if (this.sheet.hidden) return;
     this.sheet.hidden = true;
     this.valueEl.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', this.onKeydown);
     this.emitKeypadClose();
   }
 
