@@ -195,3 +195,156 @@ export function rampTotalsOracle(
   out.push(working);
   return out;
 }
+
+// ---------------------------------------------------------------------------------
+// Fewest Plate moves (ADR-0015 as amended 2026-10-17, RBAR-65 slice 4). Brute force,
+// for SMALL Inventories only: every Side is enumerated by plain recursion (never via
+// sideloads.ts), and every combination of row choices is tried.
+
+/** The rule's parameters, passed in so the oracle states them rather than importing logic. */
+export interface MovesRule {
+  /** Tolerance as a share of the Working Total (floored at one Plate-grid step). */
+  readonly toleranceShare: number;
+  /** A candidate Side may carry this many Plates past the fewest for its Total. */
+  readonly extraPlates: number;
+  /** Plates at or under this kg are change Plates... */
+  readonly changeMaxKg: number;
+  /** ...and each of their moves costs this (others cost 1). */
+  readonly changeCost: number;
+}
+
+/** A Ramp's cost, compared lexicographically: [excess, moves, miss, Plates]. */
+export type MovesCost = readonly [number, number, number, number];
+
+/**
+ * Every Side of `inventory` within `sleeveMm`, inside -> outside: heaviest inside,
+ * equal masses narrower-first (the physical stack order the rule assumes), built from
+ * the Inventory's own Plate objects.
+ */
+export function allSides(inventory: readonly Plate[], sleeveMm: number = SLEEVE_MM): (readonly Plate[])[] {
+  const plates = [...inventory].sort((a, b) => b.kg - a.kg || a.widthMm - b.widthMm);
+  const out: (readonly Plate[])[] = [];
+  const stack: Plate[] = [];
+  const walk = (from: number, mm: number) => {
+    out.push([...stack]);
+    for (let j = from; j < plates.length; j++) {
+      if (mm + plates[j].widthMm > sleeveMm + 1e-9) continue;
+      stack.push(plates[j]);
+      walk(j, mm + plates[j].widthMm);
+      stack.pop();
+    }
+  };
+  walk(0, 0);
+  return out;
+}
+
+const sumKg = (side: readonly Plate[]) => side.reduce((s, p) => s + p.kg, 0);
+
+/** The weighted Plate moves from Side `a` to Side `b` under `rule`. */
+export function oracleMoves(a: readonly Plate[], b: readonly Plate[], rule: MovesRule): number {
+  let k = 0;
+  while (k < a.length && k < b.length && a[k] === b[k]) k++;
+  const w = (p: Plate) => (p.kg <= rule.changeMaxKg + 1e-9 ? rule.changeCost : 1);
+  return [...a.slice(k), ...b.slice(k)].reduce((c, p) => c + w(p), 0);
+}
+
+/**
+ * The cost of a given Ramp (one Side per row, bare-Bar rows empty) under `rule`: excess
+ * and miss over the percentage rows, moves from the bare Bar through every row, and
+ * the Plates loaded. `raws[i]` is row i's raw target (null for bare-Bar and Working).
+ */
+export function oracleRampCost(
+  sides: readonly (readonly Plate[])[],
+  totals: readonly number[],
+  raws: readonly (number | null)[],
+  tol: number,
+  rule: MovesRule,
+): MovesCost {
+  let excess = 0, moves = 0, miss = 0, plates = 0;
+  let prev: readonly Plate[] = [];
+  sides.forEach((side, i) => {
+    const raw = raws[i];
+    if (raw !== null) {
+      const d = Math.abs(totals[i] - raw);
+      miss += d;
+      excess += Math.max(0, d - tol);
+    }
+    moves += oracleMoves(prev, side, rule);
+    plates += side.length;
+    prev = side;
+  });
+  return [excess, moves, miss, plates];
+}
+
+function lessCost(a: MovesCost, b: MovesCost): boolean {
+  for (let i = 0; i < 4; i++) {
+    if (a[i] < b[i] - 1e-9) return true;
+    if (a[i] > b[i] + 1e-9) return false;
+  }
+  return false;
+}
+
+/**
+ * The least cost any Ramp can reach on `rig` for these steps (ADR-0015 as amended):
+ *   - bare-Bar rows are the empty Side at the Bar;
+ *   - the Working row is any Side reaching exactly the Working Total (the at-or-under
+ *     Total as read, from rampTotalsOracle) with at most `extraPlates` past the fewest;
+ *   - a percentage row is any such Side whose Total is within the tolerance of its raw
+ *     target (pct x Working Total), at or above the bare rig and at or under the
+ *     Working Total -- or reaches its nearest Total from rampTotalsOracle;
+ *   - Totals never decrease down the Ramp.
+ * Returns the least [excess, moves, miss, Plates] over every such Ramp, and the
+ * tolerance used.
+ */
+export function easyRampOracle(
+  rig: Rig,
+  workingTarget: number,
+  ceiling: number,
+  steps: readonly OracleStep[],
+  rule: MovesRule,
+): { readonly best: MovesCost; readonly tol: number } {
+  const nearest = rampTotalsOracle(rig, workingTarget, ceiling, steps);
+  const working = nearest[nearest.length - 1];
+  const grid = Math.min(...rig.inventory.map((p) => p.kg));
+  const tol = Math.max(rule.toleranceShare * working, grid);
+  const sides = allSides(rig.inventory);
+  // Candidates for a Total: every Side reaching it, at most extraPlates past the fewest.
+  const sidesAt = (total: number): (readonly Plate[])[] => {
+    const hits = sides.filter((s) => Math.abs(rig.baselineKg + 2 * sumKg(s) - total) < 1e-6);
+    if (hits.length === 0) return [];
+    const fewest = Math.min(...hits.map((s) => s.length));
+    return hits.filter((s) => s.length <= fewest + rule.extraPlates);
+  };
+  const totals = achievableTotals(rig);
+  const raws: (number | null)[] = steps.map((s) => (s.kind === 'pct' ? (working * s.pct) / 100 : null));
+  raws.push(null);
+  const rows: { side: readonly Plate[]; total: number }[][] = raws.map((raw, i) => {
+    if (i < steps.length && steps[i].kind === 'bar') return [{ side: [], total: rig.barKg }];
+    const want = new Set<number>([nearest[i]]);
+    if (raw !== null) {
+      for (const t of totals) {
+        if (t >= rig.baselineKg - TOL && t <= working + TOL && Math.abs(t - raw) <= tol + TOL) want.add(t);
+      }
+    }
+    return [...want].flatMap((t) => sidesAt(t).map((side) => ({ side, total: t })));
+  });
+
+  let best: MovesCost = [Infinity, Infinity, Infinity, Infinity];
+  const pickSides: (readonly Plate[])[] = [];
+  const pickTotals: number[] = [];
+  const walk = (i: number) => {
+    if (i === rows.length) {
+      const c = oracleRampCost(pickSides, pickTotals, raws, tol, rule);
+      if (lessCost(c, best)) best = c;
+      return;
+    }
+    for (const cand of rows[i]) {
+      if (i > 0 && cand.total < pickTotals[i - 1] - TOL) continue;
+      pickSides[i] = cand.side;
+      pickTotals[i] = cand.total;
+      walk(i + 1);
+    }
+  };
+  walk(0);
+  return { best, tol };
+}
