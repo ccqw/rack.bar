@@ -60,3 +60,9 @@ collar reaches it only as part of the effective-Bar number.
 
 This is the second `rackbar.*` config key (after `rackbar.barKg`), exactly the
 per-concern, shell-side persistence ADR-0007 generalized.
+
+## 2026-10-16 -- the loader is no longer greedy (RBAR-69)
+
+"The greedy loader is untouched" still holds in spirit: a Collar is only part of the
+baseline, and the loader (now the exact search of the ADR-0003 amendment of this
+date) never sees it.

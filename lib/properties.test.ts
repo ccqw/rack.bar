@@ -37,6 +37,7 @@ import {
   maxTotal,
 } from './properties.oracle.ts';
 import type { Rig } from './properties.oracle.ts';
+import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -115,8 +116,7 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
         const fewest = fewestPlatesFor(rig, total);
         if (primary.side.length !== fewest) {
           const plates = primary.side.map((p) => p.label ?? String(p.kg)).join('+');
-          const by = fewest !== null && primary.side.length === fewest + 1 ? ' (one over)' : '';
-          misses.push(`${rig.name}: ${total.toFixed(2)} kg -> ${plates} (fewest is ${fewest})${by}`);
+          misses.push(`${rig.name}: ${total.toFixed(2)} kg -> ${plates} (fewest is ${fewest})`);
         }
       }
     }
@@ -127,30 +127,27 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
     expect(fewestPlateMisses(RIGS.filter((r) => r.set === 'comp'))).toEqual([]);
   });
 
-  // KNOWN GAP, filed as RBAR-69 (not fixed here: it changes visible output). The iron
-  // ladder {45,35,25,10,5,2.5} lb is canonical for "greatest at or under" (ADR-0010's DP
-  // check) but NOT for fewest Plates, so the heaviest-first greedy loads one Plate too
-  // many on 14 of the 143 Totals of every Training rig. Smallest counterexample, the
-  // default 45 lb Bar: 165 lb -> greedy 45 + 10 + 5 per Side (3 Plates), while 35 + 25
-  // (2 Plates) reaches the same Total; likewise 255 lb -> 45+45+10+5 vs 45+35+25.
-  // Which rule wins for iron (fewest Plates, or "45s first" gym habit) is a product
-  // call, so the property stays pinned as an expected failure until it is decided.
-  // When the loader is fixed this starts passing and `it.fails` flags it -- flip it.
-  it.fails('loads the fewest Plates for every Training Total (ADR-0003; KNOWN GAP RBAR-69)', () => {
+  // Fixed by RBAR-69: the iron ladder {45,35,25,10,5,2.5} lb is not canonical for
+  // fewest Plates (165 lb on the 45 lb Bar is 35 + 25 per Side, greedy loaded
+  // 45 + 10 + 5), so the fill is an exact search now. lib/fewest.test.ts also pins the
+  // exact Plates and order against an independent DP.
+  it('loads the fewest Plates for every Training Total (ADR-0003 as amended by RBAR-69; exhaustive)', () => {
     expect(fewestPlateMisses(RIGS.filter((r) => r.set === 'training'))).toEqual([]);
   });
 
-  // `it.fails` passes on ANY throw, so on its own it would stay green if the gap grew
-  // or the helper broke. This pins the gap's exact size and shape in both directions:
-  // 14 Totals per Training rig, each exactly one Plate over, the 165 lb case among
-  // them. When RBAR-69 lands, delete this and flip the it.fails above to `it`.
-  it('pins the RBAR-69 gap exactly: 14 Totals per Training rig, one extra Plate each (ADR-0003)', () => {
-    const training = RIGS.filter((r) => r.set === 'training');
-    const misses = fewestPlateMisses(training);
-    expect(misses).toHaveLength(14 * training.length);
-    for (const m of misses) expect(m).toMatch(/\(one over\)$/);
-    expect(misses).toContain(
-      'training bar 20.412 kg collar 0: 74.84 kg -> 45+10+5 (fewest is 2) (one over)',
+  // The full rule, not just the count: for ANY Target (on the grid, between it, past the
+  // Sleeve), primary and round-up are the exact stack an independent DP picks -- fewest
+  // Plates, then heaviest-first (lib/fewest.oracle.ts).
+  it('loads the canonical stack for any Target: fewest Plates, then heaviest-first, round-up included (ADR-0003 as amended by RBAR-69)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, ({ rig, t }) => {
+        const o = fewestOracle(rig.inventory, GRID_KG[rig.set]);
+        const { primary, over } = decode(t, rig.baselineKg, rig.inventory);
+        const unitsOf = (total: number) => Math.round((total - rig.baselineKg) / 2 / o.gridKg);
+        expect(primary.side).toEqual(o.pick(unitsOf(primary.total)));
+        if (over) expect(over.side).toEqual(o.pick(unitsOf(over.total)));
+      }),
+      opts,
     );
   });
 
@@ -452,7 +449,7 @@ describe('Encode properties (ADR-0005, ADR-0012)', () => {
     );
   });
 
-  it('Encode reads Bar + 2 x Collar + 2 x Side Load, and Decode of that Total reaches it (with no more Plates on Competition) (ADR-0005, ADR-0008, ADR-0003)', () => {
+  it('Encode reads Bar + 2 x Collar + 2 x Side Load, and Decode of that Total reaches it with no more Plates (ADR-0005, ADR-0008, ADR-0003)', () => {
     fc.assert(
       fc.property(rigTapsArb, ({ rig, taps }) => {
         let side: readonly Plate[] = [];
@@ -461,10 +458,9 @@ describe('Encode properties (ADR-0005, ADR-0012)', () => {
         expect(t).toBeCloseTo(rig.barKg + 2 * rig.collarKg + 2 * sideLoadKg(side), 9);
         const { primary } = decode(t, rig.baselineKg, rig.inventory);
         expect(primary.total).toBeCloseTo(t, 9);
-        // Fewest Plates is only guaranteed on Competition today -- the Training gap is
-        // pinned by the RBAR-69 it.fails above (a hand-built 35+35+35 beats Decode's
-        // 45+45+10+5).
-        if (rig.set === 'comp') expect(primary.side.length).toBeLessThanOrEqual(side.length);
+        // On every set since RBAR-69 (a hand-built 35+35+35 used to beat Decode's
+        // 45+45+10+5 on iron).
+        expect(primary.side.length).toBeLessThanOrEqual(side.length);
       }),
       opts,
     );

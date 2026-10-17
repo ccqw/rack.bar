@@ -5,22 +5,15 @@
 // the fewest Plates loaded biggest-first. ADR-0012: "achievable" includes fitting
 // the Bar's sleeve -- the fill never proposes a Side Load wider than `sleeveMm`.
 //
-// A naive greedy heaviest-first pass is both minimal-Plate AND greatest-at-or-under
-// for the standard Eleiko set, because it is a canonical coin system
-// (25,20,15,10,5 = 5x{5,4,3,2,1}; the change Plates mirror that at 0.5x) -- so no
-// search is needed for the UNCAPPED problem. The sleeve cap breaks that optimality
-// in a narrow extreme band, where a bounded exact search takes over (see fillSide/
-// searchFill and ADR-0012). A future non-canonical Inventory (finite home-gym
-// counts) would revisit the loader -- out of scope here (RBAR-6).
-import {
-  ELEIKO_KG,
-  DEFAULT_BAR_KG,
-  SLEEVE_MM,
-  plateFitsMm,
-  totalKg,
-  sideLoadKg,
-} from './plates.ts';
+// Which Plates make up a Side is the exact search in sideloads.ts (RBAR-69, the
+// ADR-0003 amendment of 2026-10-16): fewest Plates, ties broken heaviest-first, within
+// the Sleeve, for any Inventory. Until RBAR-69 this was a heaviest-first greedy pass,
+// which is fewest-Plate on the Eleiko set but not on the iron one (a 60 lb Side is
+// 35 + 25, not greedy's 45 + 10 + 5); the search returns greedy's exact answer
+// wherever greedy was already fewest-Plate.
+import { ELEIKO_KG, DEFAULT_BAR_KG, SLEEVE_MM, totalKg } from './plates.ts';
 import type { Plate } from './plates.ts';
+import { sideAtOrUnder, sideAbove } from './sideloads.ts';
 
 // Our denominations are exact binary fractions, but keep a hair of tolerance so a
 // future fractional Plate can't be defeated by floating-point drift.
@@ -29,9 +22,8 @@ const EPS = 1e-9;
 /** One way to load the Bar: the Side Load, the Total it reaches, and the miss. */
 export interface Loadout {
   /**
-   * The Plates on one Side, heaviest-first. The fewest that reach `total` for a
-   * canonical Inventory like the default Eleiko set (see the greedy note on
-   * `decode`); a non-canonical custom Inventory may not be minimal.
+   * The Plates on one Side, heaviest-first: the fewest that reach `total` within the
+   * Sleeve, and among equally few the heaviest-first stack (sideloads.ts sideLoads).
    */
   readonly side: readonly Plate[];
   /** The Total actually on the Bar = Bar + 2 x Side Load (CONTEXT.md). */
@@ -58,9 +50,10 @@ export interface Decoded {
    * The opt-in over-target alternative (ADR-0003): the least achievable Total
    * *strictly above* the solve ceiling, fewest Plates, with a positive `delta`.
    * Present only when `primary` lands strictly under the ceiling and a PHYSICAL
-   * round-up exists -- the refill steps up under the same sleeve cap until a load
-   * exceeds the ceiling (ADR-0012; more than one step in the sleeve-bound band,
-   * RBAR-62), so a sleeve-full shortfall carries no over. Absent for a primary exactly on the ceiling (an exact `decode`), a sub-Bar
+   * round-up exists -- the least Side sum above the budget that some stack loads
+   * within the Sleeve (sideloads.ts sideAbove; in the sleeve-bound band that can be
+   * several grid steps up, RBAR-62), so a sleeve-full shortfall carries no over.
+   * Absent for a primary exactly on the ceiling (an exact `decode`), a sub-Bar
    * Target, an empty Inventory, and -- via the early return below -- a non-finite
    * Target. Note a `decodeWithin` primary sits just under its ceiling, so it usually
    * carries an over even when it DISPLAYS exact; the shell hides the offer then.
@@ -76,6 +69,11 @@ export interface Decoded {
  * for every Bar until real per-Bar data lands). Never overshoots for any Target at
  * or above the Bar; a sub-Bar Target floors at the bare Bar (empty Side Load,
  * positive delta). Always returns a Loadout -- never null.
+ *
+ * Throws a RangeError (from sideloads.ts) only for malformed rig data: a Plate with a
+ * non-positive or non-finite mass or width, Plates with no common grid, or a Sleeve
+ * that is not a positive finite length. No shipped set, single-size reduction of one,
+ * or the default Sleeve can (test-locked), so the shell never sees it.
  */
 export function decode(
   target: number,
@@ -84,9 +82,9 @@ export function decode(
   sleeveMm: number = SLEEVE_MM,
 ): Decoded {
   // A non-finite Target (NaN, or Infinity from a "1e999"-style entry) has no
-  // achievable Total -- and an Infinity remaining would spin the greedy loop
-  // forever. Degrade to the bare Bar with a zero delta (we make no claim about
-  // how far off an unusable Target is).
+  // achievable Total -- and an Infinity budget would walk the fill's grid forever.
+  // Degrade to the bare Bar with a zero delta (we make no claim about how far off an
+  // unusable Target is).
   if (!Number.isFinite(target)) {
     return { primary: { side: [], total: bar, delta: 0 } };
   }
@@ -94,138 +92,36 @@ export function decode(
   // A Target is Bar + 2 x Side Load, so each Side carries half the Plate weight.
   // The bare Bar is the floor: a Target lighter than it leaves the Side empty.
   const sidePerHalf = Math.max(0, (target - bar) / 2);
-  const side = fillSide(sidePerHalf, inventory, sleeveMm);
+  const side = sideAtOrUnder(sidePerHalf, inventory, sleeveMm);
   const total = totalKg(side, bar);
   const primary: Loadout = { side, total, delta: total - target };
 
   // The opt-in over-target alternative (ADR-0003, RBAR-11): only when `primary`
   // lands strictly under the Target (the solve ceiling, when called from
-  // decodeWithin -- RBAR-60) -- an exact (delta 0) or sub-Bar (delta > 0)
-  // Target has nothing to round up to. The least achievable Total above the Target
-  // is one grid step up: `primary`'s Side Load plus the smallest denomination,
-  // re-filled biggest-first so any carry collapses to the fewest Plates. An empty
-  // Inventory has no denomination to step by (and `Math.min` of nothing is Infinity,
-  // which would spin fillSide's loop forever), so the length guard gates the block.
-  // The refill honors the same sleeve cap, so the candidate is kept only when it
-  // still lands strictly ABOVE the Target -- a sleeve-full shortfall has no physical
-  // round-up and carries no `over` at all (ADR-0012).
-  //
-  // In the sleeve-bound band the very next step may not fit while a later one does (a
-  // 164.5 kg Side has no stack within 415 mm, a 165 kg Side does -- RBAR-62), so the
-  // refill keeps stepping until it lands above the Target or the budget passes the
-  // heaviest Side the sleeve could ever hold (every Plate at the densest kg-per-mm).
-  // Uncapped, the first step always lands, so ordinary Targets do exactly one refill.
+  // decodeWithin -- RBAR-60) -- an exact (delta 0) or sub-Bar (delta > 0) Target has
+  // nothing to round up to, and an empty Inventory has nothing to round up with. The
+  // least achievable Total above the Target is the least loadable Side sum above the
+  // Side budget, found by the same search and Sleeve cap, so it is the fewest Plates
+  // heaviest-first too. In the sleeve-bound band that may be several grid steps up
+  // (RBAR-62, ADR-0012); when the Sleeve holds nothing heavier there is no physical
+  // round-up and no `over` at all.
   if (primary.delta < -EPS && inventory.length > 0) {
-    const step = Math.min(...inventory.map((p) => p.kg));
-    const densest = Math.max(...inventory.map((p) => p.kg / p.widthMm));
-    const maxSideKg = densest * sleeveMm;
-    for (let budget = sideLoadKg(side) + step; budget <= maxSideKg + step; budget += step) {
-      const overSide = fillSide(budget, inventory, sleeveMm);
+    const overSide = sideAbove(sidePerHalf, inventory, sleeveMm);
+    if (overSide) {
       const overTotal = totalKg(overSide, bar);
-      if (overTotal > target + EPS) {
-        return {
-          primary,
-          over: { side: overSide, total: overTotal, delta: overTotal - target },
-        };
+      // A Side sum above the budget always clears the Target by a grid step; failing
+      // that is a solver bug, so say so rather than silently dropping the round-up.
+      if (!(overTotal > target + EPS)) {
+        throw new Error(`decode: round-up ${overTotal} kg is not above the Target ${target} kg`);
       }
+      return {
+        primary,
+        over: { side: overSide, total: overTotal, delta: overTotal - target },
+      };
     }
   }
 
   return { primary };
-}
-
-/**
- * Fill one Side to the greatest reachable Side Load at or under `perSideKg` that
- * also fits the sleeve (ADR-0012), biggest Plate first.
- *
- * Greedy is the fast path: when the width guard never interferes this is the old
- * canonical coin problem, where heaviest-first is optimal AND fewest-Plate
- * (ADR-0003); and a greedy that lands the budget exactly cannot be beaten. But when
- * the sleeve blocks an add and greedy comes up short, greedy can be SUBOPTIMAL --
- * a heavy Plate can crowd out a denser tail (e.g. Side budget 163.5: greedy's
- * sixth red leaves 163, while 5 x 25 + 20 + 15 + 2.5 + 1 lands 163.5 in 413 mm) --
- * so a bounded exact search takes over for exactly that band (ADR-0012).
- */
-function fillSide(
-  perSideKg: number,
-  inventory: readonly Plate[],
-  sleeveMm: number,
-): Plate[] {
-  let remaining = perSideKg;
-  let usedMm = 0;
-  let capped = false; // did the sleeve ever refuse a Plate the budget allowed?
-  const side: Plate[] = [];
-  for (const plate of inventory) {
-    while (remaining >= plate.kg - EPS) {
-      if (!plateFitsMm(usedMm, plate, sleeveMm)) {
-        capped = true;
-        break;
-      }
-      side.push(plate);
-      remaining -= plate.kg;
-      usedMm += plate.widthMm;
-    }
-  }
-  // Uncapped greedy is canonical-optimal; a capped greedy that still hit the budget
-  // exactly is unbeatable. Only the capped-and-short band needs the exact search.
-  if (!capped || remaining <= EPS) return side;
-  return searchFill(perSideKg, inventory, sleeveMm, side);
-}
-
-/**
- * Exact fill for the band where the sleeve binds (ADR-0012): branch-and-bound over
- * denomination counts, heaviest denomination first, counts descending -- so the
- * first optimum found is the biggest-first canonical form, and the greedy incumbent
- * survives ties (equal sums never replace it). The admissible bound prunes any node
- * that cannot beat the incumbent even filling the rest of the sleeve with the
- * densest remaining Plate; an exact-budget hit stops the search outright. The
- * denomination list is ~10 Plates and the band is a sliver of extreme Targets, so
- * the search is small in practice; the DP oracle in decode.test locks optimality.
- */
-function searchFill(
-  perSideKg: number,
-  inventory: readonly Plate[],
-  sleeveMm: number,
-  incumbent: Plate[],
-): Plate[] {
-  let bestSide = incumbent;
-  let bestKg = sideLoadKg(incumbent);
-  const n = inventory.length;
-  // The best kg-per-mm density among inventory[i..]: the bound's optimistic rate.
-  const densestFrom: number[] = new Array(n + 1).fill(0);
-  for (let i = n - 1; i >= 0; i--) {
-    densestFrom[i] = Math.max(
-      densestFrom[i + 1],
-      inventory[i].kg / inventory[i].widthMm,
-    );
-  }
-  const stack: Plate[] = [];
-  const visit = (i: number, kgLeft: number, mmLeft: number, sumKg: number): void => {
-    if (sumKg > bestKg + EPS) {
-      bestKg = sumKg;
-      bestSide = [...stack];
-    }
-    if (i === n || bestKg >= perSideKg - EPS) return;
-    if (sumKg + Math.min(kgLeft, densestFrom[i] * mmLeft) <= bestKg + EPS) return;
-    const plate = inventory[i];
-    const maxCount = Math.min(
-      Math.floor((kgLeft + EPS) / plate.kg),
-      Math.floor((mmLeft + EPS) / plate.widthMm),
-    );
-    for (let count = maxCount; count >= 0; count--) {
-      for (let k = 0; k < count; k++) stack.push(plate);
-      visit(
-        i + 1,
-        kgLeft - count * plate.kg,
-        mmLeft - count * plate.widthMm,
-        sumKg + count * plate.kg,
-      );
-      for (let k = 0; k < count; k++) stack.pop();
-      if (bestKg >= perSideKg - EPS) return; // exact hit: unbeatable
-    }
-  };
-  visit(0, perSideKg, sleeveMm, 0);
-  return bestSide;
 }
 
 /**

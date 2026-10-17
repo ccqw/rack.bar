@@ -103,3 +103,14 @@ Target, bounded by the heaviest Side the sleeve could hold. The rule this ADR st
 unchanged -- `over` is the least physically loadable Total above the Target, present
 whenever one exists; only the mechanism caught up with it. Uncapped Targets still do a
 single refill.
+
+## 2026-10-16 -- one exact search replaces the two-tier fill (RBAR-69)
+
+"Greedy stays the fast path; an exact search covers the binding band" is superseded.
+The fill is one exact search now (`lib/sideloads.ts`): the Sleeve is a hard filter on
+every candidate stack, then the greatest Total, then fewest Plates, then heaviest-first
+(ADR-0003 amendment of this date). The round-up walks the same grid up to the first
+loadable sum above the Target, so the RBAR-62 stepping loop is gone with it. The rule
+this ADR states is unchanged -- nothing wider than `sleeveMm`, `over` only when a
+physically loadable heavier Total exists -- and every Competition load, sleeve band
+included, comes out identical.
