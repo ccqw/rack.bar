@@ -294,11 +294,18 @@ class RackConsole extends HTMLElement {
            of the bar block's flex budget). */
         .icons { display: flex; gap: 8px; flex: none; }
         .iconbtn {
+          position: relative;
           width: ${ICON_PX}px; height: ${ICON_PX}px; display: flex; align-items: center;
           justify-content: center; padding: 0; flex: none;
           color: var(--rack-muted); background: transparent;
           border: 1px solid var(--rack-line); border-radius: 10px; cursor: pointer;
         }
+        /* The 30px drawn box keeps a 44px-tall tap target (RBAR-67): an invisible
+           layer that reaches 7px past the border above and below, and 4px each side --
+           half the .icons gap, so the two neighbours' hit areas meet without
+           overlapping. (inset is measured from the padding box, inside the 1px border,
+           hence 8px / 5px.) */
+        .iconbtn::after { content: ""; position: absolute; inset: -8px -5px; }
         .iconbtn:hover { color: var(--rack-fg); }
         .iconbtn:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .readout { text-align: center; }
@@ -421,7 +428,8 @@ class RackConsole extends HTMLElement {
         /* The round-up row (RBAR-47, prototype L140): one fixed 36px flex row shared
            by the round-up opt-in and the at-capacity caption (they are mutually
            exclusive -- the core carries no over exactly when the sleeve is full,
-           ADR-0012), and since RBAR-67 the below-Bar note (exclusive with both). The explicit min-height pins the row in EVERY state, on top of
+           ADR-0012), and since RBAR-67 the below-Bar note (exclusive with both).
+           The explicit min-height pins the row in EVERY state, on top of
            RBAR-52's in-flow reservation below. The row collapses out of the column
            in By Plates (no round-up row there). NOTE: the button's own class is
            "roundup", NOT "over" -- the status pill carries "status over" as its
@@ -468,11 +476,12 @@ class RackConsole extends HTMLElement {
           width: 5px; height: 5px; border-radius: 999px; flex: none;
           background: var(--rack-accent);
         }
-        /* The short-screen tier (RBAR-67, fit.ts): a tighter column gap, a slimmer
-           mode toggle (44px, still the touch floor), and a closer Total head. */
+        /* The short-screen tier (RBAR-67, fit.ts): a tighter column gap, a thinner
+           inset around the mode segments (the track's padding only -- the tappable
+           segments keep their size), and a closer Total head. */
         @media ${SHORT_SCREEN} {
           .stack { gap: 8px; }
-          .modes button { padding-top: 8px; padding-bottom: 8px; }
+          .modes { padding: 1px; }
           .readhead { margin-bottom: 4px; }
         }
       </style>
@@ -542,7 +551,8 @@ class RackConsole extends HTMLElement {
           <div class="sr" data-announce role="status"></div>
         </div>
         <!-- The round-up row sits under the Total (handoff 4a), above the Target block:
-             the round-up opt-in OR the at-capacity caption (never both -- ADR-0012).
+             the round-up opt-in OR the at-capacity caption (never both -- ADR-0012)
+             OR the below-Bar note (RBAR-67; exclusive with both).
              The wrapper's "over" class is the block-order token only (blockToken in
              console.test.ts); every style rule is scoped to .rounduprow/.roundup/.atcap
              so the "status over" pill can never match a round-up rule (RBAR-56). -->

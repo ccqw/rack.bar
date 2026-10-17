@@ -111,10 +111,12 @@ class RackSleeve extends HTMLElement {
   }
 
   connectedCallback(): void {
-    // Re-fit when the host's width changes (rotation, resize). ResizeObserver, not
-    // requestAnimationFrame, so it is not paused in a backgrounded tab; the host width
-    // is bounded by its parent (not by disc size), so setting the scale can't feed back
-    // into a resize loop -- and fit() skips re-setting unchanged scale/shrink values.
+    // Re-fit when the host's width or height changes (rotation, resize, the console's
+    // flex column growing or shrinking the sleeve -- RBAR-67). ResizeObserver, not
+    // requestAnimationFrame, so it is not paused in a backgrounded tab; both host
+    // dimensions are set by the parent (not by disc size -- see fit()), so setting the
+    // scale can't feed back into a resize loop -- and fit() skips re-setting unchanged
+    // scale/shrink values.
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(this);
     this.render();

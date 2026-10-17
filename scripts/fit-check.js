@@ -24,9 +24,10 @@ async (shared) => {
     [430, 739],
     [320, 548],
   ];
-  // Recent Targets, canonical kg: a round-up Target (100.3 -> 100 exact-under, 100.5
-  // over), a plain exact one, and an over-capacity one ("Bar at capacity").
-  const RECENTS = [100.3, 142.5, 1000, 60, 185, 225];
+  // Recent Targets, canonical kg: a round-up Target (100.3 -> 100 short, "Round up ->
+  // 101"), an exact one on Comp (142), and an over-capacity one
+  // ("Bar at capacity").
+  const RECENTS = [100.3, 142, 1000, 60, 185, 225];
 
   // Reach into <rack-app> -> <rack-console> -> (child) shadow roots.
   const inConsole = (fn, arg) =>
@@ -84,7 +85,7 @@ async (shared) => {
         await record('weight: fresh');
         await reset(RECENTS);
         await record('weight: recents, no Target');
-        await chip(142.5);
+        await chip(142);
         await record('weight: recents + loaded');
         await chip(100.3);
         await record('weight: round-up offered');

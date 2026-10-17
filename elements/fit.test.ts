@@ -50,11 +50,13 @@ describe('short-screen tier (RBAR-67)', () => {
     expect(block).toMatch(/main\s*\{\s*padding-top: 4px;/);
   });
 
-  it('tightens the column gap, the mode toggle pad, and the Total head', () => {
+  it('tightens the column gap, the mode track inset, and the Total head', () => {
     const block = shortBlock(roots().console);
     expect(block).toMatch(/\.stack\s*\{\s*gap: 8px;/);
-    expect(block).toMatch(/\.modes button\s*\{\s*padding-top: 8px; padding-bottom: 8px;/);
+    expect(block).toMatch(/\.modes\s*\{\s*padding: 1px;/);
     expect(block).toMatch(/\.readhead\s*\{\s*margin-bottom: 4px;/);
+    // The segments themselves (the tappable buttons) keep their size.
+    expect(block).not.toContain('.modes button');
   });
 
   it('tightens the Target section opener but keeps the steppers', () => {

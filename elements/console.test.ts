@@ -2397,6 +2397,19 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
     const btn = rule(css(), '.iconbtn');
     expect(btn).toContain(`width: ${HEAD}px`);
     expect(btn).toContain(`height: ${HEAD}px`);
+    expect(btn).toContain('position: relative');
+  });
+
+  it('keeps a 44px-tall hit area around each 30px icon button', () => {
+    // The drawn box is 30px; an invisible ::after grows the tap target 7px past the
+    // border above and below (30 + 14 = 44) and 4px each side -- exactly half the 8px
+    // gap, so the two neighbours' hit areas meet without overlapping. inset counts from
+    // the padding box, inside the 1px border, hence 8px / 5px.
+    const hit = rule(css(), '.iconbtn::after');
+    expect(hit).toContain('content: ""');
+    expect(hit).toContain('position: absolute');
+    expect(hit).toContain('inset: -8px -5px');
+    expect(rule(css(), '.icons')).toContain('gap: 8px');
   });
 
   it('sets the big Total at line-height 1 (prototype L135), not the UA normal', () => {

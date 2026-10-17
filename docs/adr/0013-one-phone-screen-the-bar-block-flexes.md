@@ -22,7 +22,9 @@ RBAR-67 the page is a fixed-height column and the Bar picture is the part that g
   block. Spare height falls below the column. It does not go into a bigger Bar.
 - Below a visible height of 600px (`SHORT_SCREEN`, elements/fit.ts; an iPhone SE in
   Safari is 375x548) each element tightens its **spacing only**: paddings, margins and
-  gaps. Controls keep their size and 44px touch targets.
+  gaps (for the mode toggle, the track's inset, not the segments). Controls keep their
+  size and touch targets. The two head icon buttons are drawn at the handoff's 30px
+  everywhere, with an invisible layer that makes each tap target 44px tall.
 
 ## Why
 
