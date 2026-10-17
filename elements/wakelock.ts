@@ -7,6 +7,9 @@
 //   on visibilitychange back to visible.
 // - An unsupported browser or a rejected request is silently tolerated: no UI, no error.
 //   The lock is a nicety, never a requirement.
+// - Platform caveat: on older iOS, a Home Screen (standalone) web app gets a resolved
+//   request yet the screen still dims (WebKit bug 254545); Safari tabs honour it. Not
+//   detectable from here, so a dim on such a phone is the platform, not this code.
 
 // navigator.wakeLock is typed as always present, but older Safari/Firefox lack it.
 const api = (): WakeLock | undefined =>
@@ -54,14 +57,27 @@ export class ScreenWake {
         this.pending = false;
         // Released while the request was in flight: give it straight back.
         if (!this.want) return void s.release().catch(() => {});
+        // An engine handing back an already-released sentinel: never adopt it (held
+        // would stick at true); the next visibilitychange asks again.
+        if (s.released) return;
         this.sentinel = s;
-        // The browser releases it on hide; forget it so the next visible re-acquires.
+        // The browser releases it on hide -- or while visible (battery saver, policy).
+        // Forget it and ask again: acquire's guards make a hide-driven release a no-op
+        // (the visible listener retries), and a refused re-ask fires no release, so
+        // this cannot loop.
         s.addEventListener('release', () => {
-          if (this.sentinel === s) this.sentinel = null;
+          if (this.sentinel !== s) return;
+          this.sentinel = null;
+          this.acquire();
         });
       },
-      () => {
-        this.pending = false; // denied (power saver, policy): stay quiet
+      (err: unknown) => {
+        this.pending = false;
+        // Denied (power saver, policy) is the expected refusal: stay quiet. Anything
+        // else leaves a trace for field debugging, still with no UI.
+        if (!(err instanceof DOMException && err.name === 'NotAllowedError')) {
+          console.debug('rack.bar: screen wake lock request failed', err);
+        }
       },
     );
   }

@@ -67,6 +67,51 @@ describe('ScreenWake', () => {
     expect(stub.live).toBe(0);
   });
 
+  it('re-acquires when the browser releases the lock while the page stays visible', async () => {
+    stub = stubWakeLock();
+    const w = wake();
+    w.hold(true);
+    await flush();
+    stub.drop(); // battery saver / policy release, no visibility change
+    await flush();
+    expect(stub.live).toBe(1);
+    expect(stub.requests).toBe(2);
+  });
+
+  it('a request in flight across a hide is refused, and the next visible asks again', async () => {
+    stub = stubWakeLock();
+    stub.stall = true;
+    const w = wake();
+    w.hold(true);
+    stub.hide();
+    stub.settle();
+    await flush();
+    expect(stub.live).toBe(0);
+    stub.stall = false;
+    stub.show();
+    await flush();
+    expect(stub.live).toBe(1);
+  });
+
+  it('never adopts an already-released sentinel', async () => {
+    const dead = Object.assign(new EventTarget(), {
+      released: true,
+      release: () => Promise.resolve(),
+    });
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: { request: () => Promise.resolve(dead) },
+    });
+    try {
+      const w = wake();
+      w.hold(true);
+      await flush();
+      expect(w.held).toBe(false);
+    } finally {
+      delete (navigator as { wakeLock?: unknown }).wakeLock;
+    }
+  });
+
   it('gives back a lock granted after it stopped being wanted', async () => {
     stub = stubWakeLock();
     const w = wake();
