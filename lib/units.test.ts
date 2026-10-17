@@ -8,6 +8,7 @@ import {
   draftToKg,
   stepFor,
   format,
+  displayCeilingKg,
 } from './units.ts';
 
 describe('units (kg|lb conversion, ADR-0010/ADR-0006)', () => {
@@ -70,5 +71,49 @@ describe('units (kg|lb conversion, ADR-0010/ADR-0006)', () => {
       expect(format(100, 'kg')).toBe('100 kg');
       expect(format(lbToKg(135), 'lb')).toBe('135 lb');
     });
+  });
+});
+
+// RBAR-60: the Target the lifter sees is a rounded reading (whole lb, or kg to 2 dp), so
+// "at or under the Target" must mean at or under what the READING covers -- else typing
+// back a displayed Total (55 lb = 24.95 kg vs a 25 kg load reading 55 lb) solves one
+// step low. The ceiling is the top of the reading's rounding bucket, still in kg.
+describe('displayCeilingKg (RBAR-60)', () => {
+  const cases: [number, 'kg' | 'lb'][] = [
+    [lbToKg(55), 'lb'],
+    [lbToKg(313), 'lb'],
+    [lbToKg(45), 'lb'],
+    [29.48, 'kg'],
+    [100, 'kg'],
+    [61.234, 'kg'], // typed past display precision: the bucket is still 61.23's
+    [0, 'kg'],
+  ];
+
+  it('never lowers the Target and still reads the same as it', () => {
+    for (const [kg, unit] of cases) {
+      const top = displayCeilingKg(kg, unit);
+      expect(top, `${kg} ${unit}`).toBeGreaterThanOrEqual(kg);
+      expect(shownIn(top, unit), `${kg} ${unit}`).toBe(shownIn(kg, unit));
+    }
+  });
+
+  it('is the top of the bucket: a hair above it reads differently', () => {
+    for (const [kg, unit] of cases) {
+      const top = displayCeilingKg(kg, unit);
+      const hair = unit === 'lb' ? lbToKg(1e-6) : 1e-6;
+      expect(shownIn(top + hair, unit), `${kg} ${unit}`).not.toBe(shownIn(kg, unit));
+    }
+  });
+
+  it('covers the real load a reading stands for', () => {
+    // 25 kg reads 55 lb; the 55 lb ceiling must reach it
+    expect(displayCeilingKg(lbToKg(55), 'lb')).toBeGreaterThanOrEqual(25);
+    // 65 lb of iron = 29.4835 kg reads 29.48 kg; the 29.48 kg ceiling must reach it
+    expect(displayCeilingKg(29.48, 'kg')).toBeGreaterThanOrEqual(lbToKg(65));
+  });
+
+  it('passes a non-finite Target through untouched', () => {
+    expect(displayCeilingKg(Number.NaN, 'kg')).toBeNaN();
+    expect(displayCeilingKg(Infinity, 'lb')).toBe(Infinity);
   });
 });

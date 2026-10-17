@@ -37,25 +37,34 @@ export interface Loadout {
   /** The Total actually on the Bar = Bar + 2 x Side Load (CONTEXT.md). */
   readonly total: number;
   /**
-   * `total - target`: 0 when exact, negative when the achievable grid lands short.
-   * Positive only when the Target is below the bare Bar (the Bar is the floor).
+   * `total - target`, always against the real Target: 0 when exact, negative when the
+   * achievable grid lands short, positive when the Target is below the bare Bar (the
+   * Bar is the floor). From `decodeWithin` it can also be a hair positive -- a load
+   * inside the Target's displayed reading (RBAR-60) -- so the shell judges
+   * exact/short/over from the DISPLAYED numbers, never from this sign (ADR-0010).
    */
   readonly delta: number;
 }
 
 /** The result of decoding a Target. */
 export interface Decoded {
-  /** The at-or-under suggestion (ADR-0003): greatest Total <= Target, fewest Plates. */
+  /**
+   * The at-or-under suggestion (ADR-0003): the greatest Total at or under the solve
+   * ceiling, fewest Plates. For `decode` the ceiling is the Target; for `decodeWithin`
+   * it is the top of the Target's displayed reading (RBAR-60).
+   */
   readonly primary: Loadout;
   /**
    * The opt-in over-target alternative (ADR-0003): the least achievable Total
-   * *strictly above* the Target, fewest Plates, with a positive `delta`. Present
-   * only when `primary` lands strictly under the Target (`primary.delta < 0`) and a
-   * PHYSICAL round-up exists -- the step is re-filled under the same sleeve cap and
-   * kept only if it still exceeds the Target (ADR-0012), so a sleeve-full shortfall
-   * carries no over. Absent for an exact (`delta == 0`) or sub-Bar (`delta > 0`)
+   * *strictly above* the solve ceiling, fewest Plates, with a positive `delta`.
+   * Present only when `primary` lands strictly under the ceiling and a PHYSICAL
+   * round-up exists -- the step is re-filled under the same sleeve cap and kept only
+   * if it still exceeds the ceiling (ADR-0012), so a sleeve-full shortfall carries no
+   * over. Absent for a primary exactly on the ceiling (an exact `decode`), a sub-Bar
    * Target, an empty Inventory, and -- via the early return below -- a non-finite
-   * Target. Never auto-selected -- the shell offers it as a choice.
+   * Target. Note a `decodeWithin` primary sits just under its ceiling, so it usually
+   * carries an over even when it DISPLAYS exact; the shell hides the offer then.
+   * Never auto-selected -- the shell offers it as a choice.
    */
   readonly over?: Loadout;
 }
@@ -90,7 +99,8 @@ export function decode(
   const primary: Loadout = { side, total, delta: total - target };
 
   // The opt-in over-target alternative (ADR-0003, RBAR-11): only when `primary`
-  // lands strictly under the Target -- an exact (delta 0) or sub-Bar (delta > 0)
+  // lands strictly under the Target (the solve ceiling, when called from
+  // decodeWithin -- RBAR-60) -- an exact (delta 0) or sub-Bar (delta > 0)
   // Target has nothing to round up to. The least achievable Total above the Target
   // is one grid step up: `primary`'s Side Load plus the smallest denomination,
   // re-filled biggest-first so any carry collapses to the fewest Plates. An empty
@@ -206,4 +216,39 @@ function searchFill(
   };
   visit(0, perSideKg, sleeveMm, 0);
   return bestSide;
+}
+
+/**
+ * Decode at or under a `ceiling` at or above the Target, reporting every `delta`
+ * against the real `target` (RBAR-60). The shell passes the top of the Target's
+ * displayed reading (units.ts displayCeilingKg): a Target typed as "55 lb" is
+ * 24.95 kg, yet the 25 kg load also reads 55 lb, so "at or under what the lifter
+ * typed" means at or under everything that reading covers. Solving to the raw kg
+ * would land a whole Plate step low on any reading that rounds down -- the
+ * ADR-0010 displayed-unit exactness rule carried from the status pill into the
+ * solve itself. The overshoot is below one displayed unit, so it never reads as over.
+ *
+ * The core stays unit-free (ADR-0010): it sees only the two kg numbers. Deltas stay
+ * Target-relative so `total - delta` still recovers the Target the lifter typed;
+ * a primary may carry a tiny positive delta (inside the reading), and `over`, when
+ * present, is strictly above the ceiling.
+ *
+ * `ceiling` must not exceed the top of the Target's displayed reading -- use
+ * displayCeilingKg. A wider ceiling would overshoot VISIBLY, breaking ADR-0003. A
+ * ceiling below the Target clamps up to it; a non-finite one means no widening.
+ */
+export function decodeWithin(
+  target: number,
+  ceiling: number,
+  bar: number = DEFAULT_BAR_KG,
+  inventory: readonly Plate[] = ELEIKO_KG,
+  sleeveMm: number = SLEEVE_MM,
+): Decoded {
+  if (!Number.isFinite(target)) return decode(target, bar, inventory, sleeveMm);
+  const solveTo = Number.isFinite(ceiling) ? Math.max(ceiling, target) : target;
+  const solved = decode(solveTo, bar, inventory, sleeveMm);
+  const rebase = (l: Loadout): Loadout => ({ ...l, delta: l.total - target });
+  return solved.over
+    ? { primary: rebase(solved.primary), over: rebase(solved.over) }
+    : { primary: rebase(solved.primary) };
 }

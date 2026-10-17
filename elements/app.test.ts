@@ -282,6 +282,31 @@ describe('<rack-app> plate-set wiring (RBAR-17, ADR-0010)', () => {
     expect(pill(root).textContent).toContain('45');
   });
 
+  // RBAR-60: the iron set no longer forces lb. A returning Training lifter with no
+  // persisted unit reads kg (the default) with a live toggle; a persisted lb holds.
+  const unitButton = (root: ShadowRoot, u: string) =>
+    consoleEl(root).shadowRoot!.querySelector<HTMLButtonElement>(`[data-unit="${u}"]`)!;
+  const totalText = (root: ShadowRoot) =>
+    consoleEl(root).shadowRoot!.querySelector('[data-total]')!.textContent;
+
+  it('restores Training with no persisted unit in kg, toggle live (RBAR-60)', () => {
+    localStorage.setItem(PLATESET_KEY, 'training');
+    localStorage.setItem(KEY, String(lbToKg(45)));
+    const { root } = mountApp();
+    expect(unitButton(root, 'kg').getAttribute('aria-pressed')).toBe('true');
+    expect(unitButton(root, 'kg').disabled).toBe(false);
+    expect(totalText(root)).toBe('20.41 kg'); // the bare 45 lb Bar, read in kg
+  });
+
+  it('restores Training with a persisted lb unit in lb (RBAR-60)', () => {
+    localStorage.setItem(PLATESET_KEY, 'training');
+    localStorage.setItem(KEY, String(lbToKg(45)));
+    localStorage.setItem('rackbar.unit', 'lb');
+    const { root } = mountApp();
+    expect(unitButton(root, 'lb').getAttribute('aria-pressed')).toBe('true');
+    expect(totalText(root)).toBe('45 lb');
+  });
+
   it('falls back to Competition when the persisted plate set is off-menu', () => {
     localStorage.setItem(PLATESET_KEY, 'bogus');
     const { root } = mountApp();

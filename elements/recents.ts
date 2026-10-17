@@ -26,7 +26,10 @@ import { SECTION_LABEL } from './sectionlabel.ts';
 
 // A chip reads selected when it names the current Target to within the prototype's
 // near-equality (engine L851: |target - chip| < 0.05 kg) -- floats from lb<->kg
-// round-trips are the same Target, a real 0.5 kg step is not.
+// round-trips are the same Target, a real 0.5 kg step is not. A chip that READS the same
+// as the Target in the display Unit also matches (RBAR-60): an Exact unit toggle can
+// re-express the Target as its load (56 lb typed = 25.40 kg; the 25.5 kg load reads
+// 56 lb too), and the lifter sees one Target, so the chip stays lit.
 const ACTIVE_EPS = 0.05;
 
 class RackRecents extends HTMLElement {
@@ -142,7 +145,10 @@ class RackRecents extends HTMLElement {
     const scrollLeft = this.rail.scrollLeft;
     this.rail.innerHTML = this._targets
       .map((kg) => {
-        const on = this._target !== null && Math.abs(kg - this._target) < ACTIVE_EPS;
+        const on =
+          this._target !== null &&
+          (Math.abs(kg - this._target) < ACTIVE_EPS ||
+            shownIn(kg, this._unit) === shownIn(this._target, this._unit));
         return `
         <button type="button" class="chip${on ? ' selected' : ''}" role="listitem"
                 data-target="${kg}"${on ? ' aria-current="true"' : ''}

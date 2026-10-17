@@ -200,6 +200,18 @@ class RackEntry extends HTMLElement {
     this.renderValue();
   }
 
+  // Re-express the lifter's own Target as `kg` (RBAR-60): a unit toggle on an Exact load
+  // makes the load itself the Target (55 lb typed = 24.95 kg; the 25 kg load is what was
+  // meant). A REFORMAT, not a seed -- the pristine/commit flags are left to the Unit
+  // setter's RBAR-38 rules, so a lifter-chosen weight still commits on close. A no-op on
+  // an empty field (no Target to re-express).
+  retarget(kg: number): void {
+    if (this.shownKg === null) return;
+    this.shownKg = kg;
+    this.draft = String(shownIn(kg, this._unit));
+    if (this.valueEl) this.renderValue();
+  }
+
   // Mark the draft pristine (unedited by the lifter), keeping the flag trio in lockstep
   // -- the RBAR-38 bug was one seeding site setting `pristine` without `replaceNext`'s
   // semantics, so the pairing lives in one place now. `reformatted` says whether this

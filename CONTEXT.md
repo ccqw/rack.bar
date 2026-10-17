@@ -68,7 +68,7 @@ _Avoid_: stock, supply.
 **Plate set**:
 The family of Plates (with its matching Bar and native Unit) the lifter is loading:
 the **Competition** set (Eleiko, color-coded, kilograms) or the **Training** set
-(plain iron, pounds). Choosing a set fixes the Inventory and the native Unit.
+(plain iron, pounds). Choosing a set fixes the Inventory and the native Unit (the Unit its Plates and Bars are stamped in); the Primary unit stays the lifter's choice.
 Defaults to Competition / kg.
 _Avoid_: plate type, kit.
 

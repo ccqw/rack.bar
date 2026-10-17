@@ -22,15 +22,12 @@ export interface PlateSet {
   readonly label: string;
   /** A compact name for tight chrome -- the header Setup pill caption (RBAR-30). */
   readonly shortLabel: string;
-  /** The Unit this set is stamped and reasoned in (its default display Unit, ADR-0010). */
-  readonly unit: Unit;
   /**
-   * Whether the display Unit is fixed to `unit`. The iron set is lb-only (an iron
-   * rack has no kg reading), so it locks the kg|lb toggle; the Eleiko set leaves it
-   * free, since a US lifter may want to READ a kg bar in pounds (ADR-0010). When
-   * unlocked, `unit` is only the default -- the lifter's toggle choice wins.
+   * The Unit this set is stamped in -- the physical labels (Bar pill, Setup Bar tiles)
+   * name its Bars in it. It never drives the display Unit: the kg|lb toggle is the
+   * lifter's on every set (RBAR-60, amending ADR-0010).
    */
-  readonly unitLocked: boolean;
+  readonly unit: Unit;
   /** The Plates available to draw from (passed to decode/encode as the inventory). */
   readonly inventory: readonly Plate[];
   /** The Bars this set offers, in kg, default first. A Bar does not cross sets. */
@@ -49,7 +46,6 @@ export const PLATE_SETS: Record<PlateSetKey, PlateSet> = {
     label: 'Competition',
     shortLabel: 'Comp',
     unit: 'kg',
-    unitLocked: false,
     inventory: ELEIKO_KG,
     bars: [20, 15, 5],
     defaultBarKg: 20,
@@ -59,7 +55,6 @@ export const PLATE_SETS: Record<PlateSetKey, PlateSet> = {
     label: 'Training',
     shortLabel: 'Training',
     unit: 'lb',
-    unitLocked: true,
     inventory: IRON_LB,
     bars: [TRAINING_BAR_KG],
     defaultBarKg: TRAINING_BAR_KG,
