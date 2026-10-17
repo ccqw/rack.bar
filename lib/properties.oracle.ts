@@ -151,3 +151,47 @@ export function maxTotal(rig: Rig): number {
   const all = achievableTotals(rig);
   return all[all.length - 1];
 }
+
+/** A Ramp step as the oracle reads it (ADR-0015): the bare Bar, or a percentage. */
+export type OracleStep = { readonly kind: 'bar' } | { readonly kind: 'pct'; readonly pct: number };
+
+/**
+ * The Totals a warm-up Ramp must reach on `rig` (ADR-0015), one per step then the
+ * Working set, by brute force over every achievable Total -- no call into the planner:
+ *   - the Working set is the greatest achievable Total at or under its solve ceiling
+ *     (max(ceiling, Target)), floored at the bare rig (ADR-0003 as read, RBAR-60);
+ *     a non-finite Target is the bare rig;
+ *   - a bare-Bar step is the Bar alone, no Collars;
+ *   - a percentage step is the achievable Total (Collars included, ADR-0008) nearest
+ *     pct / 100 x the Working Total among those at or above both the previous row and
+ *     the bare rig and at or under the Working Total; ties go to the lighter one.
+ */
+export function rampTotalsOracle(
+  rig: Rig,
+  workingTarget: number,
+  ceiling: number,
+  steps: readonly OracleStep[],
+): number[] {
+  const solveTo = Number.isFinite(ceiling) ? Math.max(ceiling, workingTarget) : workingTarget;
+  const working = Number.isFinite(workingTarget) ? greatestAtOrUnder(rig, solveTo) : rig.baselineKg;
+  const out: number[] = [];
+  let prev = -Infinity;
+  for (const step of steps) {
+    if (step.kind === 'bar') {
+      prev = rig.barKg;
+    } else {
+      const raw = (working * step.pct) / 100;
+      const lo = Math.max(prev, rig.baselineKg);
+      let best = NaN;
+      for (const t of achievableTotals(rig)) {
+        if (t < lo - TOL || t > working + TOL) continue;
+        // Ascending walk: replace only when strictly closer, so a tie keeps the lighter.
+        if (Number.isNaN(best) || Math.abs(t - raw) < Math.abs(best - raw) - TOL) best = t;
+      }
+      prev = best;
+    }
+    out.push(prev);
+  }
+  out.push(working);
+  return out;
+}

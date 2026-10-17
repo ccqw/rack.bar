@@ -117,3 +117,9 @@ returns as one of RBAR-66's "Another way" alternates. An exhaustive independent 
 oracle (`lib/fewest.test.ts`) pins the Plates and their order on both sets, every
 Bar, both Collar settings, both display units, shorter Sleeves, and every single-size
 reduction.
+
+## 2026-10-17 -- scope: Decode and the Working set, not warm-ups (RBAR-65)
+
+This rule governs Decode and, through it, a Ramp's Working set, which is still the
+at-or-under solve. Warm-up sets are carved out: they round to the nearest loadable
+Total, ties down, between the previous row and the Working set. See ADR-0015.
