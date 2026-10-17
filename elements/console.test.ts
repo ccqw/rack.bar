@@ -2500,9 +2500,14 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
     expect(start).toBeGreaterThanOrEqual(0);
     return text.slice(start, text.indexOf('}', start));
   };
-  // The head row is one icon button tall; the sleeve sits 10px under it.
-  const HEAD = 30;
-  const GAP = 10;
+  // RBAR-75 (ADR-0013 amended): the label row sits in flow INSIDE the handoff's 204px
+  // block (prototype L97-L101) -- 5px down, one 15px label line, then the sleeve 6px
+  // under it (the sleeve's own 4px top pad makes the prototype's 10px to the discs).
+  // The 30px icon buttons no longer take a row: they overlap the sleeve's top-right.
+  const ICON = 30;
+  const PAD = 5;
+  const LABEL = 15;
+  const GAP = 6;
 
   it('is a full-height column that may shrink below its content', () => {
     const host = rule(css(), ':host');
@@ -2523,9 +2528,11 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
   it('flexes the bar block between the readable minimum and the handoff block', () => {
     const viz = rule(css(), '.viz');
     expect(viz).toContain('flex: 1 1 0');
-    expect(viz).toContain(`min-height: ${HEAD + GAP + SLEEVE_MIN_PX}px`);
-    expect(viz).toContain(`max-height: ${HEAD + GAP + SLEEVE_BLOCK_PX}px`);
+    expect(viz).toContain(`min-height: ${PAD + LABEL + GAP + SLEEVE_MIN_PX}px`);
+    expect(viz).toContain(`max-height: ${SLEEVE_BLOCK_PX}px`);
     expect(viz).toContain(`gap: ${GAP}px`);
+    expect(viz).toContain(`padding-top: ${PAD}px`);
+    expect(rule(css(), '.vizhead')).toContain(`height: ${LABEL}px`);
     const sleeve = rule(css(), '.viz rack-sleeve');
     expect(sleeve).toContain('flex: 1 1 0');
     expect(sleeve).toContain('min-height: 0');
@@ -2537,9 +2544,23 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
 
   it('sizes the head icon buttons at the handoff\'s 30px (prototype L98)', () => {
     const btn = rule(css(), '.iconbtn');
-    expect(btn).toContain(`width: ${HEAD}px`);
-    expect(btn).toContain(`height: ${HEAD}px`);
+    expect(btn).toContain(`width: ${ICON}px`);
+    expect(btn).toContain(`height: ${ICON}px`);
     expect(btn).toContain('position: relative');
+  });
+
+  it('overlaps the icon buttons on the sleeve\'s top-right, above the discs (RBAR-75)', () => {
+    // Prototype L98: position:absolute; top:0; right:0; z-index:2 inside the
+    // position:relative 204px block. Out of flow, so the label row is the only head
+    // height in the block's budget; z-index keeps them over a tappable By-Plates disc,
+    // and the opaque raised fill keeps the glyphs legible over any loadout.
+    expect(rule(css(), '.viz')).toContain('position: relative');
+    const icons = rule(css(), '.icons');
+    expect(icons).toContain('position: absolute');
+    expect(icons).toContain('top: 0');
+    expect(icons).toContain('right: 0');
+    expect(icons).toContain('z-index: 2');
+    expect(rule(css(), '.iconbtn')).toContain('background: var(--rack-raised)');
   });
 
   it('keeps a 44px-tall hit area around each 30px icon button', () => {

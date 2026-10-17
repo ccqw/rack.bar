@@ -297,6 +297,9 @@ class RackEntry extends HTMLElement {
            the recipe already pins the font, margin is pinned here. */
         .caption {
           display: block; ${SECTION_LABEL} margin: 0 0 9px;
+          /* RBAR-75: the prototype's 21px label line (L147: an 11px span in a 16px
+             Hanken div), the label's line box 5px from its top. */
+          height: 21px; padding-top: 5px;
         }
         /* The value row: [-] prominent value [+], 10px apart (prototype L148). The
            steppers are 44px round touch targets (L149/L151; RBAR-74) faced with SVG

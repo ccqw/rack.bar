@@ -49,7 +49,13 @@ class RackLoaded extends HTMLElement {
     this.root.innerHTML = `
       <style>
         ${BOX_SIZING}${BUTTON_FX}
-        :host { display: block; --chip-h: 30px; }
+        /* The handoff's fixed 60px On the bar block (prototype L180, RBAR-75): a
+           centered column whose content (head, 7px, rail, 9px) overflows it evenly,
+           then 9px to the Add palette -- the stack's 12px gap less 3px. */
+        :host {
+          display: flex; flex-direction: column; justify-content: center;
+          height: 60px; margin-bottom: -3px; --chip-h: 30px;
+        }
         :host([hidden]) { display: none; }
         /* The stable-geometry slot (RBAR-52): the loaded row and the empty hint share
            one grid cell, so the slot's block height is the taller (loaded) state's in
@@ -65,7 +71,7 @@ class RackLoaded extends HTMLElement {
            .onbar wrapper reserves it invisibly on a bare Bar). */
         .head {
           display: flex; align-items: center; justify-content: space-between;
-          margin-bottom: 8px;
+          margin-bottom: 7px;
         }
         /* The head label is an h2 since RBAR-53 (heading navigation); the empty hint
            shares the recipe but stays a span. margin: 0 pins the UA heading margin
@@ -93,7 +99,7 @@ class RackLoaded extends HTMLElement {
            is empty but its row height stays reserved (min-height: --chip-h, RBAR-52)
            inside the invisible .onbar, so the hint-to-chips swap never moves the
            palette below. */
-        .viewport { position: relative; }
+        .viewport { position: relative; margin-bottom: 9px; }
         .rail {
           display: flex; gap: 6px; overflow-x: auto;
           /* chip height + the rail's own 2px padding twice (border-box): the empty
