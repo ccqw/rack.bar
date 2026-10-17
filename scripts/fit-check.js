@@ -10,7 +10,9 @@
 // hides the overflow) and returns one line per viewport + state (the worst across both
 // plate sets and both units): the document's scrollHeight against the viewport's
 // innerHeight, `over` = how far the page would scroll (0 = it fits), and the sleeve's
-// flexed height.
+// flexed height. The Setup states (RBAR-76) add the sheet's height, how far it runs
+// above the viewport (`over`, 0 = it fits), and how far its Bar row scrolls sideways
+// inside the sheet.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -42,7 +44,16 @@ async (shared) => {
   const measure = () =>
     page.evaluate(() => {
       const d = document.documentElement;
+      // The Setup sheet (RBAR-76): when open, how far its panel runs above the viewport
+      // top (0 = the whole sheet shows) and how far its Bar row scrolls sideways (the
+      // custom Bars scroll inside the row, never the page).
+      const setup = document.querySelector('rack-app').shadowRoot.querySelector('rack-setup');
+      const panel = setup.hidden ? null : setup.shadowRoot.querySelector('[data-panel]');
+      const row = setup.shadowRoot.querySelector('[data-bar-tiles]');
       return {
+        sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
+        sheetH: panel ? Math.round(panel.getBoundingClientRect().height) : 0,
+        rowScroll: panel ? row.scrollWidth - row.clientWidth : 0,
         scrollH: d.scrollHeight,
         innerH: window.innerHeight,
         over: Math.max(0, d.scrollHeight - window.innerHeight),
@@ -119,6 +130,34 @@ async (shared) => {
         await record('warmup: 90% row');
         await stair(4);
         await record('warmup: Working set');
+
+        // The Setup sheet (RBAR-76, ADR-0017): bare, with the "+" entry open, and with
+        // the three custom Bars the cap allows (one selected).
+        const inApp = (src) =>
+          page.evaluate((s) => {
+            const sh = document.querySelector('rack-app').shadowRoot;
+            return new Function('app', 'setup', s)(sh, sh.querySelector('rack-setup').shadowRoot);
+          }, src);
+        await reset(null);
+        await inApp(`app.querySelector('[data-setup-pill]').click()`);
+        await record('setup: open');
+        await inApp(`setup.querySelector('[data-bar-add]').click()`);
+        await record('setup: + entry');
+        await page.evaluate(() => {
+          localStorage.setItem(
+            'rackbar.customBars',
+            JSON.stringify([
+              { value: 35, unit: 'lb' },
+              { value: 15.9, unit: 'kg' },
+              { value: 110, unit: 'lb' },
+            ]),
+          );
+          localStorage.setItem('rackbar.barKg', String(110 * 0.45359237));
+        });
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inApp(`app.querySelector('[data-setup-pill]').click()`);
+        await record('setup: 3 custom Bars');
       }
     }
   }
@@ -129,13 +168,15 @@ async (shared) => {
   for (const r of rows) {
     const key = `${r.size} ${r.state}`;
     const prev = worst.get(key);
-    if (!prev || r.over > prev.over || (r.over === prev.over && r.sleeve < prev.sleeve)) {
+    const worse = (a, b) => a.over + a.sheetOver - (b.over + b.sheetOver);
+    if (!prev || worse(r, prev) > 0 || (worse(r, prev) === 0 && r.sleeve < prev.sleeve)) {
       worst.set(key, r);
     }
   }
   return [...worst.entries()].map(
     ([key, r]) =>
       `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
-      `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px`,
+      `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
+      (r.sheetH ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` : ''),
   );
 }

@@ -191,6 +191,12 @@ one Bar into the other (Caitlin: no rounding fudges).
   `console.test.ts`).
 
 
+## 2026-10-17 -- the lifter's own Bars join every set's (RBAR-76)
+
+A set still carries its own Bars, but Setup now also offers the lifter's custom Bars
+(stored as their stamp) after them, on every set; `rackbar.barKg` validates against
+both. See ADR-0017.
+
 ## 2026-10-16 -- "the iron set is canonical" held for the Total only (RBAR-69)
 
 The DP check above proved greedy reaches the greatest Total at or under the Target on
