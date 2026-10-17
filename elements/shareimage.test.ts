@@ -8,7 +8,6 @@ import { shareImageFile, shareImageName } from './shareimage.ts';
 import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
 import type { LoadSummary } from '../lib/summary.ts';
 import { configText, plateLines } from '../lib/summary.ts';
-import { barLayout } from '../lib/shareimage.ts';
 
 const eleiko = (kg: number) => ELEIKO_KG.find((x) => x.kg === kg)!;
 
@@ -58,10 +57,13 @@ function stubCanvas(opts: { blob?: Blob | null; context?: boolean } = {}): Recor
     rec.order.push(`getContext ${this.width}x${this.height}`);
     return opts.context === false ? null : (fakeContext(rec) as never);
   });
-  HTMLCanvasElement.prototype.toBlob = function (cb: BlobCallback, type?: string) {
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (
+    cb: BlobCallback,
+    type?: string,
+  ) {
     rec.order.push(`toBlob ${type}`);
     cb(blob);
-  };
+  });
   return rec;
 }
 
@@ -166,8 +168,10 @@ describe('shareImageFile (the loadout picture, RBAR-70)', () => {
     await expect(shareImageFile(LOADED, 'Competition')).resolves.toBeInstanceOf(File);
   });
 
-  it('the bar it draws is the pure barLayout (both Sides of discs)', () => {
-    expect(barLayout(LOADED.side).filter((p) => p.kind === 'disc')).toHaveLength(8);
+  it('returns null when the fonts never load (fonts.ready rejects)', async () => {
+    stubCanvas();
+    setFonts({ ready: Promise.reject(new Error('font load failed')) });
+    await expect(shareImageFile(LOADED, 'Competition')).resolves.toBeNull();
   });
 });
 

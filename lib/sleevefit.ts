@@ -6,7 +6,8 @@
 // proportional overflow guard when even the floored row is too wide.
 //
 // Every px value here is a CSS px at the sleeve's own size. A larger drawing (the
-// 1080px share image) multiplies them by one zoom factor; see `fitRow`'s `zoom`.
+// 1080px share image) multiplies them by one zoom factor and passes the zoomed cap and
+// floor in; see `barLayout`'s `zoom` in lib/shareimage.ts.
 import type { Plate } from './plates.ts';
 
 /** A competition bumper's diameter -- the tallest Plate on either set (ADR-0004). */

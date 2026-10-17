@@ -304,7 +304,9 @@ class RackShare extends HTMLElement {
   // The fallback chain, one step at a time:
   //   1. the picture + the text in one share, when the picture is drawn and
   //      navigator.canShare says this browser can share that file;
-  //   2. the text alone (no picture yet, no file sharing, or step 1 failed);
+  //   2. the text alone (no picture yet, no file sharing, or step 1 failed -- after a
+  //      failed picture share the picture is also dropped, so the next tap goes
+  //      straight to this step with its own user activation);
   //   3. the clipboard (no Web Share at all, or step 2 failed).
   // A cancelled sheet (AbortError) stops the chain silently at any step. A tap while a
   // sheet is still open is ignored (a second share() would reject and wrongly fall
@@ -321,12 +323,19 @@ class RackShare extends HTMLElement {
     this.sharing = true;
     // Called synchronously from the tap, so share() keeps the tap's user activation.
     const file = this.image;
+    const gen = this.imageGen;
     const withImage: ShareData | null = file ? { files: [file], text } : null;
     const first: ShareData = withImage && canShareData(withImage) ? withImage : { text };
     this.attempt(first)
       .then((outcome) => {
-        // Step 2 only after a failed picture share, and only while the card is open.
-        if (outcome === 'failed' && first.files && !this.hidden) return this.attempt({ text });
+        if (outcome !== 'failed' || !first.files) return outcome;
+        // The picture share failed. The first share() spent the tap's user activation,
+        // so on Safari/Chrome the step-2 retry below is usually refused too; drop the
+        // picture for this load so the NEXT tap shares the text alone with a fresh
+        // activation, rather than failing the same way again.
+        if (gen === this.imageGen) this.image = null;
+        // Step 2 only while the card is open.
+        if (!this.hidden) return this.attempt({ text });
         return outcome;
       })
       .then((outcome) => {

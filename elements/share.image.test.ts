@@ -174,6 +174,30 @@ describe('<rack-share> attaches the loadout picture (RBAR-70)', () => {
       expect(btn.textContent).toBe('Share');
     });
 
+    it('a failed picture share drops the picture: the next tap shares the text alone', async () => {
+      const share = vi
+        .fn()
+        .mockRejectedValueOnce(denied()) // picture share fails
+        .mockRejectedValueOnce(denied()) // in-tap retry refused (activation spent)
+        .mockResolvedValue(undefined);
+      const { btn } = await openReady({ share, canShare: () => true });
+      btn.click();
+      await flush();
+      expect(share).toHaveBeenCalledTimes(2);
+      btn.click(); // a fresh tap, a fresh activation
+      expect(share).toHaveBeenCalledTimes(3);
+      expect(share.mock.calls[2]![0]).toEqual({ text: TEXT });
+    });
+
+    it('a cancelled picture share keeps the picture for the next tap', async () => {
+      const share = vi.fn().mockRejectedValueOnce(abort()).mockResolvedValue(undefined);
+      const { btn } = await openReady({ share, canShare: () => true });
+      btn.click();
+      await flush();
+      btn.click();
+      expect(share.mock.calls[1]![0]).toEqual({ files: [PNG], text: TEXT });
+    });
+
     it('then a failed text share falls back to the clipboard and confirms', async () => {
       const share = vi.fn().mockRejectedValue(denied());
       const writeText = vi.fn().mockResolvedValue(undefined);
@@ -231,6 +255,45 @@ describe('<rack-share> attaches the loadout picture (RBAR-70)', () => {
       expect(writeText).not.toHaveBeenCalled();
     });
 
+    it('a text share that fails after the card closed leaves the clipboard alone', async () => {
+      let failText!: (e: unknown) => void;
+      const share = vi
+        .fn()
+        .mockRejectedValueOnce(denied())
+        .mockImplementationOnce(() => new Promise<void>((_, rej) => (failText = rej)));
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const { el, btn } = await openReady({ share, canShare: () => true, clipboard: { writeText } });
+      btn.click();
+      await flush();
+      expect(share).toHaveBeenCalledTimes(2); // step 2 is up
+      el.close();
+      failText(denied());
+      await flush();
+      expect(writeText).not.toHaveBeenCalled();
+    });
+
+    it('ignores a re-tap while the fallback text sheet is open', async () => {
+      let settle!: () => void;
+      const share = vi
+        .fn()
+        .mockRejectedValueOnce(denied())
+        .mockImplementationOnce(() => new Promise<void>((r) => (settle = r)))
+        .mockResolvedValue(undefined);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const { btn } = await openReady({ share, canShare: () => true, clipboard: { writeText } });
+      btn.click();
+      await flush();
+      expect(share).toHaveBeenCalledTimes(2);
+      btn.click(); // the text sheet is still up
+      await flush();
+      expect(share).toHaveBeenCalledTimes(2);
+      expect(writeText).not.toHaveBeenCalled();
+      settle();
+      await flush();
+      btn.click(); // all sheets closed: a new tap shares again
+      expect(share).toHaveBeenCalledTimes(3);
+    });
+
     it('ignores a re-tap while the picture sheet is open', async () => {
       let settle!: () => void;
       const share = vi.fn(() => new Promise<void>((r) => (settle = r)));
@@ -282,6 +345,32 @@ describe('<rack-share> attaches the loadout picture (RBAR-70)', () => {
       await flush();
       btn.click();
       expect((share.mock.calls[0]![0] as ShareData).files).toEqual([fresh]);
+    });
+
+    it('drops a slow draw that REJECTS after a newer one finished', async () => {
+      let failOld!: (e: unknown) => void;
+      shareImageFile.mockReturnValueOnce(new Promise((_, rej) => (failOld = rej)));
+      const share = vi.fn().mockResolvedValue(undefined);
+      const { el, btn } = await openReady({ share, canShare: () => true });
+      const fresh = new File([new Uint8Array([3])], 'fresh.png', { type: 'image/png' });
+      shareImageFile.mockResolvedValue(fresh);
+      el.load = { ...LOADED, side: [eleiko(20)] };
+      await flush();
+      failOld(new Error('old draw failed late'));
+      await flush();
+      btn.click();
+      expect((share.mock.calls[0]![0] as ShareData).files).toEqual([fresh]);
+    });
+
+    it('a closed card does not draw when its load or plate set is set', async () => {
+      vi.stubGlobal('navigator', { share: vi.fn(), canShare: () => true });
+      const el = document.createElement('rack-share') as Share;
+      document.body.append(el); // connected, hidden
+      el.load = LOADED;
+      el.plateSet = 'training';
+      expect(shareImageFile).not.toHaveBeenCalled();
+      el.open();
+      expect(shareImageFile).toHaveBeenCalledTimes(1); // one draw per open
     });
 
     it('drops the picture on close and draws afresh on the next open', async () => {

@@ -145,5 +145,9 @@ Share button attaches the picture itself.
   RBAR-64 behaviour). Text alone is used directly when there is no picture yet, no
   `canShare`, or `canShare` refuses the file. A cancelled sheet (`AbortError`) stops
   the chain silently at every step; a failure after the card closed goes no further.
+  Because the first `share()` spends the tap's user activation, the in-tap text retry
+  (and the clipboard after it) is often refused on iOS; so a failed picture share
+  also drops the picture for that load, and the next tap shares the text alone with
+  a fresh activation.
   Without Web Share at all the button still reads "Copy summary" and no picture is
   drawn.

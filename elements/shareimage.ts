@@ -199,7 +199,9 @@ function drawBar(ctx: CanvasRenderingContext2D, parts: readonly BarPart[], mono:
     const grad = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
     grad.addColorStop(0, mixWithWhite(hex, 0.05));
     grad.addColorStop(1, hex);
-    // The sleeve's disc lift (--rack-shadow-disc's 0 2px 6px), zoomed.
+    // The sleeve's disc lift, zoomed: mirrors the outer layer of --rack-shadow-disc
+    // (0 2px 6px rgba(0,0,0,.25)). Canvas can't take a box-shadow string, so the
+    // values are copied here; keep them in step with the token.
     ctx.save();
     ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
     ctx.shadowBlur = 6 * z;
