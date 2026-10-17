@@ -115,7 +115,8 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
         const fewest = fewestPlatesFor(rig, total);
         if (primary.side.length !== fewest) {
           const plates = primary.side.map((p) => p.label ?? String(p.kg)).join('+');
-          misses.push(`${rig.name}: ${total.toFixed(2)} kg -> ${plates} (fewest is ${fewest})`);
+          const by = fewest !== null && primary.side.length === fewest + 1 ? ' (one over)' : '';
+          misses.push(`${rig.name}: ${total.toFixed(2)} kg -> ${plates} (fewest is ${fewest})${by}`);
         }
       }
     }
@@ -137,6 +138,20 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
   // When the loader is fixed this starts passing and `it.fails` flags it -- flip it.
   it.fails('loads the fewest Plates for every Training Total (ADR-0003; KNOWN GAP RBAR-69)', () => {
     expect(fewestPlateMisses(RIGS.filter((r) => r.set === 'training'))).toEqual([]);
+  });
+
+  // `it.fails` passes on ANY throw, so on its own it would stay green if the gap grew
+  // or the helper broke. This pins the gap's exact size and shape in both directions:
+  // 14 Totals per Training rig, each exactly one Plate over, the 165 lb case among
+  // them. When RBAR-69 lands, delete this and flip the it.fails above to `it`.
+  it('pins the RBAR-69 gap exactly: 14 Totals per Training rig, one extra Plate each (ADR-0003)', () => {
+    const training = RIGS.filter((r) => r.set === 'training');
+    const misses = fewestPlateMisses(training);
+    expect(misses).toHaveLength(14 * training.length);
+    for (const m of misses) expect(m).toMatch(/\(one over\)$/);
+    expect(misses).toContain(
+      'training bar 20.412 kg collar 0: 74.84 kg -> 45+10+5 (fewest is 2) (one over)',
+    );
   });
 
   it('never proposes a Side wider than the Sleeve, round-up included (ADR-0012)', () => {
@@ -184,6 +199,30 @@ describe('Decode core properties (ADR-0002, ADR-0003, ADR-0012)', () => {
       }),
       opts,
     );
+  });
+
+  // The capped band is a sliver random Targets rarely hit, so the round-up rule is
+  // also checked at EVERY gap: a Target between two neighbouring achievable Totals must
+  // offer exactly the upper one (RBAR-62 found 4 gaps per Competition rig, 2 per
+  // Training rig, where the one-step refill missed it).
+  it('offers the next achievable Total as the round-up in every gap of the grid (ADR-0003 RBAR-11, ADR-0012; exhaustive)', () => {
+    const misses: string[] = [];
+    for (const rig of RIGS) {
+      const totals = achievableTotals(rig);
+      for (let i = 0; i + 1 < totals.length; i++) {
+        const t = (totals[i] + totals[i + 1]) / 2;
+        const { primary, over } = decode(t, rig.baselineKg, rig.inventory);
+        const ok =
+          Math.abs(primary.total - totals[i]) < EPS &&
+          over !== undefined &&
+          Math.abs(over.total - totals[i + 1]) < EPS;
+        if (!ok) {
+          const got = over ? over.total.toFixed(2) : 'none';
+          misses.push(`${rig.name}: ${t.toFixed(2)} -> over ${got}, want ${totals[i + 1].toFixed(2)}`);
+        }
+      }
+    }
+    expect(misses).toEqual([]);
   });
 
   it('solves every achievable Total exactly, with no round-up (exhaustive, every rig)', () => {
@@ -306,6 +345,10 @@ describe('Units and conversion properties (ADR-0006, ADR-0010)', () => {
       }),
       opts,
     );
+    // Non-keypad edge forms that parse to nothing: never NaN, always "no Target".
+    for (const u of UNITS) {
+      for (const d of ['.', ' . ', '-', 'abc']) expect(draftToKg(d, u)).toBeNull();
+    }
   });
 
   it('a keypad draft (digits and one decimal point) always parses to a finite, non-negative kg (ADR-0010)', () => {
@@ -347,14 +390,18 @@ describe('Units and conversion properties (ADR-0006, ADR-0010)', () => {
   });
 });
 
-// A draft built from the keypad's keys: digits with at most one decimal point,
-// including the edge forms ("", ".", "5.", ".5", leading zeros, many decimals, huge).
+// A draft the keypad can actually produce: digits with at most one decimal point,
+// including the edge forms ("", "0.", "5.", "0.5", leading zeros, many decimals, huge).
+// Modelled on entry.ts: a "." on an empty draft becomes "0.", so a lone "." (or ".5")
+// is never a keypad draft -- it is covered as arbitrary input in the never-NaN property.
 const keypadDraftArb: fc.Arbitrary<string> = fc
   .tuple(
     fc.stringMatching(/^[0-9]{0,12}$/),
     fc.option(fc.stringMatching(/^[0-9]{0,8}$/), { nil: undefined }),
   )
-  .map(([whole, frac]) => (frac === undefined ? whole : `${whole}.${frac}`));
+  .map(([whole, frac]) =>
+    frac === undefined ? whole : `${whole === '' ? '0' : whole}.${frac}`,
+  );
 
 describe('Encode properties (ADR-0005, ADR-0012)', () => {
   // A tap script: each step adds a Plate (by index) or removes one (by index).

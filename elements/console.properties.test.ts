@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { draftToKg, displayCeilingKg, format, shownIn } from '../lib/units.ts';
-import { leastAbove } from '../lib/properties.oracle.ts';
+import { RIGS, leastAbove } from '../lib/properties.oracle.ts';
 import {
   SEED, other, on, press, step, type, roundUp, totalText, secondaryText,
   statusKind, statusLabel, atcapShown, barnoteShown, loadLine, entryDraft,
@@ -34,7 +34,9 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
         expect(totalText(el)).toBe(`${reading} ${u}`);
         expect(statusKind(el)).toBe('exact');
       }),
-      { seed: SEED, numRuns: 40 },
+      // Always-run anchor: the 25 kg Total on the default rig reads 55 lb; the pre-RBAR-60
+      // raw-kg solve took "55 lb" (24.95 kg) one Plate step low, to 24 kg ("53 lb").
+      { seed: SEED, numRuns: 40, examples: [[[RIGS[0], 'lb', 25]]] },
     );
   });
 

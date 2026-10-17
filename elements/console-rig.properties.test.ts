@@ -11,7 +11,6 @@
 // This file: Bar, Collar and plate-set changes under action scripts.
 import { describe, it, expect, beforeEach } from 'vitest';
 import fc from 'fast-check';
-import { decodeWithin } from '../lib/decode.ts';
 import { draftToKg, displayCeilingKg, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { PLATE_SETS } from '../lib/platesets.ts';
@@ -139,9 +138,7 @@ describe('<rack-console> rig change properties (ADR-0007, ADR-0008, ADR-0010)', 
         el.collarKg = to.collarKg;
         expect(entryDraft(el)).toBe(draftBefore); // the Target is untouched
         const t = draftToKg(draftBefore, u)!;
-        const want = decodeWithin(t, displayCeilingKg(t, u), to.baselineKg, to.inventory);
         expect(drawnTotalKg(el, to)).toBeCloseTo(greatestAtOrUnder(to, displayCeilingKg(t, u)), 9);
-        expect(drawnTotalKg(el, to)).toBeCloseTo(want.primary.total, 9);
       }),
       { seed: SEED, numRuns: 15 },
     );

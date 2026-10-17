@@ -31,7 +31,9 @@ export function mount(rig: Rig, unit: Unit): Console {
   return el;
 }
 
-// Mounting is the dominant cost (and thousands of mounts exhaust happy-dom's heap), so
+// NOTE the pool lives for a whole FILE (it is not reset between tests), so a failure is
+// reproduced by re-running the file, not one `-t` test in isolation. Mounting is the
+// dominant cost (and thousands of mounts exhaust happy-dom's heap), so
 // the typing-only properties reuse ONE console per rig x unit within a test. Each
 // checkout presses Clear, which drops the Target and any chosen round-up (decodeTo(null))
 // and leaves the field empty -- the same state a fresh mount reaches -- so every run, and
@@ -47,6 +49,12 @@ export function on(rig: Rig, unit: Unit): Console {
   modeBtn(el, 'decode').click();
   unitBtn(el, unit).click();
   press(el, 'clear');
+  // The reset contract every pooled run relies on: a cleared entry means no Target and
+  // a bare rig. If a future change breaks it, fail loudly here rather than let state
+  // leak between runs (and make counterexamples non-replayable).
+  if (entryDraft(el) !== '' || sideOnScreen(el).length !== 0) {
+    throw new Error(`pool reset failed for ${key}: Clear left a Target or Plates`);
+  }
   return el;
 }
 // A one-off console for the properties that reconfigure the rig mid-run (not poolable):
