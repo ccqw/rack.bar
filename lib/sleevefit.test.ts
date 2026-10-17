@@ -131,7 +131,8 @@ describe('DISC_INK', () => {
     expect(['white', 'yellow', 'red', 'blue', 'green', 'iron'].map((c) => darkInk(c as never))).toEqual([
       true, true, false, false, false, false,
     ]);
-    expect(DISC_INK.dark).toBe('#0f1113');
+    // The prototype's plateInk (L416) is the accent ink, #0d0e10 (RBAR-74).
+    expect(DISC_INK.dark).toBe('#0d0e10');
   });
 });
 

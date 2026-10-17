@@ -105,15 +105,17 @@ class RackFullscreen extends HTMLElement {
           animation: rack-fade .16s ease-out;
         }
         /* The exit affordance: a quiet icon button, top-right. Taps still bubble to the
-           overlay (everything exits), it just gives the obvious explicit control. */
+           overlay (everything exits), it just gives the obvious explicit control.
+           Prototype L315 (RBAR-74): raised fill, secondary ink, 20px in from the corner;
+           hover brightens the ink and rings it like the head icon buttons. */
         .close {
-          position: absolute; top: calc(16px + env(safe-area-inset-top)); right: 16px;
+          position: absolute; top: calc(20px + env(safe-area-inset-top)); right: 20px;
           width: 42px; height: 42px; display: flex; align-items: center;
           justify-content: center; padding: 0;
-          color: var(--rack-muted); background: var(--rack-overlay);
-          border: 1px solid var(--rack-line); border-radius: 12px; cursor: pointer;
+          color: var(--rack-text-secondary); background: var(--rack-raised);
+          border: 1px solid var(--rack-border); border-radius: 12px; cursor: pointer;
         }
-        .close:hover { color: var(--rack-fg); }
+        .close:hover { color: var(--rack-text); border-color: var(--rack-border-hover); }
         .close:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         /* The head: wordmark, huge Total, config caption -- centered above the bar. */
         .head { flex: none; display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -141,11 +143,12 @@ class RackFullscreen extends HTMLElement {
           font-size: ${FS.secondaryPx}px; color: var(--rack-muted);
         }
         /* The config line: the plate-set name + the Bar (+ Collars when fitted) + the
-           per-side note -- the caption the share card shows (RBAR-55). */
+           per-side note -- the caption the share card shows (RBAR-55). Its own ink, a
+           shade under text-dim (prototype L323; RBAR-74). */
         .caption {
           margin-top: ${FS.captionMarginTop}px; font-family: var(--rack-font-num); font-size: ${FS.captionPx}px;
           font-weight: 600; letter-spacing: ${em(FS.captionTrackEm)}; text-transform: uppercase;
-          color: var(--rack-muted);
+          color: var(--rack-fullscreen-caption);
         }
         /* The stage: the leftover space the blown-up bar fills. The bar lays out
            horizontally inside .rot, then .rot is rotated 90deg so the bar runs along the

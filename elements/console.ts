@@ -346,8 +346,8 @@ class RackConsole extends HTMLElement {
           position: relative;
           width: ${ICON_PX}px; height: ${ICON_PX}px; display: flex; align-items: center;
           justify-content: center; padding: 0; flex: none;
-          color: var(--rack-muted); background: transparent;
-          border: 1px solid var(--rack-line); border-radius: 10px; cursor: pointer;
+          color: var(--rack-muted); background: var(--rack-raised);
+          border: 1px solid var(--rack-border); border-radius: 9px; cursor: pointer;
         }
         /* The 30px drawn box keeps a 44px-tall tap target (RBAR-67): an invisible
            layer that reaches 7px past the border above and below, and 4px each side --
@@ -355,7 +355,8 @@ class RackConsole extends HTMLElement {
            overlapping. (inset is measured from the padding box, inside the 1px border,
            hence 8px / 5px.) */
         .iconbtn::after { content: ""; position: absolute; inset: -8px -5px; }
-        .iconbtn:hover { color: var(--rack-fg); }
+        /* Fill, radius and hover ring per prototype L98 (RBAR-74). */
+        .iconbtn:hover { color: var(--rack-text); border-color: var(--rack-border-hover); }
         .iconbtn:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .readout { text-align: center; }
         /* The readout head (prototype L131): the Total section label at the left edge,
@@ -423,18 +424,21 @@ class RackConsole extends HTMLElement {
         .totaltap:disabled { cursor: default; }
         .totaltap:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 4px; }
         /* The Secondary readout: the same Total in the other unit, tap to hide/show
-           (ADR-0006/0010). A quiet line under the prominent Total. */
+           (ADR-0006/0010). A quiet line under the prominent Total, in Hanken 500 13px
+           (prototype L137; RBAR-74). Side pad only, so the button adds no height. */
         .secondary {
-          font-family: var(--rack-font-num); font-size: 13px; color: var(--rack-muted);
-          background: transparent; border: none; cursor: pointer; padding: 2px 6px;
+          font-family: var(--rack-font); font-weight: 500; font-size: 13px;
+          color: var(--rack-text-dim);
+          background: transparent; border: none; cursor: pointer; padding: 0 6px;
         }
         .secondary.off { opacity: .7; font-style: italic; }
         .secondary:focus-visible { outline: 2px solid var(--rack-accent); }
         /* The status line: the Secondary readout with the status pill beside it, on one
-           centered row (handoff 4a, screenshot 01). Decode only. */
+           centered row (handoff 4a, screenshot 01). Decode only. 6px under the Total,
+           18px tall (prototype L134-L138; RBAR-74). */
         .statusline {
           display: flex; align-items: center; justify-content: center;
-          gap: 9px; margin-top: 2px; min-height: 22px;
+          gap: 9px; margin-top: 6px; min-height: 18px;
         }
         /* The status pill (RBAR-28): the Total's Exact / N over / N short indicator
            (at capacity the pill keeps the shortfall; the .atcap caption below names
@@ -447,7 +451,7 @@ class RackConsole extends HTMLElement {
           display: inline-flex; align-items: center; gap: 6px;
           font-family: var(--rack-font-num); font-size: 10px; font-weight: 600;
           letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
-          line-height: 1; border-radius: 999px; padding: 4px 10px;
+          line-height: 1; border-radius: 999px; padding: 3px 10px;
           color: var(--rack-text-secondary);
           background: transparent; border: 1px solid var(--rack-border-muted);
         }
@@ -489,6 +493,9 @@ class RackConsole extends HTMLElement {
         .rounduprow {
           display: flex; align-items: center; justify-content: center;
           min-height: 36px;
+          /* 8px under the status row (the prototype's 6px gap + 2px margin, L134/L140;
+             RBAR-74): the column's 12px gap, less 4. */
+          margin-top: -4px;
         }
         /* The row's own [hidden] is plain hidden semantics (fully out of the
            column in By Plates) -- the explicit display:none is needed because the
@@ -564,16 +571,16 @@ class RackConsole extends HTMLElement {
             ></span>
             <div class="icons">
               <button type="button" class="iconbtn" data-share aria-label="Share">
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <path d="M8 10V2M8 2L5 5M8 2l3 3M3 9v3a2 2 0 002 2h6a2 2 0 002-2V9"
-                        stroke="currentColor" stroke-width="1.6"
+                        stroke="currentColor" stroke-width="1.5"
                         stroke-linecap="round" stroke-linejoin="round"></path>
                 </svg>
               </button>
               <button type="button" class="iconbtn" data-fullscreen aria-label="Full screen">
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M5.5 2V5.5H2M14 5.5H10.5V2M10.5 14V10.5H14M2 10.5H5.5V14"
-                        stroke="currentColor" stroke-width="1.6"
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M2 6V2.5H5.5M14 6V2.5H10.5M2 10V13.5H5.5M14 10V13.5H10.5"
+                        stroke="currentColor" stroke-width="1.5"
                         stroke-linecap="round" stroke-linejoin="round"></path>
                 </svg>
               </button>
@@ -1300,7 +1307,7 @@ class RackConsole extends HTMLElement {
     // "Round up -> NNN", the applied state "Use NNN" (the way back to the at-or-under
     // primary). No delta suffix, per the prototype -- once applied, the status pill
     // beside the Total reads the overshoot. Arrow in the app's ASCII convention (cf.
-    // onBarLine's parenthetical for the prototype's middle dot). Wording is Caitlin's
+    // onBarLine's escaped middle dot). Wording is Caitlin's
     // plain-language call -- flagged on the PR (RBAR-38 copy note).
     this.over.hidden = false;
     this.over.textContent = this.showingOver
@@ -1361,8 +1368,8 @@ export function statusPill(
  * DISPLAYED numbers (ADR-0010) so it is honest in kg and lb; `totalKg`/`targetKg` are
  * canonical kg. Mirrors the prototype's keypad wording ("under"/"over"/"exact"), which
  * deliberately differs from the status pill above ("short"). The prototype separates the
- * two facts with a middle dot; kept ASCII here as a parenthetical (a bare hyphen would
- * read as a minus in a weight readout).
+ * two facts with a middle dot (L803, "On the bar: 142 kg <middot> 0.5 under"; RBAR-74),
+ * emitted as an escape so the source stays ASCII (the Setup pill's precedent, app.ts).
  */
 export function onBarLine(
   totalKg: number,
@@ -1373,14 +1380,14 @@ export function onBarLine(
   const head = `On the bar: ${format(totalKg, unit)}`;
   const shownTotal = shownIn(totalKg, unit);
   const shownTarget = shownIn(targetKg, unit);
-  if (shownTotal === shownTarget) return `${head} (exact)`;
+  if (shownTotal === shownTarget) return `${head} \u00B7 exact`;
   const mag = fmtNum(Math.abs(shownTotal - shownTarget));
-  if (shownTotal > shownTarget) return `${head} (${mag} over)`;
+  if (shownTotal > shownTarget) return `${head} \u00B7 ${mag} over`;
   // At capacity the shortfall still rides along (RBAR-47: the magnitude of the miss
   // is never lost): while the sheet is open it is the ONLY surface saying it -- the
   // sheet covers the pill and announce() goes quiet.
-  if (atCapacity) return `${head} (${mag} under, at capacity)`;
-  return `${head} (${mag} under)`;
+  if (atCapacity) return `${head} \u00B7 ${mag} under, at capacity`;
+  return `${head} \u00B7 ${mag} under`;
 }
 
 /**

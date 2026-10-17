@@ -16,6 +16,6 @@ describe('the fullscreen card frame (RBAR-18; shared with the share picture, RBA
 
   it('keeps the handoff numbers', () => {
     expect(FULLSCREEN.blowUp).toBe(1.5);
-    expect([FULLSCREEN.padTop, FULLSCREEN.padX, FULLSCREEN.padBottom]).toEqual([48, 24, 32]);
+    expect([FULLSCREEN.padTop, FULLSCREEN.padX, FULLSCREEN.padBottom]).toEqual([60, 24, 36]); // prototype L314 (RBAR-74)
   });
 });

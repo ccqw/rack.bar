@@ -1591,31 +1591,31 @@ describe('statusPill deriver (RBAR-28)', () => {
 describe('onBarLine deriver (RBAR-22 keypad sheet)', () => {
   // The loadable Total + delta, in the keypad's own wording ("under"/"over"/"exact"),
   // keyed off the DISPLAYED numbers (ADR-0010). Args are canonical kg.
-  it('reads an exactly-achievable Target as "(exact)"', () => {
-    expect(onBarLine(100, 100, 'kg', false)).toBe('On the bar: 100 kg (exact)');
+  it('reads an exactly-achievable Target as "exact" after the middot (prototype L803)', () => {
+    expect(onBarLine(100, 100, 'kg', false)).toBe('On the bar: 100 kg \u00B7 exact');
   });
 
-  it('reads a Total below the Target as "(N under)" -- the keypad wording, not "short"', () => {
+  it('reads a Total below the Target as "N under" -- the keypad wording, not "short"', () => {
     // Target 142.5, loadable 142 -> 0.5 under (the prototype's keypad line uses "under"
     // where the status pill above says "short").
-    expect(onBarLine(142, 142.5, 'kg', false)).toBe('On the bar: 142 kg (0.5 under)');
+    expect(onBarLine(142, 142.5, 'kg', false)).toBe('On the bar: 142 kg \u00B7 0.5 under');
   });
 
-  it('reads a Total above the Target as "(N over)"', () => {
-    expect(onBarLine(101, 100.5, 'kg', false)).toBe('On the bar: 101 kg (0.5 over)');
+  it('reads a Total above the Target as "N over"', () => {
+    expect(onBarLine(101, 100.5, 'kg', false)).toBe('On the bar: 101 kg \u00B7 0.5 over');
   });
 
   it('reads a physically-full short Side with BOTH facts (RBAR-47)', () => {
     // The sheet covers the pill and mutes announce() while open, so this line is
     // the only surface carrying the shortfall -- it must not drop the magnitude.
     expect(onBarLine(720, 720.3, 'kg', true)).toBe(
-      'On the bar: 720 kg (0.3 under, at capacity)',
+      'On the bar: 720 kg \u00B7 0.3 under, at capacity',
     );
   });
 
   it('keys off the displayed unit so it is honest in lb', () => {
     // 100 kg -> 220 lb; an exact whole-lb Target reads exact in lb.
-    expect(onBarLine(100, 100, 'lb', false)).toBe('On the bar: 220 lb (exact)');
+    expect(onBarLine(100, 100, 'lb', false)).toBe('On the bar: 220 lb \u00B7 exact');
   });
 });
 
@@ -1660,7 +1660,7 @@ describe('<rack-console> feeds the keypad sheet its load line (RBAR-22)', () => 
   it('reads an off-grid Target as under (keypad wording)', () => {
     const el = mountConsole();
     type(el, '100.5'); // nearest at-or-under is 100
-    expect(loadLineEl(el).textContent).toBe('On the bar: 100 kg (0.5 under)');
+    expect(loadLineEl(el).textContent).toBe('On the bar: 100 kg \u00B7 0.5 under');
   });
 
   it('hides the line when the field is emptied (nothing decoded)', () => {
@@ -2039,10 +2039,10 @@ describe('<rack-console> (status row at capacity + round-up styling, RBAR-47)', 
     // bare ".over" would match it and restyle the pill. The round-up button is
     // .roundup-scoped precisely so this can never happen again.
     expect(css).not.toMatch(/(?<![\w-])\.over(?![\w-])/);
-    // ...and the pill recipe itself stays the 10px / 4px 10px quiet pill.
+    // ...and the pill recipe itself stays the 10px / 3px 10px quiet pill.
     const pill = ruleBody(css, '.status {');
     expect(pill).toContain('font-size: 10px');
-    expect(pill).toContain('padding: 4px 10px');
+    expect(pill).toContain('padding: 3px 10px'); // sStatusPill, prototype L412 (RBAR-74)
   });
 
   it('styles the round-up control per the prototype (Hanken 600 12px, muted border, 8px 15px)', () => {
@@ -2199,7 +2199,7 @@ describe('screen-reader announcements (RBAR-53)', () => {
     expect(announcer(el).textContent).toBe('20 kilograms');
     const line = entry(el).shadowRoot!.querySelector<HTMLElement>('[data-live-load]')!;
     expect(line.getAttribute('role')).toBe('status');
-    expect(line.textContent).toBe('On the bar: 142 kg (0.5 under)');
+    expect(line.textContent).toBe('On the bar: 142 kg \u00B7 0.5 under');
     // Closing hands the announcement back to the console, settled on the final value.
     done(el);
     expect(announcer(el).textContent).toBe('142 kilograms, 0.5 kg short');
@@ -2556,5 +2556,65 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
 
   it('sets the big Total at line-height 1 (prototype L135), not the UA normal', () => {
     expect(rule(css(), '.readout output')).toContain('line-height: 1;');
+  });
+});
+
+// RBAR-74 (the RBAR-48a metrics sweep): the head icon buttons, the readout's secondary
+// line and its spacing, matched to the handoff prototype. happy-dom computes no layout,
+// so these text-lock the rule bodies; the rendered check is the browser pass and
+// scripts/fit-check.js.
+describe('<rack-console> metrics sweep (RBAR-74)', () => {
+  const css = () => mountConsole().shadowRoot!.querySelector('style')!.textContent!;
+  const rule = (text: string, selector: string) => {
+    const start = text.indexOf(selector);
+    expect(start, `rule ${selector}`).toBeGreaterThanOrEqual(0);
+    return text.slice(start, text.indexOf('}', start));
+  };
+
+  it('draws the inline fullscreen glyph as the ENTER corners (prototype L99)', () => {
+    const el = mountConsole();
+    const path = el.shadowRoot!.querySelector('[data-fullscreen] svg path')!;
+    expect(path.getAttribute('d')).toBe('M2 6V2.5H5.5M14 6V2.5H10.5M2 10V13.5H5.5M14 10V13.5H10.5');
+  });
+
+  it('draws both head glyphs at 14px on a 1.5 stroke (prototype L99)', () => {
+    const el = mountConsole();
+    for (const sel of ['[data-share]', '[data-fullscreen]']) {
+      const svg = el.shadowRoot!.querySelector(`${sel} svg`)!;
+      expect(svg.getAttribute('width'), sel).toBe('14');
+      expect(svg.getAttribute('height'), sel).toBe('14');
+      for (const p of svg.querySelectorAll('path')) {
+        expect(p.getAttribute('stroke-width'), sel).toBe('1.5');
+      }
+    }
+  });
+
+  it('fills the icon buttons raised on a 9px radius, with the hover ring (prototype L98)', () => {
+    const btn = rule(css(), '.iconbtn {');
+    expect(btn).toContain('background: var(--rack-raised)');
+    expect(btn).toContain('border-radius: 9px');
+    expect(btn).toContain('border: 1px solid var(--rack-border)');
+    const hover = rule(css(), '.iconbtn:hover {');
+    expect(hover).toContain('color: var(--rack-text)');
+    expect(hover).toContain('border-color: var(--rack-border-hover)');
+  });
+
+  it('sets the secondary line in Hanken 500 13px, not mono (prototype L137)', () => {
+    const sec = rule(css(), '.secondary {');
+    expect(sec).toContain('font-family: var(--rack-font);');
+    expect(sec).not.toContain('var(--rack-font-num)');
+    expect(sec).toContain('font-weight: 500');
+    expect(sec).toContain('font-size: 13px');
+    expect(sec).toContain('color: var(--rack-text-dim)');
+  });
+
+  it('spaces the readout like the prototype column: 6px, an 18px status row, 8px (L134-L140)', () => {
+    const line = rule(css(), '.statusline {');
+    expect(line).toContain('margin-top: 6px');
+    expect(line).toContain('min-height: 18px');
+    // The secondary is a button: it keeps its side pad but adds no height to the row.
+    expect(rule(css(), '.secondary {')).toContain('padding: 0 6px');
+    // The column gap is 12px; the round-up row sits 6px + 2px under the status row.
+    expect(rule(css(), '.rounduprow {')).toContain('margin-top: -4px');
   });
 });

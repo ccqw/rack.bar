@@ -10,10 +10,10 @@
 // bottom) and blown up by BLOW_UP.
 
 export const FULLSCREEN = {
-  /** Overlay padding (safe-area insets add to top and bottom on a device). */
-  padTop: 48,
+  /** Overlay padding, prototype L314 (safe-area insets add to top and bottom on a device). */
+  padTop: 60,
   padX: 24,
-  padBottom: 32,
+  padBottom: 36,
   /** Wordmark: Hanken 800, tracked -.025em. */
   wordmarkPx: 19,
   wordmarkTrackEm: -0.025,
