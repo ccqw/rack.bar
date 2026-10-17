@@ -536,7 +536,7 @@ describe('Plate limit properties (ADR-0016, ADR-0003)', () => {
     );
   });
 
-  it('every size none: Decode is the bare rig and planRamp gives bare-rig rows (ADR-0016)', () => {
+  it('every size none: Decode is the bare rig and planRamp and planEasyRamp give bare-rig rows (ADR-0016)', () => {
     fc.assert(
       fc.property(rigTargetArb, ({ rig, t }) => {
         const none = limited(rig, rig.inventory.map(() => 0));
@@ -546,7 +546,9 @@ describe('Plate limit properties (ADR-0016, ADR-0003)', () => {
         expect(over).toBeUndefined();
         fc.pre(t > 0);
         const ramp = planRamp(t, DEFAULT_RAMP, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: none });
-        for (const row of ramp.rows) {
+        // planEasyRamp guards with hasUsablePlates, so plateGridKg never sees all-none.
+        const easy = planEasyRamp(t, DEFAULT_RAMP, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: none });
+        for (const row of [...ramp.rows, ...easy.rows]) {
           expect(row.side).toEqual([]);
           expect(row.total).toBeCloseTo(rig.barKg + (row.collars ? 2 * rig.collarKg : 0), 9);
         }
