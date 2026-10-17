@@ -107,7 +107,7 @@ describe('section labels are headings (RBAR-53)', () => {
     const sections = [...root.querySelectorAll('h3.section-label')].map(
       (h) => h.textContent,
     );
-    expect(sections).toEqual(['Bar', 'Collars', 'Plates']);
+    expect(sections).toEqual(['Bar', 'Collars', 'Plates', 'Pairs of Plates on Hand']);
   });
 
   it("the Add palette's visible head label is the h2 (RBAR-54 head row)", () => {

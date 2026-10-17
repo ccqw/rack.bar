@@ -65,17 +65,26 @@ the Target when the Target is not exactly achievable.
 _Avoid_: sum, result.
 
 **Inventory**:
-The Plates available to draw from when decoding a Target. Defaults to an unlimited
-standard Eleiko set. Each size may carry a Plate limit (ADR-0016), which makes it a
-finite Inventory.
-_Avoid_: stock, supply.
+The Plates available to draw from when decoding a Target: the Plate set's sizes with
+the lifter's Plate limits applied (ADR-0016). Defaults to an unlimited standard Eleiko
+set. The lifter sets it in Setup as **Pairs of Plates on Hand** (RBAR-72); that is the
+UI name, Inventory the code and docs name.
+_Avoid_: stock, supply; "plates you have", "gym plates", "plate inventory" (as terms).
+
+**Pairs of Plates on Hand**:
+The Setup section where the lifter sets a Plate limit for each size of the active
+Plate set: All, 1-4 pairs, or None. One setting per Plate set, saved, never expiring
+(no "today" vs "this gym" split); a share link never carries it. Stored as limits, not
+a have-list, so a size with no entry is All.
+_Avoid_: plates at this gym, plates here, today's plates, exclusions.
 
 **Plate limit**:
 How many pairs of one size the lifter has: all (unlimited, the default), N pairs,
 or none. Counted in pairs because loading is symmetric (one per Side), so N pairs
 is at most N of that Plate on a Side. Decode never loads past a Plate limit and
-picks among the loads the limits allow by the usual rule (ADR-0003). The UI may say
-"pairs" and "none here".
+picks among the loads the limits allow by the usual rule (ADR-0003). The UI says
+"all", "1 pair", "N pairs" and "none" (Setup tiles), and By Plates badges a limited
+size "x1".."x4" and dims a none size, never blocking a tap (ADR-0012).
 _Avoid_: stock, missing, excluded, out, unavailable.
 
 **Plate set**:

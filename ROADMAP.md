@@ -24,7 +24,9 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
   solver input (ADR-0002); this surfaces the UI.
 - **Collars** -- optional competition collars (None / 2.5 kg per Side) that count
   toward the Total, chosen in the Setup sheet (RBAR-16).
-- Unlimited standard Inventory (modeled as finite-ready, finite UI deferred).
+- **Pairs of Plates on Hand** -- per Plate set, each size All (the default), 1-4
+  pairs, or None, set in the Setup sheet and saved (RBAR-72, ADR-0016). Decode, Round
+  up and Warm up draw only from the plates on hand; share links never carry them.
 - **Sleeve-capped solver** -- the core never proposes a Side Load that outruns the
   Bar's loadable sleeve; a full sleeve reads "Bar at capacity" with no phantom
   round-up, and Encode refuses a Plate that will not fit (RBAR-31, ADR-0012).
@@ -53,10 +55,8 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 
 - **Game / quiz mode** -- the original second half: progressively harder drills on
   the Decode/Encode skill, built on the calculator's components.
-- **Finite Inventory** -- enter how many pairs of each plate you own (home gym);
-  the solver already takes Inventory as input, and since RBAR-72 slice 1 it honours
-  per-size Plate limits (ADR-0016). The limits UI, its scopes and persistence are
-  pending Caitlin's design answers.
+- **Limits indicator** -- a main-screen hint that Pairs of Plates on Hand are
+  limiting the load (RBAR-77). Pairs of Plates on Hand itself shipped in v1 (RBAR-72).
 - **Arithmetic on entry** -- typing an expression in the entry field. (Its other
   half, percentage-of-working-weight warm-up ramps, moved into v1 as Warm up,
   RBAR-65.)

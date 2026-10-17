@@ -119,7 +119,9 @@ describe('opening a share link, properties (ADR-0014)', () => {
       }),
       APP_RUNS(60),
     );
-  });
+    // ~1.1 s locally, but it hit Vitest's 5 s default on a loaded CI runner (RBAR-72
+    // added test files to the run), so it gets the same room as the Copy link trip.
+  }, 30_000);
   // RBAR-50 slice 3: the whole trip through the real paths -- the sender builds a load
   // on the console (a typed Target -- x.5 readings included -- maybe the round-up, maybe
   // a unit switch after typing, or Plates tapped on; maybe carried across a mode

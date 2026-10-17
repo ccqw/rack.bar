@@ -16,7 +16,11 @@
 // land on that button, or the line reads ICONS BLOCKED (ICONS MISSING if the selector no
 // longer finds exactly two). The Setup states (RBAR-76) add the sheet's height, how far
 // it runs above the viewport (`over`, 0 = it fits), and how far its Bar row scrolls
-// sideways inside the sheet.
+// sideways inside the sheet. Since RBAR-72 the Setup lines also give how far the
+// sheet would scroll inside (the most across both sets and units): any inner scroll
+// reads SHEET SCROLLS and adds a FAIL line (since the RBAR-72 SE tightening, the sheet
+// fits at every viewport), and the RBAR-72 states open a size's None..All row with
+// limits stored.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -72,6 +76,7 @@ async (shared) => {
         sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
         sheetH: panel ? Math.round(panel.getBoundingClientRect().height) : 0,
         rowScroll: panel ? row.scrollWidth - row.clientWidth : 0,
+        sheetScroll: panel ? panel.scrollHeight - panel.clientHeight : 0,
         scrollH: d.scrollHeight,
         innerH: window.innerHeight,
         over: Math.max(0, d.scrollHeight - window.innerHeight),
@@ -176,6 +181,21 @@ async (shared) => {
         await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
         await inApp(`app.querySelector('[data-setup-pill]').click()`);
         await record('setup: 3 custom Bars');
+        // Pairs of Plates on Hand (RBAR-72): limits stored on both sets and the sheet
+        // open; then the first size's None..All row opened.
+        await page.evaluate(() =>
+          localStorage.setItem(
+            'rackbar.platesOnHand',
+            JSON.stringify({ comp: { 25: 1, 15: 0, 0.5: 2 }, training: { 45: 1, 2.5: 0 } }),
+          ),
+        );
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inApp(`app.querySelector('[data-setup-pill]').click()`);
+        await record('setup: limits stored');
+        // Opening a row scrolls it into view inside the sheet (RBAR-72 review).
+        await inApp(`setup.querySelector('[data-face]').click()`);
+        await record('setup: size row open');
       }
     }
   }
@@ -192,17 +212,27 @@ async (shared) => {
         ...r,
         iconsHit: r.iconsHit && (prev?.iconsHit ?? true),
         iconsMissing: r.iconsMissing || (prev?.iconsMissing ?? false),
+        sheetScroll: Math.max(r.sheetScroll, prev?.sheetScroll ?? 0),
       });
     } else {
       if (!r.iconsHit) prev.iconsHit = false;
       if (r.iconsMissing) prev.iconsMissing = true;
+      prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
     }
   }
-  return [...worst.entries()].map(
+  const lines = [...worst.entries()].map(
     ([key, r]) =>
       `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
       `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
       `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}` +
-      (r.sheetH ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` : ''),
+      (r.sheetH
+        ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
+          `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
+        : ''),
   );
+  // The Setup sheet must fit without scrolling inside at every viewport, a None..All
+  // row open included (RBAR-72, ADR-0013): any inner scroll fails the run.
+  const scrolling = [...worst.entries()].filter(([, r]) => r.sheetScroll > 0).map(([k]) => k);
+  if (scrolling.length) lines.push(`FAIL: the Setup sheet scrolls inside at ${scrolling.join('; ')}`);
+  return lines;
 }

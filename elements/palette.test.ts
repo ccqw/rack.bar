@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import './palette.ts';
-import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
+import { ELEIKO_KG, IRON_LB, withLimits } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 
 type Palette = HTMLElement & { inventory: readonly Plate[]; sideMm: number };
@@ -171,5 +171,37 @@ describe('<rack-palette> (the Encode add-affordance)', () => {
       keys(el)[0].click(); // the 45 lb key
       expect(seen).toHaveBeenCalledWith(IRON_LB[0]);
     });
+  });
+});
+
+describe('<rack-palette> under Pairs of Plates on Hand (RBAR-72, ADR-0016)', () => {
+  it('dims and strikes a none size, badges a limited one, and never disables either', () => {
+    const el = mountPalette();
+    el.inventory = withLimits(ELEIKO_KG, { '25': 0, '15': 1, '5': 4 });
+    const k = (kg: number) => keys(el).find((b) => Number(b.dataset.kg) === kg)!;
+    expect(k(25).classList.contains('none')).toBe(true);
+    expect(k(25).disabled).toBe(false);
+    expect(k(25).getAttribute('aria-label')).toBe('Add 25 kg red Plate, none on hand');
+    expect(k(25).querySelector('.badge')).toBeNull();
+    expect(k(15).querySelector('.badge')!.textContent).toBe('x1');
+    expect(k(15).disabled).toBe(false);
+    expect(k(15).getAttribute('aria-label')).toBe('Add 15 kg yellow Plate, 1 pair on hand');
+    expect(k(5).querySelector('.badge')!.textContent).toBe('x4');
+    expect(k(20).querySelector('.badge')).toBeNull();
+    expect(k(20).classList.contains('none')).toBe(false);
+    const css = el.shadowRoot!.querySelector('style')!.textContent!;
+    expect(css).toMatch(/\.key\.none \{ opacity: \.38; \}/);
+    expect(css).toMatch(/\.key\.none \.face \{ text-decoration: line-through; \}/);
+  });
+
+  it('a tap on a none size still emits addplate', () => {
+    const el = mountPalette();
+    el.inventory = withLimits(ELEIKO_KG, { '25': 0 });
+    const seen = vi.fn();
+    el.addEventListener('addplate', (e) =>
+      seen((e as CustomEvent<{ plate: Plate }>).detail.plate.kg),
+    );
+    keys(el)[0].click();
+    expect(seen).toHaveBeenCalledWith(25);
   });
 });

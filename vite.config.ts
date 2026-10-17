@@ -32,6 +32,12 @@ export default defineConfig({
     // happy-dom under Node does not provide localStorage; this installs a small
     // in-memory Storage so shell-side persistence (ADR-0007) is testable.
     setupFiles: ['./vitest.setup.ts'],
+    // Each app mount keeps ~6 MB in happy-dom after it is removed (measured on main at
+    // v0.39.0: rack-app 6.6 MB/mount, every element's shadow styles included), and the
+    // link properties mount the app ~180 times in one file -- past Node's ~2 GB default
+    // heap once RBAR-72 and RBAR-66 both land. Give the test workers room; RBAR-90
+    // (faster, steadier tests) owns cutting the mounts.
+    execArgv: ['--max-old-space-size=4096'],
     // docs/design-handoff/ is the authoritative Claude Design reference package
     // (RBAR-10 output), not part of the app -- its bundled engine.test.js is the
     // prototype's own contract file and must not run in our suite.

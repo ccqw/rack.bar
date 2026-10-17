@@ -18,6 +18,13 @@
 // right-click / context-menu key, or Delete on a custom tile removes it (`barremove`),
 // leaving an Undo tile in its slot for UNDO_MS (`barrestore`) -- the RBAR-73 pattern.
 // The entry and the pending Undo are UI state; the list itself is the app's.
+//
+// Pairs of Plates on Hand (RBAR-72, ADR-0016): the app feeds `platesOnHand` (every set's
+// limits); the section shows the active set's sizes as tiles in their Plate colors, each
+// reading its limit ("all", "1 pair", "none"). Tapping a tile opens a None / 1-4 / All
+// row for that size (emits `pairschange` with the size's face and its pairs, null =
+// All); "All plates" at the title's right emits `pairsreset`. Which tile is open is UI
+// state; the limits are the app's. No explanatory copy in the section (Caitlin, H).
 import { DEFAULT_BAR_KG, COLLAR_OPTIONS, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
 import { format } from '../lib/units.ts';
 import {
@@ -38,6 +45,10 @@ import {
   stampLabel,
 } from '../lib/custombars.ts';
 import type { BarStamp, StampError } from '../lib/custombars.ts';
+import { plateFace } from '../lib/plates.ts';
+import type { Plate } from '../lib/plates.ts';
+import { ALL_PLATES, PAIR_CHOICES, hasLimits, pairsLabel, pairsOf } from '../lib/platesonhand.ts';
+import type { PlatesOnHand } from '../lib/platesonhand.ts';
 import type { Unit } from '../lib/units.ts';
 import { LONG_PRESS_MS, MOVE_SLOP_PX, UNDO_MS } from './recents.ts';
 import { BOX_SIZING } from './boxsizing.ts';
@@ -96,10 +107,26 @@ const PLATE_SET_SWATCHES: Record<PlateSetKey, readonly string[]> = {
 // The selected-row check, an inline SVG per the handoff's icon convention (the
 // prototype's literal check glyph is non-ASCII). Visibility is CSS, keyed on the
 // row's aria-pressed, so the visual check and the accessible state cannot drift.
+// A size's spoken name: "25 kg red", "45 lb iron" (the palette's naming).
+function sizeName(p: Plate): string {
+  return p.label !== undefined ? `${p.label} lb iron` : `${p.kg} kg ${p.color}`;
+}
+
+// A pair-count button's face: None / 1..4 / All.
+function choiceText(n: number | null): string {
+  return n === null ? 'All' : n === 0 ? 'None' : String(n);
+}
+
 const CHECK_SVG = `<svg class="check" aria-hidden="true" viewBox="0 0 16 16" width="15" height="15">
   <path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor"
         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
+
+// Columns for the Pairs of Plates on Hand tiles: a set of more than 5 sizes splits into
+// two rows (big Plates on top, change Plates below); 5 or fewer stay on one row.
+export function onhandColumns(sizes: number): number {
+  return sizes > 5 ? Math.ceil(sizes / 2) : sizes;
+}
 
 class RackSetup extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -119,6 +146,16 @@ class RackSetup extends HTMLElement {
   private _plateSetKey: PlateSetKey = 'comp';
   // The lifter's custom Bars (RBAR-76), mirrored from the app like the rest.
   private _customBars: readonly BarStamp[] = [];
+  // Pairs of Plates on Hand, every set's (RBAR-72), mirrored from the app; and the face
+  // of the size whose None..All row is open (UI state, null = none open).
+  private _onHand: PlatesOnHand = ALL_PLATES;
+  private openFace: string | null = null;
+  // The set whose tiles are built, or null before the sheet first opens: the tiles are
+  // built on open (and on a set change while open), never for a closed sheet.
+  private onhandFor: PlateSetKey | null = null;
+  private onhandTilesEl!: HTMLElement;
+  private pairsRowEl!: HTMLElement;
+  private pairsResetEl!: HTMLButtonElement;
 
   // The "+" entry: open or not, and the Unit it reads the typed weight in.
   private adding = false;
@@ -152,6 +189,14 @@ class RackSetup extends HTMLElement {
     return this._customBars;
   }
 
+  set platesOnHand(onHand: PlatesOnHand) {
+    this._onHand = onHand;
+    if (this.onhandFor === this._plateSetKey) this.syncOnhand();
+  }
+  get platesOnHand(): PlatesOnHand {
+    return this._onHand;
+  }
+
   set barKg(kg: number) {
     this._barKg = kg;
     if (this.tiles) this.syncTiles();
@@ -169,11 +214,17 @@ class RackSetup extends HTMLElement {
   }
 
   set plateSet(key: string) {
-    this._plateSetKey = isOfferedPlateSet(key) ? key : 'comp';
+    const k = isOfferedPlateSet(key) ? key : 'comp';
+    // The same set again (a same-set share link, a re-seed) changes nothing: keep the
+    // Bar row and any open None..All row as they are.
+    if (k === this._plateSetKey) return;
+    this._plateSetKey = k;
     if (this.barTilesEl) {
       this.adding = false;
       this.renderBarTiles(); // the offered Bars changed with the set
       this.syncPlatesetTiles();
+      this.openFace = null;
+      if (!this.hidden) this.ensureOnhand(); // so did the sizes
     }
   }
   get plateSet(): string {
@@ -183,6 +234,7 @@ class RackSetup extends HTMLElement {
   /** Show the sheet. */
   open(): void {
     this.hidden = false;
+    if (this.onhandTilesEl) this.ensureOnhand();
   }
 
   /** Hide the sheet and tell the shell, so it can drop the open state / pill caret. */
@@ -195,6 +247,8 @@ class RackSetup extends HTMLElement {
     this.clearPending();
     this.adding = false;
     if (this.barTilesEl) this.renderBarTiles();
+    this.openFace = null;
+    if (this.onhandFor === this._plateSetKey) this.syncOnhand();
     this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
   }
 
@@ -245,8 +299,13 @@ class RackSetup extends HTMLElement {
            shadow and entrance per prototype L252 (RBAR-74): sheetIn .26s on the spring
            curve. Split like the keypad sheet for reduced motion: everyone gets the
            fade (opacity is not motion), only a no-preference lifter gets the rise. */
+        /* The sheet fits every supported phone without scrolling (RBAR-72: a short
+           phone tightens the spacing below); overflow-y stays as a guard for anything
+           shorter, so the page itself never scrolls (ADR-0013). */
         .panel {
           width: 100%; max-width: 520px;
+          max-height: calc(100% - env(safe-area-inset-top));
+          overflow-y: auto; overscroll-behavior: contain;
           background: var(--rack-overlay);
           border-top: 1px solid var(--rack-border-strong);
           border-radius: var(--rack-radius-sheet) var(--rack-radius-sheet) 0 0;
@@ -436,7 +495,7 @@ class RackSetup extends HTMLElement {
         /* The plate-set rows (RBAR-29, handoff section 6): stacked full-width rows,
            each swatch cluster + name/sub + check, unlike the side-by-side tiles above.
            Selected = the active-row fill + active border ring (prototype tiers). */
-        .rows { display: flex; flex-direction: column; gap: 8px; }
+        .rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
         .row {
           display: flex; align-items: center; width: 100%; min-height: 56px;
           padding: 11px 13px; cursor: pointer;
@@ -460,6 +519,72 @@ class RackSetup extends HTMLElement {
         .row .sub { font-size: 12px; font-weight: 500; color: var(--rack-text-dim); }
         .check { color: var(--rack-accent); opacity: 0; }
         .row[aria-pressed="true"] .check { opacity: 1; }
+        /* Pairs of Plates on Hand (RBAR-72, prototype H): the reset sits at the title
+           row's right in the accent, quiet while every size is All. */
+        .pairs-reset {
+          position: relative;
+          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
+          color: var(--rack-accent); background: transparent; border: none;
+          padding: 4px 0; min-height: 24px; cursor: pointer;
+        }
+        /* A 44px hit area around the small label, without growing the title row. */
+        .pairs-reset::after { content: ''; position: absolute; inset: -10px -12px; }
+        .pairs-reset[aria-disabled="true"] { color: var(--rack-text-dim); opacity: .5; cursor: default; }
+        .pairs-reset:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* One tile per size, in the set's columns: a Plate-color bar, the face, and
+           its limit underneath. */
+        .onhand { display: grid; grid-template-columns: repeat(var(--cols, 5), 1fr); gap: 6px; }
+        .size {
+          display: flex; flex-direction: column; align-items: center; gap: 3px;
+          min-height: 48px; padding: 7px 0 6px; cursor: pointer; color: var(--rack-text);
+          background: transparent;
+          border: 1px solid var(--rack-border-muted); border-radius: var(--rack-radius-tile);
+        }
+        .size .bar {
+          display: block; width: 22px; height: 6px; background: var(--disc);
+          border-radius: var(--rack-radius-pill); box-shadow: var(--rack-shadow-disc);
+        }
+        .size .face { font-family: var(--rack-font-num); font-size: 12px; font-weight: 700; line-height: 1; }
+        .size .state {
+          font-family: var(--rack-font-num); font-size: 9.5px; font-weight: 600; line-height: 1;
+          color: var(--rack-text-dim);
+        }
+        .size[data-state="limited"] .state { color: var(--rack-accent); }
+        .size[data-state="none"] { opacity: .5; }
+        .size[data-state="none"] .face { text-decoration: line-through; }
+        .size[aria-expanded="true"] {
+          border-color: var(--rack-accent); background: var(--rack-active); opacity: 1;
+        }
+        .size:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* The open size's None / 1 / 2 / 3 / 4 / All row; the current count fills. */
+        .pairs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-top: 8px; }
+        .pairs[hidden] { display: none; }
+        .pairs button {
+          min-height: 44px; padding: 0; cursor: pointer;
+          font-family: var(--rack-font-num); font-size: 12px; font-weight: 700;
+          color: var(--rack-text-secondary); background: transparent;
+          border: 1px solid var(--rack-border-muted); border-radius: var(--rack-radius-tile);
+        }
+        .pairs button[aria-pressed="true"] {
+          color: var(--rack-bg); background: var(--rack-accent); border-color: var(--rack-accent);
+        }
+        .pairs button:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* A short phone (the SE in Safari, 548px tall): the sheet tightens its spacing so
+           every section, an open None..All row included, fits with no inner scroll
+           (ADR-0013 as amended for RBAR-72). Every tap target stays 44px or taller; the
+           handoff's spacing holds on the Must viewport (393x659) and up. */
+        @media (max-height: 600px) {
+          .panel { padding: 12px 20px calc(10px + env(safe-area-inset-bottom)); }
+          .head { margin-bottom: 8px; }
+          .section-label, .label-row { margin-bottom: 6px; }
+          .tiles, .bar-row, .rows { margin-bottom: 12px; }
+          .tile { min-height: 48px; padding: 6px 4px; }
+          .rows { gap: 6px; }
+          .row { min-height: 48px; padding: 7px 13px; }
+          .onhand { gap: 4px; }
+          .size { min-height: 44px; padding: 6px 0 5px; }
+          .pairs { margin-top: 6px; }
+        }
       </style>
       <div class="scrim" data-scrim>
         <div class="panel" data-panel role="dialog" aria-modal="true" aria-labelledby="setup-heading">
@@ -488,6 +613,12 @@ class RackSetup extends HTMLElement {
           <div class="tiles">${collarTiles}</div>
           <h3 class="section-label">Plates</h3>
           <div class="rows" data-plateset-tiles></div>
+          <div class="label-row">
+            <h3 class="section-label" id="onhand-heading">Pairs of Plates on Hand</h3>
+            <button type="button" class="pairs-reset" data-pairs-reset>All plates</button>
+          </div>
+          <div class="onhand" data-onhand-tiles role="group" aria-labelledby="onhand-heading"></div>
+          <div class="pairs" id="pairs-row" data-pairs-row role="group" hidden></div>
         </div>
       </div>
     `;
@@ -497,7 +628,11 @@ class RackSetup extends HTMLElement {
     this.collarTiles = this.root.querySelectorAll<HTMLButtonElement>('[data-collar]');
     this.menuEl = this.root.querySelector('[data-bar-menu]')!;
     this.barHintEl = this.root.querySelector('[data-bar-hint]')!;
+    this.onhandTilesEl = this.root.querySelector('[data-onhand-tiles]')!;
+    this.pairsRowEl = this.root.querySelector('[data-pairs-row]')!;
+    this.pairsResetEl = this.root.querySelector('[data-pairs-reset]')!;
     this.wireBarRow();
+    this.wireOnhand();
 
     // A scrim tap dismisses; a tap inside the panel must not (it would bubble to the
     // scrim otherwise), so the panel stops it.
@@ -513,6 +648,115 @@ class RackSetup extends HTMLElement {
     this.renderBarTiles();
     this.renderPlatesetTiles();
     this.syncCollarTiles();
+  }
+
+  // Build the active set's size tiles if they are not built for it yet, else re-sync.
+  private ensureOnhand(): void {
+    if (this.onhandFor === this._plateSetKey) this.syncOnhand();
+    else this.renderOnhand();
+  }
+
+  // Pairs of Plates on Hand (RBAR-72): build the active set's size tiles and the pair
+  // row's buttons, then reflect the limits. Rebuilt only when the set changes; a limit
+  // change only re-syncs (syncOnhand), so focus stays on the tile or count tapped.
+  private renderOnhand(): void {
+    this.onhandFor = this._plateSetKey;
+    const inv = plateSetFor(this._plateSetKey).inventory;
+    // Two rows, heaviest-first: the big Plates on top, the change Plates underneath
+    // (Competition 25 20 15 10 5 / 2.5 2 1.5 1 0.5; Training 45 35 25 / 10 5 2.5).
+    this.onhandTilesEl.style.setProperty('--cols', String(onhandColumns(inv.length)));
+    this.onhandTilesEl.innerHTML = inv
+      .map(
+        (p) => `
+        <button type="button" class="size" data-face="${plateFace(p)}" aria-expanded="false"
+                aria-controls="pairs-row" style="--disc: var(--rack-plate-${p.color})">
+          <span class="bar" aria-hidden="true"></span>
+          <span class="face" aria-hidden="true">${plateFace(p)}</span>
+          <span class="state" aria-hidden="true"></span>
+        </button>`,
+      )
+      .join('');
+    this.pairsRowEl.innerHTML = PAIR_CHOICES.map(
+      (n) =>
+        `<button type="button" data-pairs="${n === null ? 'all' : n}" aria-pressed="false">${choiceText(n)}</button>`,
+    ).join('');
+    this.syncOnhand();
+  }
+
+  // Reflect the active set's limits on its tiles, the open size's row, and the reset.
+  private syncOnhand(): void {
+    const key = this._plateSetKey;
+    const inv = plateSetFor(key).inventory;
+    if (this.openFace !== null && !inv.some((p) => plateFace(p) === this.openFace)) {
+      this.openFace = null;
+    }
+    this.onhandTilesEl.querySelectorAll<HTMLButtonElement>('[data-face]').forEach((t) => {
+      const face = t.dataset.face!;
+      const plate = inv.find((p) => plateFace(p) === face)!;
+      const pairs = pairsOf(this._onHand, key, face);
+      t.dataset.state = pairs === null ? 'all' : pairs === 0 ? 'none' : 'limited';
+      t.querySelector('.state')!.textContent = pairsLabel(pairs);
+      t.setAttribute('aria-label', `${sizeName(plate)}: ${pairsLabel(pairs)}`);
+      t.setAttribute('aria-expanded', String(face === this.openFace));
+    });
+    const open = this.openFace;
+    this.pairsRowEl.hidden = open === null;
+    if (open !== null) {
+      const plate = inv.find((p) => plateFace(p) === open)!;
+      const pairs = pairsOf(this._onHand, key, open);
+      this.pairsRowEl.setAttribute('aria-label', `Pairs of ${sizeName(plate)} on hand`);
+      this.pairsRowEl.querySelectorAll<HTMLButtonElement>('[data-pairs]').forEach((b) => {
+        const n = b.dataset.pairs === 'all' ? null : Number(b.dataset.pairs);
+        b.setAttribute('aria-pressed', String(n === pairs));
+        b.setAttribute('aria-label', n === null ? 'All' : n === 0 ? 'None' : pairsLabel(n));
+      });
+    }
+    this.pairsResetEl.setAttribute('aria-disabled', String(!hasLimits(this._onHand, key)));
+  }
+
+  // The section's delegated listeners: a tile toggles its row; a count goes up as
+  // `pairschange`; "All plates" as `pairsreset` (only while something is limited).
+  private wireOnhand(): void {
+    this.onhandTilesEl.addEventListener('click', (e) => {
+      const t = (e.target as Element | null)?.closest<HTMLElement>('[data-face]');
+      if (!t) return;
+      const face = t.dataset.face!;
+      if (this.openFace === face) return this.closePairs();
+      this.openFace = face;
+      this.syncOnhand();
+      // Bring the row into view (a guard: the sheet only scrolls below the supported
+      // viewports, ADR-0013) and put
+      // focus on the size's current count, a step from the tile, not ten Tabs away.
+      this.pairsRowEl.scrollIntoView?.({ block: 'nearest' });
+      this.pairsRowEl.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+    });
+    // Escape in the row closes it and returns focus to its tile (not the whole sheet).
+    this.pairsRowEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || this.openFace === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.closePairs();
+    });
+    this.pairsRowEl.addEventListener('click', (e) => {
+      const b = (e.target as Element | null)?.closest<HTMLElement>('[data-pairs]');
+      if (!b || this.openFace === null) return;
+      const pairs = b.dataset.pairs === 'all' ? null : Number(b.dataset.pairs);
+      this.emit('pairschange', { face: this.openFace, pairs });
+    });
+    this.pairsResetEl.addEventListener('click', () => {
+      if (!hasLimits(this._onHand, this._plateSetKey)) return;
+      this.emit('pairsreset', {});
+    });
+  }
+
+  // Close the open None..All row and return focus to the tile that opened it.
+  private closePairs(): void {
+    const face = this.openFace;
+    this.openFace = null;
+    this.syncOnhand();
+    if (face !== null) {
+      this.onhandTilesEl.querySelector<HTMLButtonElement>(`[data-face="${face}"]`)?.focus();
+    }
   }
 
   // Render the Bar tiles for the active plate set's Bars (ADR-0010). The headline reads

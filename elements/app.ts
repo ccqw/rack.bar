@@ -16,6 +16,9 @@
 //   sheet `barremove`       -> drop a custom Bar; the chosen one falls back to the set's
 //                              default Bar
 //   sheet `barrestore`      -> Undo a removal, re-selecting the Bar if it was chosen
+//   sheet `pairschange`     -> set one size's Pairs of Plates on Hand on the active set
+//                              (RBAR-72, ADR-0016): persist, push to console and sheet
+//   sheet `pairsreset`      -> "All plates": clear the active set's limits, same path
 //   sheet `close`           -> drop the pill's open state
 //   a share link (#v=1&...) -> on boot or `hashchange`: apply its rig and load for this
 //                              view only, persisting nothing (RBAR-50, ADR-0014)
@@ -48,11 +51,20 @@ import type { BarStamp } from '../lib/custombars.ts';
 import { format, isUnit } from '../lib/units.ts';
 import { parseLink } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
+import {
+  ALL_PLATES,
+  clearSet,
+  parsePlatesOnHand,
+  serializePlatesOnHand,
+  setPairs,
+} from '../lib/platesonhand.ts';
+import type { PlatesOnHand } from '../lib/platesonhand.ts';
 
 type Console = HTMLElement & {
   barKg: number;
   collarKg: number;
   plateSet: string;
+  platesOnHand: PlatesOnHand;
   applyLink(link: LinkLoad): void;
 };
 type Setup = HTMLElement & {
@@ -60,6 +72,7 @@ type Setup = HTMLElement & {
   customBars: readonly BarStamp[];
   collarKg: number;
   plateSet: string;
+  platesOnHand: PlatesOnHand;
   open(): void;
   close(): void;
 };
@@ -71,6 +84,8 @@ const STORAGE_KEY = 'rackbar.barKg';
 const COLLAR_STORAGE_KEY = 'rackbar.collarKg';
 const PLATESET_STORAGE_KEY = 'rackbar.plateSet';
 const CUSTOM_BARS_STORAGE_KEY = 'rackbar.customBars';
+// Pairs of Plates on Hand (RBAR-72, ADR-0016): every set's limits in one key.
+const PLATES_ON_HAND_STORAGE_KEY = 'rackbar.platesOnHand';
 
 // A stamp from an event payload, or null: the sheet is trusted to send one, but the
 // list only ever takes a valid stamp (the ADR-0007 validate-at-the-boundary rule).
@@ -96,6 +111,9 @@ class RackApp extends HTMLElement {
   private collarKg = DEFAULT_COLLAR_KG;
   // The lifter's custom Bars (RBAR-76, ADR-0017), offered on every set after its own.
   private customBars: readonly BarStamp[] = [];
+  // Pairs of Plates on Hand, every set's (RBAR-72, ADR-0016). One setting, saved;
+  // a share link never touches it.
+  private platesOnHand: PlatesOnHand = ALL_PLATES;
 
   connectedCallback(): void {
     // A share link in the URL (RBAR-50, ADR-0014) is read FIRST and the fragment cleared,
@@ -106,6 +124,7 @@ class RackApp extends HTMLElement {
     this.customBars = parseCustomBars(readPersisted(CUSTOM_BARS_STORAGE_KEY));
     this.barKg = this.loadBar();
     this.collarKg = this.loadCollar();
+    this.platesOnHand = parsePlatesOnHand(readPersisted(PLATES_ON_HAND_STORAGE_KEY));
     // Children are defined before this runs (imports at top + rack-app's own define is
     // last), so assigning innerHTML upgrades <rack-console>/<rack-setup> synchronously
     // and their connectedCallbacks finish here -- which is why the seeding below (after
@@ -214,6 +233,8 @@ class RackApp extends HTMLElement {
     this.console.barKg = this.barKg;
     this.console.collarKg = this.collarKg;
     this.console.plateSet = this.plateSetKey;
+    this.console.platesOnHand = this.platesOnHand;
+    this.setup.platesOnHand = this.platesOnHand;
     this.setup.customBars = this.customBars;
     this.setup.barKg = this.barKg;
     this.setup.collarKg = this.collarKg;
@@ -238,6 +259,14 @@ class RackApp extends HTMLElement {
       this.removeBar((e as CustomEvent<{ index?: unknown }>).detail?.index),
     );
     this.setup.addEventListener('barrestore', (e) => this.restoreBar((e as CustomEvent).detail));
+    this.setup.addEventListener('pairschange', (e) => {
+      const { face, pairs } = ((e as CustomEvent).detail ?? {}) as { face?: unknown; pairs?: unknown };
+      if (typeof face !== 'string' || !(pairs === null || typeof pairs === 'number')) return;
+      this.setPlatesOnHand(setPairs(this.platesOnHand, this.plateSetKey, face, pairs));
+    });
+    this.setup.addEventListener('pairsreset', () =>
+      this.setPlatesOnHand(clearSet(this.platesOnHand, this.plateSetKey)),
+    );
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
     );
@@ -341,6 +370,17 @@ class RackApp extends HTMLElement {
     if (next === this.customBars) return;
     this.setCustomBars(next);
     if (select === true) this.adopt(stampKg(s));
+  }
+
+  // Adopt new Pairs of Plates on Hand (RBAR-72): persist and push to the console (which
+  // re-solves) and the sheet (which re-reads its tiles). setPairs/clearSet return the
+  // same object for a no-op or invalid edit, so nothing is written for one.
+  private setPlatesOnHand(next: PlatesOnHand): void {
+    if (next === this.platesOnHand) return;
+    this.platesOnHand = next;
+    writePersisted(PLATES_ON_HAND_STORAGE_KEY, serializePlatesOnHand(next));
+    this.console.platesOnHand = next;
+    this.setup.platesOnHand = next;
   }
 
   // Persist the custom list and feed it to the sheet (which re-renders its Bar row).

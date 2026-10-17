@@ -30,7 +30,7 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `CONTEXT.md` — the domain language. Read it before writing user-facing copy or
   naming anything new; it is the controlled vocabulary (Bar, Plate, Collar, Side Load,
   Target vs Total, Plate set, Decode/Encode) with per-term Avoid lists.
-- `ROADMAP.md` -- v1 scope and the parked features (finite inventory, entry math,
+- `ROADMAP.md` -- v1 scope and the parked features (limits indicator, entry math,
   game mode); reconciled to `docs/design-handoff/` on 2026-06-28, which pulled
   pounds plates and bar selection into v1
 
@@ -40,7 +40,8 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
   elements only wire DOM to it.
 - The solver is `solve(target, bar, inventory)` (ADR-0002): Bar and Inventory are
   first-class inputs (defaults 20 kg, unlimited Eleiko set). v1 now exposes Bar
-  selection and adds optional collars to the Total; finite-Inventory UI stays deferred.
+  selection, optional collars, and Pairs of Plates on Hand (per-size Plate limits per
+  Plate set, ADR-0016) in Setup.
 - Decode never overshoots the Target by default (ADR-0003); a closer over-Target
   loadout is offered as an explicit opt-in only.
 - Fewest Plates is exact on every Inventory (ADR-0003, amended by RBAR-69): Sleeve fit,

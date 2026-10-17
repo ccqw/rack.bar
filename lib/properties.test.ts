@@ -61,6 +61,7 @@ import {
   oracleMoveCost,
   oracleCaps,
   legalSides,
+  storedPairsOracle,
 } from './properties.oracle.ts';
 import type { StationRule } from './properties.oracle.ts';
 import {
@@ -92,6 +93,15 @@ import {
 } from './custombars.ts';
 import type { BarStamp } from './custombars.ts';
 import type { PlateSetKey } from './platesets.ts';
+import {
+  inventoryOnHand,
+  parsePlatesOnHand,
+  serializePlatesOnHand,
+  setPairs,
+  clearSet,
+  ALL_PLATES,
+} from './platesonhand.ts';
+import type { PlatesOnHand } from './platesonhand.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -571,6 +581,22 @@ describe('Plate limit properties (ADR-0016, ADR-0003)', () => {
         }
       }),
       opts,
+    );
+  });
+
+  it('the Warm up Ramp never uses a none size nor exceeds a cap on any row (ADR-0016, RBAR-72)', () => {
+    // Slice 2 passes the capped Inventory through; slice 3 owns the Ramp's shape under
+    // limits. This pins only that every row is loadable from the plates on hand.
+    fc.assert(
+      fc.property(cappedArb, ({ rig, caps, t }) => {
+        fc.pre(t > 0);
+        const inv = limited(rig, caps);
+        const ramp = planEasyRamp(t, DEFAULT_RAMP, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: inv });
+        for (const row of ramp.rows) {
+          rig.inventory.forEach((p, i) => expect(countOf(row.side, p)).toBeLessThanOrEqual(caps[i]));
+        }
+      }),
+      { seed: SEED, numRuns: 120 },
     );
   });
 });
@@ -1862,5 +1888,106 @@ describe('Custom Bar properties (ADR-0017)', () => {
       }),
       opts,
     );
+  });
+});
+
+describe('Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', () => {
+  // A stored value as the lifter's storage might hold it: mostly well-formed limits with
+  // a mix of good and bad entries (a face from either set or none, a count in range or
+  // out of it, a fraction, a string), sometimes junk JSON or not JSON at all.
+  const faces = (set: PlateSetKey) => PLATE_SETS[set].inventory.map(plateFace);
+  const allFaces = [...new Set(PLATE_SET_KEYS.flatMap(faces))];
+  const countArb = fc.oneof(
+    fc.integer({ min: 0, max: 4 }),
+    fc.integer({ min: -3, max: 9 }),
+    fc.double({ min: -2, max: 6, noNaN: true }),
+    fc.constantFrom<unknown>('2', null, true, [], {}, Infinity),
+  );
+  const limitsArb = fc.dictionary(
+    fc.oneof(fc.constantFrom(...allFaces), fc.string({ maxLength: 4 })),
+    countArb,
+    { maxKeys: 8 },
+  );
+  const rawArb: fc.Arbitrary<string | null> = fc.oneof(
+    { weight: 6, arbitrary: fc.record({ comp: limitsArb, training: limitsArb }, { requiredKeys: [] }).map((o) => JSON.stringify(o)) },
+    { weight: 1, arbitrary: fc.json() },
+    { weight: 1, arbitrary: fc.string() },
+    { weight: 1, arbitrary: fc.constant(null) },
+  );
+  const setArb = fc.constantFrom(...PLATE_SET_KEYS);
+  const capOf = (p: InventoryEntry) => p.maxPerSide ?? Infinity;
+
+  it('a stored value reads as its valid limits and All for the rest, never a throw (ADR-0016, ADR-0007)', () => {
+    fc.assert(
+      fc.property(rawArb, setArb, (raw, set) => {
+        const inv = inventoryOnHand(parsePlatesOnHand(raw), set);
+        expect(inv.map(plateFace)).toEqual(faces(set));
+        for (const p of inv) expect(capOf(p)).toBe(storedPairsOracle(raw, set, plateFace(p)));
+      }),
+      opts,
+    );
+  });
+
+  it('what is stored reads back the same (ADR-0016, ADR-0007)', () => {
+    fc.assert(
+      fc.property(rawArb, (raw) => {
+        const onHand = parsePlatesOnHand(raw);
+        expect(parsePlatesOnHand(serializePlatesOnHand(onHand))).toEqual(onHand);
+      }),
+      opts,
+    );
+  });
+
+  it('setting one size changes only that size of that set; All plates clears only that set (ADR-0016)', () => {
+    const editArb = fc.record({
+      raw: rawArb,
+      set: setArb,
+      i: fc.nat(),
+      pairs: fc.constantFrom<number | null>(0, 1, 2, 3, 4, null),
+    });
+    fc.assert(
+      fc.property(editArb, ({ raw, set, i, pairs }) => {
+        const before = parsePlatesOnHand(raw);
+        const face = faces(set)[i % faces(set).length];
+        const after = setPairs(before, set, face, pairs);
+        for (const s of PLATE_SET_KEYS) {
+          const was = inventoryOnHand(before, s);
+          const now = inventoryOnHand(after, s);
+          now.forEach((p, j) =>
+            expect(capOf(p)).toBe(s === set && plateFace(p) === face ? (pairs ?? Infinity) : capOf(was[j])),
+          );
+        }
+        const cleared = clearSet(after, set);
+        expect(inventoryOnHand(cleared, set)).toBe(PLATE_SETS[set].inventory);
+        for (const s of PLATE_SET_KEYS) {
+          if (s !== set) expect(cleared[s]).toEqual(after[s]);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('Decode on the stored limits never uses a None size and never exceeds a cap, round-up included (ADR-0016, ADR-0003)', () => {
+    const caseArb = rigArb.chain((rig) => fc.record({ rig: fc.constant(rig), raw: rawArb, t: targetArb(rig) }));
+    fc.assert(
+      fc.property(caseArb, ({ rig, raw, t }) => {
+        const d = decode(t, rig.baselineKg, inventoryOnHand(parsePlatesOnHand(raw), rig.set));
+        for (const side of d.over ? [d.primary.side, d.over.side] : [d.primary.side]) {
+          for (const face of faces(rig.set)) {
+            const n = side.filter((p) => plateFace(p) === face).length;
+            expect(n).toBeLessThanOrEqual(storedPairsOracle(raw, rig.set, face));
+          }
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('with nothing stored, Decode is the plain set (ADR-0016)', () => {
+    const none: PlatesOnHand = ALL_PLATES;
+    for (const set of PLATE_SET_KEYS) {
+      expect(inventoryOnHand(none, set)).toBe(PLATE_SETS[set].inventory);
+      expect(inventoryOnHand(parsePlatesOnHand(null), set)).toBe(PLATE_SETS[set].inventory);
+    }
   });
 });

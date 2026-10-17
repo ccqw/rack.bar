@@ -60,7 +60,59 @@ persistence wait on Caitlin's answers to that pass's open questions.
   oracle's best.
 - The runtime budget gains a capped run: under a millisecond per decode on average.
 
+## Amendment 2026-10-17: Pairs of Plates on Hand (RBAR-72 slice 2)
+
+Caitlin chose direction H of the joint RBAR-66 / RBAR-72 design pass. It settles the
+UI, scopes and persistence questions below; Warm up under caps stays with slice 3.
+
+1. **One setting, no scopes.** For each size of each Plate set: All (the default),
+   1-4 pairs, or None. No "today" / "this gym" split and nothing expires, so the
+   `withLimits` min-of-two-scopes composition is not used by the shell. Limits are per
+   Plate set: a Training limit never touches Competition.
+2. **Persistence:** one key, `rackbar.platesOnHand`, a JSON object of Plate set key to
+   (size face -> pairs), e.g. `{"comp":{"15":2,"0.5":0}}`. Limits, not a have-list:
+   a missing size is All, so a size a future set adds starts available. Validated on
+   read per ADR-0007 (`parsePlatesOnHand`, lib/platesonhand.ts): unparseable or
+   non-object storage is All plates, and each bad entry (an unknown set or face, a
+   count that is not a whole 0..4) is dropped on its own, its size reading as All.
+   Writes are best-effort. `inventoryOnHand` builds the capped Inventory from that
+   already-validated value; a bad face or count reaching it is a bug and throws
+   (withLimits), never a silent All.
+3. **UI lives only in Setup**, a section titled "Pairs of Plates on Hand" with an
+   "All plates" reset at the title's right, one tile per size in its Plate color
+   reading "all", "N pair(s)" or "none" (dimmed, struck), and a None / 1 / 2 / 3 / 4
+   / All row for the tapped size. No explanatory copy in the section. The sheet fits
+   without scrolling at every phone viewport, a size's row open included (Caitlin,
+   2026-10-17): on a short phone (548px tall) it tightens its spacing, every tap
+   target staying 44px or taller, and fit-check fails on any inner scroll. The sheet
+   keeps `overflow-y: auto` only as a guard for viewports below the supported ones;
+   the page never scrolls (ADR-0013). Opening a
+   size's row scrolls it into view and focuses its current count; Escape or a second
+   tap on the tile closes it and returns focus to the tile.
+4. **Any change re-solves at once** everything that draws from the Inventory: a
+   standing Decode Target re-decodes (a chosen round-up is dropped; the lifter re-opts
+   in), and a Warm up Ramp re-plans. A hand-built By Plates Side is the lifter's and is
+   kept.
+5. **By Plates dims a none size and badges a limited one ("x1".."x4"); it never blocks
+   a tap.** The lifter may be loading Plates the app does not know about; only the
+   Sleeve refuses (ADR-0005, ADR-0012).
+6. **Warm up, pass-through only:** the console hands the capped Inventory to
+   `planEasyRamp`, which now builds its size list from the sizes on hand (a none size is
+   no size) and caps each size at its pairs, so no Ramp row ever needs a Plate the
+   lifter does not have. Whether add-only Ramps keep their shape under caps, and how a
+   drifted row says so, is slice 3.
+7. **Share links do not carry limits** (a recipient's gym is theirs). Opening a link
+   solves on the recipient's own limits; when that differs from the linked Plates, the
+   existing ADR-0014 carry shows the linked Plates.
+8. **No limits-active indicator** on the main screen (RBAR-77).
+9. **"Bar at capacity" stays a Sleeve fact** (ADR-0012). With limits, a short load can
+   lack a round-up because the plates on hand ran out, not because the Sleeve is full.
+   That reads plain "N short" (ADR-0003). The capacity pill and caption show only when
+   the full set, solved to the same ceiling, has no round-up either.
+
 ## Pending Caitlin's decision (not in this slice)
+
+Resolved by the 2026-10-17 amendment above, except Warm up under caps (RBAR-65 / slice 3).
 
 - **Scopes:** "today" (session) and "this gym" (saved), with the effective cap the min
   of the two (`withLimits` already composes that way). The lifetime of "today" is an
