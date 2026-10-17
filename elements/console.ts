@@ -24,6 +24,7 @@ import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
 import './warmup.ts';
+import { ScreenWake } from './wakelock.ts';
 import { wayName } from './ways.ts';
 import { LONG_PRESS_MS } from './recents.ts';
 import { decodeWithin } from '../lib/decode.ts';
@@ -165,6 +166,8 @@ class RackConsole extends HTMLElement {
   private sleeve!: Sleeve;
   private share!: Share;
   private fullscreen!: Fullscreen;
+  // RBAR-80: the screen stays awake exactly while fullscreen or Warm up is showing.
+  private readonly wake = new ScreenWake();
   private totalNum!: HTMLElement;
   private totalTap!: HTMLButtonElement;
   private totalUnit!: HTMLElement;
@@ -1080,6 +1083,7 @@ class RackConsole extends HTMLElement {
     this.root
       .querySelector('[data-fullscreen]')!
       .addEventListener('click', () => this.openFullscreen());
+    this.fullscreen.addEventListener('close', () => this.syncWake());
     // The kg|lb Primary unit toggle (ADR-0010), live on every plate set (RBAR-60); the
     // chosen unit persists and the surfaces re-render in it (see chooseUnit).
     this.unitButtons.forEach((b) =>
@@ -1350,6 +1354,18 @@ class RackConsole extends HTMLElement {
     // (ADR-0011 shape, shared with the share card) deliberately stays set-agnostic.
     this.fullscreen.plateSet = this._plateSetKey;
     this.fullscreen.open();
+    this.syncWake();
+  }
+
+  // Hold the screen wake lock exactly while fullscreen or Warm up is showing (RBAR-80).
+  // Idempotent, so render calls it on every pass (that covers mode changes and a
+  // reload straight into Warm up).
+  private syncWake(): void {
+    this.wake.hold(this.isConnected && (this.mode === 'warmup' || !this.fullscreen.hidden));
+  }
+
+  disconnectedCallback(): void {
+    this.wake.hold(false);
   }
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
@@ -1512,6 +1528,7 @@ class RackConsole extends HTMLElement {
   }
 
   private render(): void {
+    this.syncWake();
     const unit = this.activeUnit();
     this.sleeve.sideLoad = this.side;
     this.sleeve.interactive = this.mode === 'encode';
