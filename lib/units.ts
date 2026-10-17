@@ -28,9 +28,10 @@ export function kgToLb(kg: number): number {
 
 /**
  * A kg weight as whole pounds -- the lb readout (ADR-0006: lb rounds to whole
- * pounds; the kg readout keeps up to two decimals). Totals on the iron set are
- * always a whole number of pounds (45 lb Bar + pairs of round-lb Plates), so this
- * never hides a real half-pound; iron Plate faces use their own `label`, not this.
+ * pounds; the kg readout keeps up to two decimals). Iron Plates are round-lb, so a
+ * Total's fractional pound comes only from a kg Bar or Collar (the Training 20 kg
+ * Bar's 44.09 lb, RBAR-63), never a real half-pound; iron Plate faces use their own
+ * `label`, not this.
  */
 export function toLbWhole(kg: number): number {
   return Math.round(kgToLb(kg));

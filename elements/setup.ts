@@ -25,8 +25,8 @@ import { BUTTON_FX } from './buttonfx.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
 
 // The Competition Bar weights, heaviest-first (men's / women's / technique). The other
-// sets carry their own Bars (ADR-0010, lib/platesets); these stay exported as the
-// Competition source of truth and for the existing app validation path.
+// sets carry their own Bars (ADR-0010, lib/platesets -- the app validates against
+// offeredBarKgs there); these stay exported as a Competition reference.
 export const BAR_OPTIONS = [20, 15, 5] as const;
 
 /** A Competition Bar the lifter can pick. */

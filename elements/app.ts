@@ -222,8 +222,9 @@ class RackApp extends HTMLElement {
   }
 
   // The pill names the current Bar in its own stamped Unit (e.g. "20 kg bar",
-  // "45 lb bar"; RBAR-63 -- never the display Unit, a Bar weighs what it weighs) on ONE line with the plate-set short name after a middot ("20 kg bar
-  // <middot> Comp") -- the handoff's header pill (prototype L82/L912, screenshot 01).
+  // "45 lb bar"; RBAR-63 -- never the display Unit, a Bar weighs what it weighs) on
+  // ONE line with the plate-set short name after a middot ("20 kg bar <middot> Comp")
+  // -- the handoff's header pill (prototype L82/L912, screenshot 01).
   // The middot is emitted as an escape so the source stays ASCII. Both facts follow a
   // set or Bar change, so adopt()/adoptPlateSet() call relabel() and the pill stays in
   // sync.
