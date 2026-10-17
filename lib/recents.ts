@@ -27,16 +27,19 @@ function toStoredKg(target: number): number {
  * (an already-held Target moves to the front rather than duplicating), keep
  * most-recent-first, and cap at `max` (the oldest drops off). Dedupe happens before the
  * cap, so re-touching a held Target can never grow the list past the cap. A non-finite
- * or non-positive Target is ignored (the list is returned unchanged) -- those are never
- * loadable weights. Pure: the input list is never mutated.
+ * or non-positive Target -- including a positive one that rounds to 0 at stored
+ * precision -- is ignored (the list is returned unchanged): those are never loadable
+ * weights. Pure: the input list is never mutated.
  */
 export function pushRecent(
   list: readonly number[],
   target: number,
   max: number = MAX_RECENTS,
 ): readonly number[] {
-  if (!isRememberable(target)) return [...list];
+  // Judged AFTER normalizing (RBAR-62): a positive Target under half a hundredth
+  // (0.004) stores as 0, which is not a loadable weight -- it must not become a chip.
   const kg = toStoredKg(target);
+  if (!isRememberable(kg)) return [...list];
   return [kg, ...list.filter((t) => t !== kg)].slice(0, Math.max(0, max));
 }
 
