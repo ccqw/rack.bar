@@ -169,7 +169,7 @@ export function totalKg(
  * -- one per Side, like the Bar itself -- so it folds into the parameterized Bar
  * input ADR-0002 already provides rather than a separate solver argument. Feeding
  * this to `decode`/`encode`/`totalKg` yields the full `Bar + 2 x Collar + 2 x Side
- * Load` Total with the greedy loader unchanged. `collarKg` of 0 (None) is the bare
+ * Load` Total with the loader unchanged. `collarKg` of 0 (None) is the bare
  * Bar.
  */
 export function barWithCollars(barKg: number, collarKg: number): number {
