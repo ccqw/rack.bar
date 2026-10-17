@@ -12,7 +12,7 @@
 // 35 + 25, not greedy's 45 + 10 + 5); the search returns greedy's exact answer
 // wherever greedy was already fewest-Plate.
 import { ELEIKO_KG, DEFAULT_BAR_KG, SLEEVE_MM, totalKg } from './plates.ts';
-import type { Plate } from './plates.ts';
+import type { InventoryEntry, Plate } from './plates.ts';
 import { sideAtOrUnder, sideAbove } from './sideloads.ts';
 
 // Our denominations are exact binary fractions, but keep a hair of tolerance so a
@@ -70,15 +70,21 @@ export interface Decoded {
  * or above the Bar; a sub-Bar Target floors at the bare Bar (empty Side Load,
  * positive delta). Always returns a Loadout -- never null.
  *
+ * `inventory` entries may carry Plate limits (ADR-0016, `withLimits`): no Loadout ever
+ * holds more of a size than its `maxPerSide`, and the primary and round-up are the same
+ * exact picks made among the stacks the limits allow. A Target the limits cannot reach
+ * falls back at or under it (ADR-0003); past every pair on hand there is no `over`.
+ *
  * Throws a RangeError (from sideloads.ts) only for malformed rig data: a Plate with a
- * non-positive or non-finite mass or width, Plates with no common grid, or a Sleeve
- * that is not a positive finite length. No shipped set, single-size reduction of one,
- * or the default Sleeve can (test-locked), so the shell never sees it.
+ * non-positive or non-finite mass or width, a Plate limit that is not a whole count,
+ * Plates with no common grid, or a Sleeve that is not a positive finite length. No
+ * shipped set, single-size reduction of one, or the default Sleeve can (test-locked),
+ * so the shell never sees it.
  */
 export function decode(
   target: number,
   bar: number = DEFAULT_BAR_KG,
-  inventory: readonly Plate[] = ELEIKO_KG,
+  inventory: readonly InventoryEntry[] = ELEIKO_KG,
   sleeveMm: number = SLEEVE_MM,
 ): Decoded {
   // A non-finite Target (NaN, or Infinity from a "1e999"-style entry) has no
@@ -147,7 +153,7 @@ export function decodeWithin(
   target: number,
   ceiling: number,
   bar: number = DEFAULT_BAR_KG,
-  inventory: readonly Plate[] = ELEIKO_KG,
+  inventory: readonly InventoryEntry[] = ELEIKO_KG,
   sleeveMm: number = SLEEVE_MM,
 ): Decoded {
   if (!Number.isFinite(target)) return decode(target, bar, inventory, sleeveMm);

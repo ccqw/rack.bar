@@ -5,7 +5,7 @@
 // tie-break is pinned along with the count.
 import { describe, it, expect } from 'vitest';
 import { decode, decodeWithin } from './decode.ts';
-import { ELEIKO_KG, IRON_LB, SLEEVE_MM } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, SLEEVE_MM, withLimits } from './plates.ts';
 import type { Plate } from './plates.ts';
 import { PLATE_SETS, PLATE_SET_KEYS } from './platesets.ts';
 import type { PlateSetKey } from './platesets.ts';
@@ -13,7 +13,7 @@ import { displayCeilingKg, draftToKg, lbToKg, shownIn } from './units.ts';
 import type { Unit } from './units.ts';
 import { RIGS } from './properties.oracle.ts';
 import type { Rig } from './properties.oracle.ts';
-import { GRID_KG, fewestOracle, show } from './fewest.oracle.ts';
+import { GRID_KG, cappedFewestOracle, fewestOracle, show } from './fewest.oracle.ts';
 import type { FewestOracle } from './fewest.oracle.ts';
 
 const UNITS: readonly Unit[] = ['kg', 'lb'];
@@ -185,6 +185,52 @@ describe('reduced Inventories: each single Plate size removed (RBAR-69; RBAR-66 
   });
 });
 
+describe('capped Inventories: Plate limits per size (RBAR-72, ADR-0016)', () => {
+  const face = (p: Plate) => p.label ?? String(p.kg);
+
+  it('the bounded oracle with no caps agrees with the unbounded one (two DPs, one answer)', () => {
+    for (const set of PLATE_SET_KEYS) {
+      const inv = PLATE_SETS[set].inventory;
+      const plain = oracleFor(set);
+      const bounded = cappedFewestOracle(inv, GRID_KG[set]);
+      expect(bounded.sums).toEqual(plain.sums);
+      for (const s of plain.sums) expect(show(bounded.pick(s))).toBe(show(plain.pick(s)));
+    }
+  });
+
+  for (const set of PLATE_SET_KEYS) {
+    const inv = PLATE_SETS[set].inventory;
+    const bar = PLATE_SETS[set].defaultBarKg;
+    it(`${set}: Decode matches the bounded oracle with any one size capped at 0, 1, 2 or 3 pairs`, () => {
+      const misses: string[] = [];
+      const full = oracleFor(set);
+      let binding = 0;
+      for (const p of inv) {
+        for (const n of [0, 1, 2, 3]) {
+          const capped = withLimits(inv, { [face(p)]: n });
+          const o = cappedFewestOracle(capped, GRID_KG[set]);
+          misses.push(...sweep(`${set} ${face(p)} x${n}`, bar, capped, o));
+          for (const s of full.sums) if (show(o.pick(s)) !== show(full.pick(s))) binding++;
+        }
+      }
+      expect(misses).toEqual([]);
+      // Not vacuous: the caps really do change hundreds of loads across the sweep.
+      expect(binding).toBeGreaterThan(100);
+    });
+
+    it(`${set}: Decode matches the bounded oracle when every size is capped (home-gym counts)`, () => {
+      const misses: string[] = [];
+      for (const counts of [[1], [2, 1], [1, 2, 0], [3, 1, 2, 1]]) {
+        const limits = Object.fromEntries(inv.map((p, i) => [face(p), counts[i % counts.length]]));
+        const capped = withLimits(inv, limits);
+        const o = cappedFewestOracle(capped, GRID_KG[set]);
+        misses.push(...sweep(`${set} caps ${counts.join(',')}`, bar, capped, o));
+      }
+      expect(misses).toEqual([]);
+    });
+  }
+});
+
 describe('runtime budget (RBAR-69: the exhaustive suites stay fast)', () => {
   it('one decode on each set stays well under a millisecond on average', () => {
     const t0 = performance.now();
@@ -192,6 +238,31 @@ describe('runtime budget (RBAR-69: the exhaustive suites stay fast)', () => {
     for (const rig of RIGS) {
       for (let t = rig.baselineKg; t < rig.baselineKg + 400; t += 0.7) {
         decode(t, rig.baselineKg, rig.inventory);
+        n++;
+      }
+    }
+    const perCall = (performance.now() - t0) / n;
+    expect(perCall).toBeLessThan(1);
+  });
+
+  it('a capped Inventory stays under a millisecond too (RBAR-72, ADR-0016)', () => {
+    // The limit-bound band is where the search works hardest: sums past what the pairs
+    // hold walk every count before giving up. One pair of each big size, none of a
+    // change Plate, and a single pair of everything.
+    const face = (p: Plate) => p.label ?? String(p.kg);
+    const inventories = PLATE_SET_KEYS.flatMap((set) => {
+      const inv = PLATE_SETS[set].inventory;
+      return [
+        withLimits(inv, { [face(inv[0])]: 1, [face(inv[1])]: 1 }),
+        withLimits(inv, { [face(inv[inv.length - 2])]: 0 }),
+        withLimits(inv, Object.fromEntries(inv.map((p) => [face(p), 1]))),
+      ].map((capped) => ({ capped, bar: PLATE_SETS[set].defaultBarKg }));
+    });
+    const t0 = performance.now();
+    let n = 0;
+    for (const { capped, bar } of inventories) {
+      for (let t = bar; t < bar + 400; t += 0.7) {
+        decode(t, bar, capped);
         n++;
       }
     }
