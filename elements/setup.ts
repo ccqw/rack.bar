@@ -122,6 +122,12 @@ const CHECK_SVG = `<svg class="check" aria-hidden="true" viewBox="0 0 16 16" wid
         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
+// Columns for the Pairs of Plates on Hand tiles: a set of more than 5 sizes splits into
+// two rows (big Plates on top, change Plates below); 5 or fewer stay on one row.
+export function onhandColumns(sizes: number): number {
+  return sizes > 5 ? Math.ceil(sizes / 2) : sizes;
+}
+
 class RackSetup extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private barTilesEl!: HTMLElement;
@@ -656,7 +662,9 @@ class RackSetup extends HTMLElement {
   private renderOnhand(): void {
     this.onhandFor = this._plateSetKey;
     const inv = plateSetFor(this._plateSetKey).inventory;
-    this.onhandTilesEl.style.setProperty('--cols', String(inv.length > 6 ? 5 : inv.length));
+    // Two rows, heaviest-first: the big Plates on top, the change Plates underneath
+    // (Competition 25 20 15 10 5 / 2.5 2 1.5 1 0.5; Training 45 35 25 / 10 5 2.5).
+    this.onhandTilesEl.style.setProperty('--cols', String(onhandColumns(inv.length)));
     this.onhandTilesEl.innerHTML = inv
       .map(
         (p) => `

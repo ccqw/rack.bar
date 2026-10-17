@@ -1,6 +1,6 @@
 // <rack-setup>'s Pairs of Plates on Hand section (RBAR-72 slice 2, ADR-0016).
 import { describe, it, expect, vi } from 'vitest';
-import './setup.ts';
+import { onhandColumns } from './setup.ts';
 import type { PlatesOnHand } from '../lib/platesonhand.ts';
 
 type Setup = HTMLElement & {
@@ -205,5 +205,31 @@ describe('<rack-setup> Pairs of Plates on Hand (RBAR-72)', () => {
     const css = root.querySelector('style')!.textContent!;
     expect(css).toMatch(/\.panel \{[^}]*overflow-y: auto;/);
     expect(css).toMatch(/\.panel \{[^}]*max-height:/);
+  });
+});
+
+describe('Pairs of Plates on Hand: two rows, big Plates on top (RBAR-72, Caitlin 2026-10-17)', () => {
+  it('splits a set of more than 5 sizes into two rows, heaviest-first', () => {
+    expect(onhandColumns(10)).toBe(5);
+    expect(onhandColumns(6)).toBe(3);
+    expect(onhandColumns(5)).toBe(5);
+  });
+
+  it('Competition: 25 20 15 10 5 on top, 2.5 2 1.5 1 0.5 below', () => {
+    const { root } = mount({}, 'comp');
+    const grid = root.querySelector<HTMLElement>('[data-onhand-tiles]')!;
+    expect(grid.style.getPropertyValue('--cols')).toBe('5');
+    const faces = tiles(root).map((b) => b.dataset.face);
+    expect(faces.slice(0, 5)).toEqual(['25', '20', '15', '10', '5']);
+    expect(faces.slice(5)).toEqual(['2.5', '2', '1.5', '1', '0.5']);
+  });
+
+  it('Training: 45 35 25 on top, 10 5 2.5 below', () => {
+    const { root } = mount({}, 'training');
+    const grid = root.querySelector<HTMLElement>('[data-onhand-tiles]')!;
+    expect(grid.style.getPropertyValue('--cols')).toBe('3');
+    const faces = tiles(root).map((b) => b.dataset.face);
+    expect(faces.slice(0, 3)).toEqual(['45', '35', '25']);
+    expect(faces.slice(3)).toEqual(['10', '5', '2.5']);
   });
 });
