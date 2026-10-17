@@ -24,7 +24,9 @@
 // off the hero as a "You asked" chip) each state also measures how far the status line
 // -- Secondary or chip, plus the pill -- runs past the readout's edges (LINE CLIPPED n),
 // and the walk adds the split states: the round-up taken (chip + over pill) and the
-// keypad open on a split Target.
+// keypad open on a split Target. Since RBAR-72 slice 3 the walk adds Warm up under
+// Plate limits with a drifted stair ("~83%"), and each state measures how far the
+// widest stair name runs past its column (STAIR NAME CLIPPED n).
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -94,9 +96,15 @@ async (shared) => {
         const r = k.getBoundingClientRect();
         return Math.max(m, Math.ceil(ro.left - r.left), Math.ceil(r.right - ro.right));
       }, 0);
+      // The Warm up stair names (RBAR-72 slice 3: a drifted row reads "~83%"): how far
+      // the widest one runs past its stair's column (0 = every name fits).
+      const nameClip = [
+        ...con.querySelector('rack-warmup').shadowRoot.querySelectorAll('.st .nm'),
+      ].reduce((m, n) => Math.max(m, n.scrollWidth - n.clientWidth), 0);
       return {
         ruOver,
         lineClip,
+        nameClip,
         iconsMissing,
         iconsHit,
         sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
@@ -197,6 +205,26 @@ async (shared) => {
         await record('warmup: 90% row');
         await stair(4);
         await record('warmup: Working set');
+        // Warm up under Plate limits (RBAR-72 slice 3): no change Plates on hand, so a
+        // 60 kg Comp Ramp's 90% set drifts to 50 kg and its stair reads "~83%" (Training
+        // keeps only its big Plates). The drifted row selected, then the Working set.
+        await page.evaluate(() => {
+          localStorage.setItem('rackbar.working', '60');
+          localStorage.setItem(
+            'rackbar.platesOnHand',
+            JSON.stringify({
+              comp: { 2.5: 0, 2: 0, 1.5: 0, 1: 0, 0.5: 0 },
+              training: { 10: 0, 5: 0, 2.5: 0 },
+            }),
+          );
+        });
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
+        await stair(3);
+        await record('warmup: drifted row (limits)');
+        await stair(2);
+        await record('warmup: Next to a drifted row (limits)');
 
         // The Setup sheet (RBAR-76, ADR-0017): bare, with the "+" entry open, and with
         // the three custom Bars the cap allows (one selected).
@@ -259,6 +287,7 @@ async (shared) => {
         sheetScroll: Math.max(r.sheetScroll, prev?.sheetScroll ?? 0),
         ruOver: Math.max(r.ruOver, prev?.ruOver ?? 0),
         lineClip: Math.max(r.lineClip, prev?.lineClip ?? 0),
+        nameClip: Math.max(r.nameClip, prev?.nameClip ?? 0),
       });
     } else {
       prev.ruOver = Math.max(prev.ruOver, r.ruOver);
@@ -266,6 +295,7 @@ async (shared) => {
       if (r.iconsMissing) prev.iconsMissing = true;
       prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
       prev.lineClip = Math.max(prev.lineClip, r.lineClip);
+      prev.nameClip = Math.max(prev.nameClip, r.nameClip);
     }
   }
   const lines = [...worst.entries()].map(
@@ -275,6 +305,7 @@ async (shared) => {
       `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}` +
       `${r.ruOver ? ` ROUND-UP ROW OVER ${r.ruOver}px` : ''}` +
       `${r.lineClip > 0 ? ` LINE CLIPPED ${r.lineClip}` : ''}` +
+      `${r.nameClip > 0 ? ` STAIR NAME CLIPPED ${r.nameClip}` : ''}` +
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`

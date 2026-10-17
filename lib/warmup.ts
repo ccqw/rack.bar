@@ -67,10 +67,17 @@ export function deltaSpoken(d: SideDelta, plateUnit: Unit): string | null {
   return `take off ${off}, then add ${add} ${u} per side`;
 }
 
-/** A row's short step name under its stair: "Bar", "50%", "Work". */
+/**
+ * A row's short step name under its stair: "Bar", "50%", "Work". A drifted Warm-up set
+ * (`row.drift`: more than RAMP_BAND of the Working Total off its percentage, as the
+ * Plates on hand can force, ADR-0016 as amended) names what it really loads instead,
+ * with a tilde: "~83%" (RBAR-72 slice 3). Rounded, a drifted row never reads its own
+ * step's percentage, so the tilde always marks a real difference.
+ */
 export function stepName(row: RampRow): string {
   if (row.kind === 'bar') return 'Bar';
   if (row.kind === 'working') return 'Work';
+  if (row.drift) return `~${Math.round(row.realPct)}%`;
   return `${row.pct}%`;
 }
 
@@ -159,7 +166,13 @@ export function nextLabel(row: RampRow, unit: Unit): string {
 
 function stepLabel(row: RampRow, i: number, n: number, unit: Unit, delta: string | null): string {
   const what =
-    row.kind === 'bar' ? 'bare bar' : row.kind === 'working' ? 'working set' : `${row.pct} percent`;
+    row.kind === 'bar'
+      ? 'bare bar'
+      : row.kind === 'working'
+        ? 'working set'
+        : row.drift
+          ? `${row.pct} percent planned, about ${Math.round(row.realPct)} percent loaded`
+          : `${row.pct} percent`;
   const parts = [`Set ${i + 1} of ${n}`, what, `${shownIn(row.total, unit)} ${spokenUnit(unit)}`];
   if (delta !== null && row.kind !== 'bar') parts.push(delta);
   return parts.join(', ');
