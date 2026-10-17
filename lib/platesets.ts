@@ -15,6 +15,17 @@ import type { Unit } from './units.ts';
 /** The plate sets v1 offers. `comp` is the default (kg Eleiko). */
 export type PlateSetKey = 'comp' | 'training';
 
+/**
+ * A Bar a set offers: its true mass in kg (what the core solves with and what
+ * `rackbar.barKg` persists) and the Unit it is stamped in -- the Unit its Setup tile
+ * and the header pill name it in (RBAR-63). A Bar's stamp is a fact about the Bar,
+ * not the set: the Training set's 20 kg Bar reads "20 kg", never "44 lb".
+ */
+export interface Bar {
+  readonly kg: number;
+  readonly unit: Unit;
+}
+
 /** A family of Plates the lifter loads: its Inventory, native Unit, and Bars. */
 export interface PlateSet {
   readonly key: PlateSetKey;
@@ -23,21 +34,26 @@ export interface PlateSet {
   /** A compact name for tight chrome -- the header Setup pill caption (RBAR-30). */
   readonly shortLabel: string;
   /**
-   * The Unit this set is stamped in -- the physical labels (Bar pill, Setup Bar tiles)
-   * name its Bars in it. It never drives the display Unit: the kg|lb toggle is the
-   * lifter's on every set (RBAR-60, amending ADR-0010).
+   * The Unit this set's Plates are stamped in (the iron faces), and the fallback for
+   * naming a Bar the set does not offer (each offered Bar carries its own stamp,
+   * RBAR-63). It never drives the display Unit: the kg|lb toggle is the lifter's on
+   * every set (RBAR-60, amending ADR-0010).
    */
   readonly unit: Unit;
   /** The Plates available to draw from (passed to decode/encode as the inventory). */
   readonly inventory: readonly Plate[];
-  /** The Bars this set offers, in kg, default first. A Bar does not cross sets. */
-  readonly bars: readonly number[];
+  /** The Bars this set offers, default first. A choice does not cross sets: a set
+   * switch always lands on the new set's default, even for a weight both offer. */
+  readonly bars: readonly Bar[];
   /** The Bar applied when this set is chosen (the first offered). */
   readonly defaultBarKg: number;
 }
 
-// The Training Bar: a 45 lb iron bar, in canonical kg via the exact factor (so its
-// lb readout reads back exactly 45). The only Bar the iron set offers.
+// The Training default Bar: a 45 lb iron bar, in canonical kg via the exact factor (so
+// its lb readout reads back exactly 45). Beside it the set offers a 20 kg Bar (RBAR-63):
+// many bars sold as "45 lb" are really 20 kg (the IWF/Ohio-style bar), and the 0.41 kg
+// gap is real -- the lifter picks the Bar they own rather than the app rounding one
+// into the other.
 const TRAINING_BAR_KG = lbToKg(45);
 
 export const PLATE_SETS: Record<PlateSetKey, PlateSet> = {
@@ -47,7 +63,11 @@ export const PLATE_SETS: Record<PlateSetKey, PlateSet> = {
     shortLabel: 'Comp',
     unit: 'kg',
     inventory: ELEIKO_KG,
-    bars: [20, 15, 5],
+    bars: [
+      { kg: 20, unit: 'kg' },
+      { kg: 15, unit: 'kg' },
+      { kg: 5, unit: 'kg' },
+    ],
     defaultBarKg: 20,
   },
   training: {
@@ -56,7 +76,10 @@ export const PLATE_SETS: Record<PlateSetKey, PlateSet> = {
     shortLabel: 'Training',
     unit: 'lb',
     inventory: IRON_LB,
-    bars: [TRAINING_BAR_KG],
+    bars: [
+      { kg: TRAINING_BAR_KG, unit: 'lb' },
+      { kg: 20, unit: 'kg' },
+    ],
     defaultBarKg: TRAINING_BAR_KG,
   },
 };
@@ -76,4 +99,16 @@ export function isOfferedPlateSet(key: string): key is PlateSetKey {
  */
 export function plateSetFor(key: string): PlateSet {
   return isOfferedPlateSet(key) ? PLATE_SETS[key] : PLATE_SETS.comp;
+}
+
+/** The kg weights of the Bars `set` offers, default first -- the list a persisted or
+ * chosen Bar validates against at the shell boundary (ADR-0007). */
+export function offeredBarKgs(set: PlateSet): readonly number[] {
+  return set.bars.map((b) => b.kg);
+}
+
+/** The Unit to name a `kg` Bar in: its own stamp when `set` offers it (RBAR-63), else
+ * the set's Unit -- a total function, so a label never throws on an off-menu Bar. */
+export function barUnit(set: PlateSet, kg: number): Unit {
+  return set.bars.find((b) => b.kg === kg)?.unit ?? set.unit;
 }

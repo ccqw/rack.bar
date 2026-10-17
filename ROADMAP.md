@@ -19,7 +19,7 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
   - A real **pounds plate set** -- a plain-iron lb Inventory + lb bar, chosen via a
     plate-set switch, so the shown Plates match a US gym's rack and the solver runs
     natively in lb. Pulled forward from Later by the design pass.
-- **Bar selection** -- 20 / 15 / 5 kg, chosen in the Setup sheet (RBAR-15). The Bar
+- **Bar selection** -- 20 / 15 / 5 kg (Competition) or 45 lb / 20 kg (Training, RBAR-63), chosen in the Setup sheet (RBAR-15). The Bar
   is already a first-class solver input (ADR-0002); this surfaces the UI.
 - **Collars** -- optional competition collars (None / 2.5 kg per Side) that count
   toward the Total, chosen in the Setup sheet (RBAR-16).

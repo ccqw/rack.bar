@@ -22,7 +22,7 @@ import { isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
-import { plateSetFor, isOfferedPlateSet } from '../lib/platesets.ts';
+import { plateSetFor, isOfferedPlateSet, offeredBarKgs, barUnit } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { format } from '../lib/units.ts';
 
@@ -176,9 +176,9 @@ class RackApp extends HTMLElement {
   }
 
   // The Bars the active plate set offers -- the set the persisted/chosen Bar validates
-  // against (ADR-0010). Each set carries its own Bars; comp is kg, training a single lb.
+  // against (ADR-0010). Each set carries its own Bars; comp is kg, training 45 lb + 20 kg.
   private offeredBars(): readonly number[] {
-    return plateSetFor(this.plateSetKey).bars;
+    return offeredBarKgs(plateSetFor(this.plateSetKey));
   }
 
   // Adopt a Bar chosen in Setup: persist it, thread it into the calculator, relabel the
@@ -221,15 +221,16 @@ class RackApp extends HTMLElement {
     this.relabel();
   }
 
-  // The pill names the current Bar in the active set's native Unit (e.g. "20 kg bar",
-  // "45 lb bar") on ONE line with the plate-set short name after a middot ("20 kg bar
+  // The pill names the current Bar in its own stamped Unit (e.g. "20 kg bar",
+  // "45 lb bar"; RBAR-63 -- never the display Unit, a Bar weighs what it weighs) on ONE line with the plate-set short name after a middot ("20 kg bar
   // <middot> Comp") -- the handoff's header pill (prototype L82/L912, screenshot 01).
   // The middot is emitted as an escape so the source stays ASCII. Both facts follow a
   // set or Bar change, so adopt()/adoptPlateSet() call relabel() and the pill stays in
   // sync.
   private relabel(): void {
     const set = plateSetFor(this.plateSetKey);
-    this.pillLabel.textContent = `${format(this.barKg, set.unit)} bar \u00B7 ${set.shortLabel}`;
+    const unit = barUnit(set, this.barKg);
+    this.pillLabel.textContent = `${format(this.barKg, unit)} bar \u00B7 ${set.shortLabel}`;
   }
 
   // Read the persisted plate set, validated against the offered keys (ADR-0007 pattern):
