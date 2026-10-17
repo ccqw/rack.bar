@@ -11,9 +11,9 @@
 //   - Every other Plate is small. Small Plates sit only outside every big Plate,
 //     heaviest-first.
 //   - At most PLATES_PER_SIZE of each size per Side ("I probably don't have more than 4
-//     of most things"), the default until RBAR-72 brings a real Inventory. When 2 of
-//     each cannot load the Working Total, each size's cap rises to the count Decode's
-//     own Side uses.
+//     of most things"). When 2 of each cannot load the Working Total, each size's cap
+//     rises to the count Decode's own Side uses. Either way a size never goes past the
+//     lifter's pairs on hand, and a size on hand as none is no size (ADR-0016).
 //
 // So a Side is an ordered stack, inside -> outside, and is NOT always heaviest-first.
 // Going from one set to the next takes off every Plate outside the longest common
@@ -25,8 +25,11 @@
 // Totals never decrease, and a repeated Total (sameAsPrevious) is avoided wherever the
 // band allows: each repeat counts against the Ramp. A row with no loadable Total in
 // its band falls back to the nearest loadable Totals either side. Percentages must not
-// fall (planRamp throws). Those keys rank first: [band excess, repeated Totals], then the
-// weighted cost (RAMP_COST, summed over the Ramp):
+// fall (planRamp throws). Under Plate limits the rule is the same: the band widens only
+// as far as the Plates on hand force it (band excess ranks first), and a row that ends
+// up more than RAMP_BAND from its percentage is flagged `drift` so the stairs can say so
+// (ADR-0016 as amended, RBAR-72 slice 3). Those keys rank first: [band excess, repeated
+// Totals], then the weighted cost (RAMP_COST, summed over the Ramp):
 //   - missPerKg per kg of Total from the percentage (x overFactor when over);
 //   - perPlate per Plate on each Warm-up set;
 //   - bigOff per big Plate taken off, and perMove per Plate taken off or put on;
@@ -48,7 +51,7 @@
 // re-sort it (pinned in elements/sleeve.test.ts and lib/summary.test.ts).
 import { SLEEVE_MM, barWithCollars, totalKg } from './plates.ts';
 import type { InventoryEntry, Plate } from './plates.ts';
-import { planRamp } from './plan.ts';
+import { RAMP_BAND, drifted, planRamp } from './plan.ts';
 import type { PlanOptions, Ramp, RampRig, RampRow, RampStep } from './plan.ts';
 import { hasUsablePlates, plateGridKg } from './sideloads.ts';
 
@@ -57,11 +60,12 @@ const EPS = 1e-9;
 /** A Plate this wide (mm diameter) or wider is big: it may go on in any order. */
 export const BIG_PLATE_DIAMETER_MM = 450;
 
-/** Plates of each size per Side: the default until RBAR-72 brings real Inventory. */
+/** Plates of each size per Side the station rule plans with, within the pairs on hand. */
 export const PLATES_PER_SIZE = 2;
 
-/** How far a Warm-up set may sit from its percentage, as a share of the Working Total. */
-export const RAMP_BAND = 0.05;
+// RAMP_BAND (how far a Warm-up set may sit from its percentage) lives in plan.ts, next
+// to `drifted`, the rule that flags a row past it; re-exported for the planner's callers.
+export { RAMP_BAND };
 
 /** The station rule's weights (fitted to Caitlin's hand loads, ADR-0015). */
 export const RAMP_COST = {
@@ -654,9 +658,10 @@ export function planEasyRamp(
       }
       const realPct = row.kind === 'working' ? 100 : (total / workingTotal) * 100;
       const sameAsPrevious = Math.abs(total - prevTotal) <= EPS;
+      const drift = row.kind === 'warmup' && drifted(total, row.targetKg, workingTotal);
       prevSide = side;
       prevTotal = total;
-      return { ...row, side, total, realPct, sameAsPrevious, moves } as EasyRow;
+      return { ...row, side, total, realPct, sameAsPrevious, drift, moves } as EasyRow;
     });
     const station = stationPlates(sides);
     cost += RAMP_COST.perStationPlate * station;

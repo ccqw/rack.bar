@@ -29,6 +29,23 @@ import { sideAtOrUnder, sideAbove } from './sideloads.ts';
 const EPS = 1e-9;
 
 /**
+ * How far a Warm-up set may sit from its percentage, as a share of the Working Total
+ * (ADR-0015 as amended, the station rule's band). A row further off than this is a
+ * drifted row (`drift`) and says so (ADR-0016 as amended, RBAR-72 slice 3).
+ */
+export const RAMP_BAND = 0.05;
+
+/**
+ * Whether a Warm-up set loading `total` has drifted from its raw target `rawKg` (pct x
+ * the Working Total): more than RAMP_BAND of the Working Total away, so its real
+ * percentage reads more than 5 points off the step's. The Plates on hand (ADR-0016) or
+ * the bare-rig floor can force that; the row then says so (RBAR-72 slice 3).
+ */
+export function drifted(total: number, rawKg: number, workingTotal: number): boolean {
+  return Math.abs(total - rawKg) > RAMP_BAND * workingTotal + EPS;
+}
+
+/**
  * One step of a Ramp template, lightest first. `bar` is the bare Bar (a first-class
  * step, not "0%"); `pct` is a percentage of the Working set's achieved Total, in
  * (0, 100]. `reps` is an optional positive integer. The Working set is not a step: it
@@ -76,6 +93,11 @@ interface RowBase {
   readonly reps?: number;
   /** True when `total` equals the previous row's (never on the first row). */
   readonly sameAsPrevious: boolean;
+  /**
+   * True on a Warm-up set whose Total sits more than RAMP_BAND of the Working Total from
+   * its percentage (`drifted`); always false on the bare-Bar and Working rows.
+   */
+  readonly drift: boolean;
 }
 
 /** A bare-Bar row: no Plates, no Collars, Total = the Bar. */
@@ -244,6 +266,7 @@ export function planRamp(
         realPct: pctOf(barKg),
         reps: step.reps,
         sameAsPrevious: same(barKg),
+        drift: false,
       });
       prev = barKg;
       continue;
@@ -262,6 +285,7 @@ export function planRamp(
       realPct: pctOf(total),
       reps: step.reps,
       sameAsPrevious: same(total),
+      drift: drifted(total, rawKg, workingTotal),
     });
     prev = total;
   }
@@ -276,6 +300,7 @@ export function planRamp(
     realPct: 100,
     reps: workingReps,
     sameAsPrevious: same(workingTotal),
+    drift: false,
   });
   return { rows, working };
 }

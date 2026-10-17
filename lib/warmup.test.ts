@@ -15,7 +15,7 @@ import {
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import { planEasyRamp } from './moves.ts';
 import type { RampRig } from './plan.ts';
-import { ELEIKO_KG, IRON_LB } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, withLimits } from './plates.ts';
 import { lbToKg } from './units.ts';
 
 const COMP: RampRig = { barKg: 20, collarKg: 0, inventory: ELEIKO_KG };
@@ -113,6 +113,31 @@ describe('deltaText / deltaSpoken (every number carries its unit)', () => {
 describe('stepName', () => {
   it('names the stairs Bar, N%, Work -- the percent sign on every percentage', () => {
     expect(RAMP140.map(stepName)).toEqual(['Bar', '50%', '70%', '90%', 'Work']);
+  });
+});
+
+describe('stepName: a drifted row (RBAR-72 slice 3)', () => {
+  // No change Plates on hand: a 60 kg 90% set can only be 50 or 60 kg.
+  const NO_CHANGE: RampRig = {
+    ...COMP,
+    inventory: withLimits(ELEIKO_KG, { '2.5': 0, '2': 0, '1.5': 0, '1': 0, '0.5': 0 }),
+  };
+  const rows = planEasyRamp(60, DEFAULT_RAMP, NO_CHANGE).rows;
+
+  it('names what the row really loads, with a tilde: "~83%"', () => {
+    expect(rows.map(stepName)).toEqual(['Bar', '50%', '70%', '~83%', 'Work']);
+  });
+
+  it('carries the tilde into Next and says both percentages to a screen reader', () => {
+    const v = warmupView(rows, 2, 'kg', 'kg');
+    expect(v.next.label).toBe('Next: ~83% - 50 kg');
+    expect(v.steps[3].label).toBe(
+      'Set 4 of 5, 90 percent planned, about 83 percent loaded, 50 kilograms, add 5 kilograms per side',
+    );
+  });
+
+  it('the bare-Bar floor drifts too: a 30 kg 50% set is the 20 kg Bar, "~67%"', () => {
+    expect(stepName(planRamp(30, DEFAULT_RAMP, COMP).rows[1])).toBe('~67%');
   });
 });
 
