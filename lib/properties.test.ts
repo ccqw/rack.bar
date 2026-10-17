@@ -76,6 +76,22 @@ import type { Rig } from './properties.oracle.ts';
 import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
 import { parseLink, serializeLink, MAX_TARGET_KG } from './link.ts';
 import type { LinkState, LinkMode } from './link.ts';
+import {
+  MAX_CUSTOM_BARS,
+  CUSTOM_BAR_MAX,
+  barsFor,
+  barLabel,
+  isValidStamp,
+  parseCustomBars,
+  parseStampText,
+  serializeCustomBars,
+  stampKg,
+  addCustomBar,
+  removeCustomBar,
+  restoreCustomBar,
+} from './custombars.ts';
+import type { BarStamp } from './custombars.ts';
+import type { PlateSetKey } from './platesets.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -1623,6 +1639,186 @@ describe('Sleeve layout properties (ADR-0004, ADR-0013; shared with the share pi
         const ratios = discs.map((d) => d.h / d.plate!.diameterMm);
         for (const r of ratios) expect(r).toBeCloseTo(ratios[0]!, 9);
         for (const d of discs) expect(d.h).toBeLessThanOrEqual(host.h - SLEEVE_PAD_PX + 1e-6);
+      }),
+      opts,
+    );
+  });
+});
+
+// Custom Bars (RBAR-76, ADR-0017). A stamp is generated as the lifter types it (a Unit
+// and a value at <= 2 dp, up to the cap); the oracle is ADR-0002/0008 arithmetic on the
+// stamp's own kg, never a call into the list or solver under test.
+describe('Custom Bar properties (ADR-0017)', () => {
+  const stampArb: fc.Arbitrary<BarStamp> = unitArb.chain((unit) =>
+    fc
+      .integer({ min: 1, max: CUSTOM_BAR_MAX[unit] * 100 })
+      .map((c) => ({ value: c / 100, unit })),
+  );
+  // The kg a stamp weighs, from the ADR alone: lb through the exact factor (ADR-0006).
+  const oracleKg = (s: BarStamp) => (s.unit === 'lb' ? s.value * 0.45359237 : s.value);
+  // Stamps biased toward the weights the sets offer themselves (20 / 15 / 5 kg, 45 lb),
+  // where a custom Bar is hidden on one set and shown on the other (ADR-0017 rule 2).
+  const builtInStampArb = fc.constantFrom<BarStamp>(
+    { value: 20, unit: 'kg' },
+    { value: 15, unit: 'kg' },
+    { value: 5, unit: 'kg' },
+    { value: 45, unit: 'lb' },
+  );
+  const biasedStampArb = fc.oneof(stampArb, builtInStampArb, fc.constantFrom<BarStamp>(
+    { value: 35, unit: 'lb' },
+    { value: 25, unit: 'kg' },
+    { value: 7, unit: 'kg' },
+  ));
+  // The custom tiles a set shows, from the ADR: the stamps not weighing one of its Bars.
+  const shownOn = (list: readonly BarStamp[], key: PlateSetKey) =>
+    list.filter((s) => !PLATE_SETS[key].bars.some((b) => b.kg === oracleKg(s)));
+
+  it('the Total on a custom Bar is the stamp\'s kg + 2 x Side Load + 2 x Collar, at the greatest achievable Total at or under the Target (ADR-0017, ADR-0002, ADR-0003, ADR-0008)', () => {
+    const arb = fc
+      .record({
+        key: fc.constantFrom(...PLATE_SET_KEYS),
+        stamp: stampArb,
+        collarKg: fc.constantFrom(...COLLAR_OPTIONS),
+      })
+      .chain(({ key, stamp, collarKg }) => {
+        const barKg = oracleKg(stamp);
+        const rig: Rig = {
+          set: key,
+          barKg,
+          collarKg,
+          inventory: PLATE_SETS[key].inventory,
+          baselineKg: barKg + 2 * collarKg,
+          name: `${key} custom ${stamp.value} ${stamp.unit} collar ${collarKg}`,
+        };
+        return targetArb(rig).map((t) => ({ rig, stamp, t }));
+      });
+    fc.assert(
+      fc.property(arb, ({ rig, stamp, t }) => {
+        const baseline = barWithCollars(stampKg(stamp), rig.collarKg);
+        const { primary } = decode(t, baseline, rig.inventory);
+        expect(primary.total).toBeCloseTo(
+          oracleKg(stamp) + 2 * sideLoadKg(primary.side) + 2 * rig.collarKg,
+          9,
+        );
+        expect(primary.total).toBeCloseTo(greatestAtOrUnder(rig, t), 9);
+      }),
+      opts,
+    );
+  });
+
+  it('a custom Bar is labelled exactly as typed and offered on every set, after the set\'s own (ADR-0017)', () => {
+    fc.assert(
+      fc.property(stampArb, fc.constantFrom(...PLATE_SET_KEYS), (s, key) => {
+        expect(parseStampText(String(s.value), s.unit)).toEqual(s);
+        const set = PLATE_SETS[key];
+        const bars = barsFor(set, [s]);
+        expect(bars.slice(0, set.bars.length)).toEqual(set.bars);
+        const own = set.bars.some((b) => b.kg === oracleKg(s));
+        expect(bars.length).toBe(set.bars.length + (own ? 0 : 1));
+        if (!own) {
+          const bar = bars[bars.length - 1]!;
+          expect(barLabel(bar)).toBe(`${s.value} ${s.unit}`);
+          expect(bar.kg).toBe(oracleKg(s));
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('any stored value reads as a valid list: at most 3, valid stamps, distinct weights; a list round-trips (ADR-0017, ADR-0007)', () => {
+    const rawArb = fc.oneof(
+      fc.string(),
+      fc.json(),
+      fc
+        .array(
+          fc.oneof(
+            stampArb,
+            fc.record({ value: fc.double(), unit: fc.constantFrom('kg', 'lb', 'st', '') }),
+            fc.anything(),
+          ),
+          { maxLength: 8 },
+        )
+        .map((xs) => JSON.stringify(xs)),
+    );
+    fc.assert(
+      fc.property(rawArb, (raw) => {
+        const list = parseCustomBars(raw);
+        for (const key of PLATE_SET_KEYS) {
+          expect(shownOn(list, key).length).toBeLessThanOrEqual(MAX_CUSTOM_BARS);
+        }
+        for (const s of list) expect(isValidStamp(s)).toBe(true);
+        expect(new Set(list.map(oracleKg)).size).toBe(list.length);
+        expect(parseCustomBars(serializeCustomBars(list))).toEqual(list);
+      }),
+      opts,
+    );
+    fc.assert(
+      fc.property(fc.array(biasedStampArb, { maxLength: 6 }), (stamps) => {
+        const list = stamps.reduce<readonly BarStamp[]>((acc, s) => addCustomBar(acc, s), []);
+        expect(parseCustomBars(serializeCustomBars(list))).toEqual(list);
+      }),
+      opts,
+    );
+  });
+
+  // RBAR-76 review: a custom Bar a set hides (it weighs what the set's own Bar weighs)
+  // must not take a slot on that set, where it has no tile to remove. The cap is on
+  // the tiles each set shows.
+  it('the cap counts only the custom Bars a set shows: an add is accepted exactly when it is new by weight and no set would show more than 3 (ADR-0017)', () => {
+    fc.assert(
+      fc.property(fc.array(biasedStampArb, { maxLength: 8 }), (stamps) => {
+        let list: readonly BarStamp[] = [];
+        for (const s of stamps) {
+          const fresh = !list.some((b) => oracleKg(b) === oracleKg(s));
+          const fits = PLATE_SET_KEYS.every(
+            (k) => shownOn([...list, s], k).length <= MAX_CUSTOM_BARS,
+          );
+          const next = addCustomBar(list, s);
+          expect(next.length).toBe(list.length + (fresh && fits ? 1 : 0));
+          list = next;
+          for (const k of PLATE_SET_KEYS) {
+            expect(shownOn(list, k).length).toBeLessThanOrEqual(MAX_CUSTOM_BARS);
+          }
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('Undo is the inverse of a removal: restoring a removed custom Bar at its index gives back the list (ADR-0017)', () => {
+    fc.assert(
+      fc.property(fc.array(biasedStampArb, { maxLength: 8 }), fc.nat(), (stamps, n) => {
+        const list = stamps.reduce<readonly BarStamp[]>((acc, s) => addCustomBar(acc, s), []);
+        fc.pre(list.length > 0);
+        const i = n % list.length;
+        expect(restoreCustomBar(removeCustomBar(list, i), list[i]!, i)).toEqual(list);
+      }),
+      opts,
+    );
+  });
+
+  it('a custom Bar never produces a lossy share link: off the set\'s menu it serializes to null (ADR-0017, ADR-0014)', () => {
+    const arb = fc.record({
+      key: fc.constantFrom(...PLATE_SET_KEYS),
+      stamp: stampArb,
+      collarKg: fc.constantFrom(...COLLAR_OPTIONS),
+      unit: unitArb,
+      mode: fc.constantFrom<LinkMode>('decode', 'encode'),
+      picks: fc.array(fc.nat(), { maxLength: 20 }),
+    });
+    fc.assert(
+      fc.property(arb, ({ key, stamp, collarKg, unit, mode, picks }) => {
+        const set = PLATE_SETS[key];
+        // The Bar the lifter would actually have selected: the one Setup offers for it.
+        const bar = barsFor(set, [stamp]).find((b) => b.kg === oracleKg(stamp))!;
+        const side = picks.reduce<readonly Plate[]>(
+          (acc, i) => addPlate(acc, set.inventory[i % set.inventory.length]!),
+          [],
+        );
+        const s: LinkState = { set: key, barKg: bar.kg, collarKg, unit, mode, side };
+        const x = serializeLink(s);
+        if (bar.stamp !== undefined) expect(x).toBeNull();
+        if (x !== null) expect(parseLink(x, 'kg')).toEqual(s);
       }),
       opts,
     );
