@@ -22,6 +22,7 @@ import { isOfferedCollar, DEFAULT_COLLAR_KG } from './setup.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SHORT_SCREEN } from './fit.ts';
 import { plateSetFor, isOfferedPlateSet, offeredBarKgs, barUnit } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { format } from '../lib/units.ts';
@@ -66,7 +67,9 @@ class RackApp extends HTMLElement {
     this.root.innerHTML = `
       <style>
         ${BOX_SIZING}${BUTTON_FX}
-        :host { display: flex; flex-direction: column; flex: 1; width: 100%; }
+        :host {
+          display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0;
+        }
         header {
           display: flex; align-items: center; justify-content: space-between;
           gap: 12px; padding: 14px 18px;
@@ -100,12 +103,22 @@ class RackApp extends HTMLElement {
           .pill .chev { transition: transform .15s; }
         }
         .pill[aria-expanded="true"] .chev { transform: rotate(180deg); }
-        /* Top-anchored, not vertically centered (prototype L75 is a plain
+        /* Top-anchored, never vertically centered (prototype L75 is a plain
            column): centering re-floats the whole console whenever the mode
-           swap changes its height, so the toggle and bar jump on every switch. */
+           swap changes its height, so the toggle and bar jump on every switch.
+           RBAR-67: main STRETCHES the console to its full height (the console's bar
+           block flexes into the leftover), min-height: 0 lets it shrink to the
+           viewport instead of growing the page, and the old 6vh bottom pad (~40px of
+           nothing on a phone) is gone -- body keeps the safe-area inset below. */
         main {
-          flex: 1; display: flex; align-items: flex-start; justify-content: center;
-          padding: 2vh 5vw 6vh;
+          flex: 1; display: flex; align-items: stretch; justify-content: center;
+          min-height: 0; padding: 2vh 5vw 0;
+        }
+        /* The short-screen tier (RBAR-67, fit.ts): less air above and below the header
+           row and above the console; the pill keeps its 36px height. */
+        @media ${SHORT_SCREEN} {
+          header { padding-top: 6px; padding-bottom: 6px; }
+          main { padding-top: 4px; }
         }
       </style>
       <header>

@@ -26,6 +26,7 @@ import { shownIn, draftToKg, stepFor, format } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SHORT_SCREEN } from './fit.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 
@@ -388,6 +389,12 @@ class RackEntry extends HTMLElement {
         }
         .clear:focus-visible, .done:focus-visible {
           outline: 2px solid var(--rack-accent); outline-offset: 2px;
+        }
+        /* The short-screen tier (RBAR-67, fit.ts): a closer Target section opener;
+           the steppers and the value keep their size. */
+        @media ${SHORT_SCREEN} {
+          :host { padding-top: 10px; }
+          .caption { margin-bottom: 6px; }
         }
       </style>
       <!-- The Target section heading (RBAR-53): an h2 under the app's h1, styled by the

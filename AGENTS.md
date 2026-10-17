@@ -16,6 +16,8 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `lib/` — functional core: pure plate math (`plates.ts`); the `solve()` core lands here
 - `elements/` — imperative shell: Web Components (`app.ts` is a scaffold placeholder)
 - `tokens.css` — design tokens (`--rack-*`)
+- `scripts/fit-check.js` -- the phone-fit layout check (ADR-0013): a Playwright snippet
+  run against the dev server that asserts no vertical scroll at the visible Safari viewports
 - `docs/adr/` — accepted decisions; read before changing anything architectural
 - `docs/design-handoff/` -- authoritative Claude Design reference (RBAR-10 output):
   README spec, `--rb-*` design tokens, screenshots, prototype. Spec source for the

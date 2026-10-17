@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import './sleeve.ts';
+import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from './sleeve.ts';
 import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
 import type { Plate } from '../lib/plates.ts';
 
@@ -369,6 +370,69 @@ describe('<rack-sleeve>', () => {
       expect(ds[0].querySelector('.label')!.textContent).toBe('45');
       // the accessible name names it in pounds
       expect(ds[0].getAttribute('aria-label')).toBe('45 lb iron Plate');
+    });
+  });
+
+  // RBAR-67: the console lets the sleeve flex between SLEEVE_MIN_PX and the handoff's
+  // SLEEVE_BLOCK_PX, so the discs must fit the host's HEIGHT as well as its width: the
+  // scale is capped so a bumper (450 mm) stands SLEEVE_PAD_PX shorter than the host.
+  describe('height fit (RBAR-67: the sleeve flexes with the viewport)', () => {
+    function sized(width: number, height: number, load: Plate[]): Sleeve {
+      const el = mountSleeve();
+      Object.defineProperty(el, 'clientWidth', { value: width, configurable: true });
+      Object.defineProperty(el, 'clientHeight', { value: height, configurable: true });
+      el.sideLoad = load;
+      return el;
+    }
+    const scaleOf = (el: HTMLElement) => Number(el.style.getPropertyValue('--rack-mm-scale'));
+
+    it('exports the flex range: the handoff block down to a readable minimum', () => {
+      expect(SLEEVE_BLOCK_PX).toBe(204);
+      expect(SLEEVE_MIN_PX).toBeGreaterThanOrEqual(80);
+      expect(SLEEVE_MIN_PX).toBeLessThan(SLEEVE_BLOCK_PX);
+    });
+
+    it('caps the scale so a bumper fits a short host', () => {
+      const el = sized(390, 120, side(25, 15));
+      expect(scaleOf(el)).toBeCloseTo((120 - SLEEVE_PAD_PX) / 450, 9);
+    });
+
+    it('keeps the 168px handoff cap on a tall host (spare height is not a zoom)', () => {
+      expect(scaleOf(sized(390, 400, side(25)))).toBe(168 / 450);
+      expect(scaleOf(sized(390, SLEEVE_BLOCK_PX, side(25)))).toBe(168 / 450);
+    });
+
+    it('ignores height before layout (an unmeasured host keeps full zoom)', () => {
+      expect(scaleOf(sized(390, 0, side(25)))).toBe(168 / 450);
+    });
+
+    it('takes the tighter of the width fit and the height fit', () => {
+      const load = side(25, 25, 25, 25, 25, 25, 25, 25);
+      const wide = sized(390, SLEEVE_BLOCK_PX, load);
+      const narrowShort = sized(390, 100, load);
+      expect(scaleOf(narrowShort)).toBeLessThanOrEqual(scaleOf(wide));
+      expect(scaleOf(narrowShort)).toBeLessThanOrEqual((100 - SLEEVE_PAD_PX) / 450 + 1e-12);
+    });
+
+    it('never draws a disc taller than the host across heights and loads', () => {
+      const loads = [side(25), side(25, 20, 15, 10, 5, 2.5, 1, 0.5), side(...Array(6).fill(25))];
+      for (const h of [SLEEVE_MIN_PX, 110, 140, 170, SLEEVE_BLOCK_PX]) {
+        for (const load of loads) {
+          const el = sized(360, h, load);
+          const shrink = Number(el.style.getPropertyValue('--rack-fit-shrink') || '1');
+          for (const p of load) {
+            expect(p.diameterMm * scaleOf(el) * shrink).toBeLessThanOrEqual(h - SLEEVE_PAD_PX + 1e-6);
+          }
+        }
+      }
+    });
+
+    it('scales the bare-Bar empty box with the discs instead of a fixed 120px', () => {
+      const el = sized(390, 120, []);
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const empty = css.slice(css.indexOf('.empty {'), css.indexOf('}', css.indexOf('.empty {')));
+      expect(empty).not.toContain('height: 120px');
+      expect(empty).toContain('var(--rack-mm-scale');
     });
   });
 });

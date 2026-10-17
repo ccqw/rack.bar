@@ -26,7 +26,10 @@
       background: var(--rack-bg);
       color: var(--rack-fg);
       font-family: var(--rack-font);
-      min-height: 100svh;
+      /* RBAR-67: exactly the small viewport (toolbars showing), a ceiling not a floor --
+         the app column shrinks its bar block to fit rather than growing the page.
+         box-sizing (above) keeps the safe-area padding inside this height. */
+      height: 100svh;
       display: flex; flex-direction: column;
       /* respect notches/home indicators on phones */
       padding: env(safe-area-inset-top) env(safe-area-inset-right)

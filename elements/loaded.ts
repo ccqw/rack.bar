@@ -20,6 +20,7 @@ import { groupSide } from '../lib/summary.ts';
 import type { Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
+import { SHORT_SCREEN } from './fit.ts';
 import { DISC_FILL } from './discfill.ts';
 import { NUDGE_BUTTONS, NUDGE_STYLE, wireNudges } from './nudge.ts';
 import type { NudgeRail } from './nudge.ts';
@@ -127,6 +128,11 @@ class RackLoaded extends HTMLElement {
         /* The empty hint: what shows on a bare Bar, centered in the reserved slot. */
         .empty { align-self: center; text-align: center; }
         .empty[hidden] { display: none; }
+        /* The short-screen tier (RBAR-67, fit.ts): a closer head row; the chips keep
+           their height. */
+        @media ${SHORT_SCREEN} {
+          .head { margin-bottom: 4px; }
+        }
       </style>
       <div class="slot" data-slot>
         <div class="onbar" data-onbar>

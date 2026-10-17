@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './app.ts';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { lbToKg } from '../lib/units.ts';
 
 type WithBar = HTMLElement & { barKg: number; collarKg: number; plateSet: string };
@@ -443,11 +445,51 @@ describe('<rack-app> header fidelity (RBAR-45)', () => {
 describe('rack-app layout', () => {
   afterEach(() => document.body.replaceChildren());
 
-  it('top-anchors main so a mode swap cannot re-float the console', () => {
+  it('never centers main, so a mode swap cannot re-float the console', () => {
+    // RBAR-67: main now STRETCHES the console to its full height (the console is a
+    // column whose bar block flexes into the leftover space), which is still
+    // top-anchored -- the console fills main, so there is nothing left to center.
     const { root } = mountApp();
     const css = root.querySelector('style')!.textContent!;
     const main = css.match(/main\s*\{([^}]*)\}/)![1];
-    expect(main).toMatch(/align-items:\s*flex-start/);
+    expect(main).toMatch(/align-items:\s*stretch/);
     expect(main).not.toMatch(/align-items:\s*center/);
+  });
+});
+
+// RBAR-67: the app fits one phone screen. The page is a fixed-height column (body is
+// exactly the small viewport) and every level of the column may shrink below its
+// content (min-height: 0), so the console's bar block -- the one flexible piece -- takes
+// the leftover space instead of the page growing a scrollbar.
+describe('rack-app phone fit (RBAR-67)', () => {
+  afterEach(() => document.body.replaceChildren());
+  const css = (root: ShadowRoot) => root.querySelector('style')!.textContent!;
+  const body = (text: string, selector: string) => {
+    const start = text.indexOf(selector + ' {');
+    expect(start).toBeGreaterThanOrEqual(0);
+    return text.slice(start, text.indexOf('}', start));
+  };
+
+  it('lets the host and main shrink to the viewport instead of growing the page', () => {
+    const { root } = mountApp();
+    expect(body(css(root), ':host')).toContain('min-height: 0');
+    expect(body(css(root), 'main')).toContain('min-height: 0');
+  });
+
+  it('drops the 6vh bottom pad: only the safe-area inset (on body) stays below', () => {
+    const { root } = mountApp();
+    const main = body(css(root), 'main');
+    expect(main).not.toContain('6vh');
+    expect(main).toMatch(/padding:\s*2vh 5vw 0;/);
+  });
+
+  it('pins body to the small viewport height (index.html), not a min-height', () => {
+    const html = readFileSync(resolve(import.meta.dirname, '..', 'index.html'), 'utf8');
+    // The main body rule (the first `body {` is the shared `html, body` margin reset).
+    const at = html.indexOf('    body {\n');
+    expect(at).toBeGreaterThanOrEqual(0);
+    const rule = html.slice(at, html.indexOf('}', at));
+    expect(rule).toMatch(/[^-]height:\s*100svh/);
+    expect(rule).not.toContain('min-height');
   });
 });

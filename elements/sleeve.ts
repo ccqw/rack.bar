@@ -30,8 +30,17 @@ const BUMPER_MM = 450;
 const TARGET_BUMPER_PX = 168; // the prototype's cap (MAX_SCALE 168/450) so proportions match the handoff
 const MAX_SCALE = TARGET_BUMPER_PX / BUMPER_MM; // px per mm at full zoom
 // The visualizer block reserves the handoff's fixed height (README section 3: "204px
-// tall block") so the console column doesn't jump as the load grows and shrinks.
-const BLOCK_PX = 204;
+// tall block") so the console column doesn't jump as the load grows and shrinks. That is
+// the standalone default (the fullscreen card); the console overrides it (RBAR-67) and
+// lets the sleeve flex between SLEEVE_MIN_PX and this block as the viewport allows, so a
+// short phone gets a shorter Bar picture instead of a page that scrolls.
+export const SLEEVE_BLOCK_PX = 204;
+// The shortest the console lets the sleeve get: a bumper still stands 76px tall, so the
+// Plates and their numerals stay readable (RBAR-67 AC).
+export const SLEEVE_MIN_PX = 84;
+// The vertical breathing room fit() keeps between a bumper and the host's edges (the
+// prototype's 4px bar-row padding, top and bottom).
+export const SLEEVE_PAD_PX = 8;
 // Bar chrome (handoff section 3): the fixed-px furniture framing the discs -- a sleeve
 // shaft + inner collar on the loaded end, an end collar + cap on the far end. The chrome
 // doesn't scale with the plates, so fit() reserves its total width. The discs sit flush to
@@ -50,6 +59,8 @@ const END_GAP_PX = 3; // between the last disc (or empty box) and the end collar
 // prototype's proportional overflow guard (see fit()).
 const MIN_DISC_PX = 9;
 const FALLBACK_SCALE = MAX_SCALE; // used when the host has no measured width yet
+// The bare-Bar box's handoff height (120px at full zoom), in mm so it scales with the row.
+const EMPTY_MM = 120 / MAX_SCALE;
 
 // The engraved numeral treatment (handoff section 3): the numeral runs UP the disc face
 // (rotated -90deg), so in fullscreen -- where the whole bar rotates +90deg -- it reads
@@ -147,7 +158,7 @@ class RackSleeve extends HTMLElement {
         ${BOX_SIZING}${BUTTON_FX}
         :host {
           display: flex; align-items: center; justify-content: center;
-          min-height: ${BLOCK_PX}px;
+          min-height: ${SLEEVE_BLOCK_PX}px;
         }
         /* The sleeve chrome (handoff section 3): a centered shaft running toward the bar's
            center, an inner collar, then (after the discs) an end collar + cap. Fixed-px grey
@@ -166,9 +177,13 @@ class RackSleeve extends HTMLElement {
           flex: none; width: ${CAP_PX}px; height: 11px;
           border-radius: 1px 5px 5px 1px; background: var(--rack-sleeve-shaft);
         }
-        /* A bare Bar: a dashed outline box with a + where the discs would load. */
+        /* A bare Bar: a dashed outline box with a + where the discs would load. Its
+           120px height (prototype L104) rides the same --rack-mm-scale as the discs --
+           EMPTY_MM is 120px at full zoom -- so a height-fitted short sleeve (RBAR-67)
+           shrinks the box with the bumpers it stands in for. */
         .empty {
-          flex: none; width: 34px; height: 120px; margin-left: 5px;
+          flex: none; width: 34px; margin-left: 5px;
+          height: calc(var(--rack-mm-scale, ${FALLBACK_SCALE}) * ${EMPTY_MM}px);
           display: flex; align-items: center; justify-content: center;
           border: 1.5px dashed var(--rack-sleeve-empty); border-radius: 6px;
           color: var(--rack-sleeve-empty-glyph);
@@ -247,12 +262,22 @@ class RackSleeve extends HTMLElement {
   // prototype's overflow guard then shrinks every disc proportionally (width AND height,
   // preserving aspect) below the floor. No measured width yet (e.g. a no-layout test) ->
   // leave the CSS fallbacks in place but still style the numerals for full zoom.
+  //
+  // The zoom cap is ALSO bounded by the host's height (RBAR-67): the console flexes the
+  // sleeve with the viewport, so a short host lowers the cap until a bumper (the tallest
+  // Plate) stands SLEEVE_PAD_PX shorter than the host. A tall host never zooms past
+  // MAX_SCALE; an unmeasured height (0) leaves the width fit alone.
   private fit(): void {
     const hostWidth = this.clientWidth;
     if (hostWidth <= 0) {
       this.styleNumerals(FALLBACK_SCALE, 1);
       return;
     }
+    const hostHeight = this.clientHeight;
+    const cap =
+      hostHeight > 0
+        ? Math.min(MAX_SCALE, Math.max(0, hostHeight - SLEEVE_PAD_PX) / BUMPER_MM)
+        : MAX_SCALE;
     // Reserve the fixed chrome (shaft + both collars + cap) plus the gaps the discs add:
     // END_GAP_PX before the end collar, and DISC_GAP_PX between each adjacent disc pair (the
     // first disc sits flush to the inner collar, so N discs add N-1 inter-disc gaps).
@@ -261,11 +286,11 @@ class RackSleeve extends HTMLElement {
     const rowWidthAt = (s: number): number =>
       this.plates.reduce((px, p) => px + Math.max(p.widthMm * s, MIN_DISC_PX), 0);
     let scale: number;
-    if (rowWidthAt(MAX_SCALE) <= avail) {
-      scale = MAX_SCALE; // full zoom fits -> no shrink needed
+    if (rowWidthAt(cap) <= avail) {
+      scale = cap; // the height-bounded full zoom fits -> no shrink needed
     } else {
       let lo = 0;
-      let hi = MAX_SCALE;
+      let hi = cap;
       for (let i = 0; i < 24; i++) {
         const mid = (lo + hi) / 2;
         if (rowWidthAt(mid) <= avail) lo = mid;
@@ -279,8 +304,10 @@ class RackSleeve extends HTMLElement {
     const shrink = row > avail && row > 0 ? Math.max(0, avail) / row : 1;
     // Set each property only when it changed -- a new Side Load re-fits at the same
     // width without churning the host's inline style. (Layout can't feed back into a
-    // resize loop regardless: the host width is parent-bounded, and the BLOCK_PX
-    // min-height dominates every disc height, so neither property moves the host size.)
+    // resize loop regardless: the host width is parent-bounded, and its height is either
+    // the SLEEVE_BLOCK_PX min-height or set by the console's flex column -- never by the
+    // discs, which the cap above keeps shorter than the host -- so neither property
+    // moves the host size.)
     if (scale !== this.lastScale) {
       this.lastScale = scale;
       this.style.setProperty('--rack-mm-scale', String(scale));
