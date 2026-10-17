@@ -66,8 +66,10 @@ const STEP_GLYPH = (d: string): string => `<svg width="14" height="14" viewBox="
     fill="none" aria-hidden="true"><path d="${d}" stroke="currentColor" stroke-width="2"
     stroke-linecap="round"/></svg>`;
 const MINUS_D = 'M2 7h10';
-const MINUS_ICON = STEP_GLYPH(MINUS_D);
-const PLUS_ICON = STEP_GLYPH(`${MINUS_D}M7 2v10`);
+// Exported for the console's By Weight hero steppers (RBAR-58), so both stepper pairs
+// wear the one glyph pair.
+export const MINUS_ICON = STEP_GLYPH(MINUS_D);
+export const PLUS_ICON = STEP_GLYPH(`${MINUS_D}M7 2v10`);
 
 // Keydown origins the physical-keyboard handler defers to (RBAR-49): a text field owns
 // every key typed into it; an activatable control outside the entry owns its Enter.
@@ -113,14 +115,24 @@ class RackEntry extends HTMLElement {
   // with variant="working" -- the Warm up mode's Working set Target, labelled "Working
   // weight" in plain language (CONTEXT.md). One element, one keypad sheet, one keyboard
   // path: the variant only changes the labels and lays the row out compactly.
+  // With the `headless` attribute (RBAR-58, By Weight's Target) the field row and its
+  // caption are not drawn at all: the console's hero Total is the visible editor -- its
+  // steppers call step(), a tap calls open() -- and this element contributes the draft,
+  // the keypad sheet and the keyboard path.
   private noun = 'Target';
+
+  /** Controls OUTSIDE this element that edit its value -- the console's hero steppers,
+   * hero and "You asked" chip (RBAR-58). The keyboard path treats them as its own, so
+   * Enter on one of them while the pad is open is Done, exactly as on the field's own
+   * steppers (RBAR-49), never a repeat of the last tap. */
+  controls: readonly Element[] = [];
   private liveEl!: HTMLElement;
   private liveUEl!: HTMLElement;
   private liveSecEl!: HTMLElement;
   private liveLoadEl!: HTMLElement;
 
   // The "on the bar" load line the sheet shows under the live value, e.g.
-  // "On the bar: 142 kg <middot> 0.5 under" -- the actual loadable Total + how far it lands from
+  // "On the bar: 142 kg <middot> 0.5 kg short" -- the actual loadable Total + how far it lands from
   // the Target. The console owns decode (ADR-0005), so it computes this and pushes it down;
   // null hides the line (an untouched default or empty field has nothing decoded yet).
   private _loadLine: string | null = null;
@@ -476,6 +488,10 @@ class RackEntry extends HTMLElement {
           border-bottom-width: 1px;
         }
         :host([variant="working"]) .value .vu { font-size: 12px; }
+        /* Headless (RBAR-58): no caption, no row, no section opener -- only the fixed
+           keypad sheet, which never takes part in the column's layout. */
+        :host([headless]) { margin: 0; border: 0; padding: 0; }
+        :host([headless]) .caption, :host([headless]) .row { display: none; }
       </style>
       <!-- The Target section heading (RBAR-53): an h2 under the app's h1, styled by the
            section-label recipe. Static "Target" ("Working weight" in the Warm up variant,
@@ -563,8 +579,9 @@ class RackEntry extends HTMLElement {
   // Space activation and enters exactly once. This holds for EVERY control inside the
   // entry (keys, value, steppers, Clear): a mouse tap leaves focus on it in Chrome, so
   // Enter must mean Done there too, not a repeat of the last tap; a keyboard user still
-  // activates a focused control with Space. Enter on a focused control OUTSIDE this
-  // element is left to that control.
+  // activates a focused control with Space. The same holds for the `controls` handed in
+  // from outside (the By Weight hero, its steppers and its chip, RBAR-58). Enter on any
+  // other focused control OUTSIDE this element is left to that control.
   private onKeydown = (e: KeyboardEvent): void => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
     // The console hides the whole entry in By Plates (Encode) without closing the sheet,
@@ -578,7 +595,10 @@ class RackEntry extends HTMLElement {
     const k = e.key;
     if (k === 'Enter' || k === 'Escape') {
       const foreign =
-        origin instanceof Element && !this.root.contains(origin) && origin.matches(ACTIVATABLE);
+        origin instanceof Element &&
+        !this.root.contains(origin) &&
+        !this.controls.includes(origin) &&
+        origin.matches(ACTIVATABLE);
       if (k === 'Enter' && foreign) return;
       e.preventDefault();
       this.closeKeypad();
@@ -600,8 +620,9 @@ class RackEntry extends HTMLElement {
     }
   };
 
-  /** Open the keypad sheet if closed. The console's Total-tap affordance (RBAR-57):
-   * an edit entry point, not a toggle, so an already-open sheet stays open. */
+  /** Open the keypad sheet if closed: an edit entry point (RBAR-57), not a toggle, so an
+   * already-open sheet stays open. The By Weight hero and "You asked" chip use it
+   * (RBAR-58); Done, Enter or Escape close it. */
   open(): void {
     if (this.sheet && this.sheet.hidden) this.openKeypad();
   }
@@ -704,7 +725,9 @@ class RackEntry extends HTMLElement {
   // a nominally-on-grid value is not treated as off-grid and half-stepped -- defensive:
   // real drafts are keypad literals or shownIn output (both fuzz-free at these grids),
   // so only a hand-pasted many-decimal draft can exercise it.
-  private step(dir: 1 | -1): void {
+  // Public for the headless variant (RBAR-58): the console's hero steppers call it, so
+  // a hero +/- is this same nudge on the Target's draft, never on the Total.
+  step(dir: 1 | -1): void {
     this.pristine = false;
     this.reformatted = false;
     // A nudge is an explicit edit of the current value, so a following digit appends to

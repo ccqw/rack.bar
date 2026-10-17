@@ -22,14 +22,16 @@ function chips(root: ShadowRoot): HTMLButtonElement[] {
 }
 
 describe('<rack-recents>', () => {
-  it('renders one chip per Target, in order, as the bare kg number (RBAR-37)', () => {
+  it('renders one chip per Target, in order, each with its unit (RBAR-37, RBAR-58)', () => {
     const { el, root } = mountRecents();
     el.targets = [120, 100, 80];
     const labels = chips(root).map((c) => c.textContent!.trim());
-    expect(labels).toEqual(['120', '100', '80']);
+    expect(labels).toEqual(['120 kg', '100 kg', '80 kg']);
+    // The unit is a suffix span (smaller, dimmer), so the number still reads first.
+    expect(chips(root)[0].querySelector('.fu')!.textContent).toBe(' kg');
   });
 
-  it('keeps the Unit in the accessible name (the face is bare, the label is not)', () => {
+  it('keeps the Unit in the accessible name', () => {
     const { el, root } = mountRecents();
     el.targets = [120];
     expect(chips(root)[0].getAttribute('aria-label')).toBe('Set Target to 120 kg');
@@ -57,7 +59,7 @@ describe('<rack-recents>', () => {
     const { el, root } = mountRecents();
     el.targets = [lbToKg(135), lbToKg(225)];
     el.unit = 'lb';
-    expect(chips(root).map((c) => c.textContent!.trim())).toEqual(['135', '225']);
+    expect(chips(root).map((c) => c.textContent!.trim())).toEqual(['135 lb', '225 lb']);
     // the store stays kg, so re-apply is Unit-agnostic
     expect(chips(root).map((c) => Number(c.dataset.target))).toEqual([
       lbToKg(135),
@@ -84,13 +86,13 @@ describe('<rack-recents>', () => {
     const { el, root } = mountRecents();
     el.targets = [100];
     el.targets = [120, 100];
-    expect(chips(root).map((c) => c.textContent!.trim())).toEqual(['120', '100']);
+    expect(chips(root).map((c) => c.textContent!.trim())).toEqual(['120 kg', '100 kg']);
   });
 
   it('strips float fuzz from a fractional chip face', () => {
     const { el, root } = mountRecents();
     el.targets = [60.5];
-    expect(chips(root)[0].textContent!.trim()).toBe('60.5');
+    expect(chips(root)[0].textContent!.trim()).toBe('60.5 kg');
   });
 });
 
@@ -323,7 +325,7 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     vi.advanceTimersByTime(LONG_PRESS_MS);
     removeItem(root).click();
     expect(removed).toEqual([{ target: 100, index: 1 }]);
-    expect(faces(root)).toEqual(['120', '80']);
+    expect(faces(root)).toEqual(['120 kg', '80 kg']);
     expect(menu(root).hidden).toBe(true);
     // The Undo sits where the chip was: between 120 and 80 in the rail.
     const rail = [...root.querySelector('[data-rail]')!.children].map(
@@ -333,7 +335,7 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     expect(undoBtn(root)!.getAttribute('aria-label')).toBe('Undo remove 100 kg');
     undoBtn(root)!.click();
     expect(restored).toEqual([{ target: 100, index: 1 }]);
-    expect(faces(root)).toEqual(['120', '100', '80']);
+    expect(faces(root)).toEqual(['120 kg', '100 kg', '80 kg']);
     expect(undoBtn(root)).toBeNull();
     expect(root.activeElement).toBe(chips(root)[1]); // focus lands on the restored chip
   });
@@ -348,7 +350,7 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     expect(undoBtn(root)!.classList.contains('collapsing')).toBe(true); // the transition
     vi.advanceTimersByTime(COLLAPSE_MS);
     expect(undoBtn(root)).toBeNull();
-    expect(faces(root)).toEqual(['100']);
+    expect(faces(root)).toEqual(['100 kg']);
     expect(restored).toEqual([]);
   });
 
@@ -422,7 +424,7 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     expect(undoBtn(root)!.classList.contains('collapsing')).toBe(true); // no jump
     vi.advanceTimersByTime(COLLAPSE_MS);
     expect(undoBtn(root)).toBeNull();
-    expect(faces(root)).toEqual(['90', '100']);
+    expect(faces(root)).toEqual(['90 kg', '100 kg']);
   });
 
   // The rail's slot structure, left to right: a chip's kg, or "undo:<kg>" for a slot
@@ -448,7 +450,7 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
       { target: 60, index: 2 },
       { target: 120, index: 0 },
     ]);
-    expect(faces(root)).toEqual(['80']);
+    expect(faces(root)).toEqual(['80 kg']);
   });
 
   it('only the slot just removed fades in; the Undos already showing never re-blink', () => {

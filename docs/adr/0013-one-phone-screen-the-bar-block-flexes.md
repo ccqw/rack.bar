@@ -89,3 +89,23 @@ viewport still has `over 0`.
 
 **Reverting.** RBAR-75 lands as one commit. Reverting it restores the head-row
 geometry, the 14.5px Target line and the 67px On the bar block together.
+
+## Amendment: the By Weight Target block goes (RBAR-58)
+
+Caitlin's pick of option C, "split when different" (2026-10-17). The Total is By Weight's
+one hero number and also the Target's editor: the steppers flank it, and a tap opens the
+keypad on the Target. The Target splits off under it as a dashed "You asked" chip only
+when the load misses it as read (ADR-0010); the chip quotes the Target exactly as typed
+in the active unit ("You asked 142.3 lb"), while the pill reads the rounded miss (Caitlin,
+2026-10-17). The bottom Target block (divider, label,
+stepper row) is gone. The By Weight `<rack-entry>` is headless: it adds only its keypad
+sheet and sits outside the column. In By Weight the status line under the hero reserves
+the chip's 24px (it was 18px), and the hero carries a 6px underline box, so the chip
+coming and going never moves the column. By Plates and Warm up keep the old metrics.
+
+fit-check, worst case per state: By Weight now reaches the full 204px block (sleeve
+178px) at all four viewports, in every state. Before, it was 153px at 393x659 and 107px
+at 375x548. By Plates and Warm up are unchanged (By Plates 162px / 107px). Every viewport
+still has `over 0`. At 320 wide, the status line closes up its gap and pill pads so the
+longest miss ("You asked 1000 kg" beside "630 KG SHORT") stays inside the column.
+fit-check now reports any overrun as LINE CLIPPED.
