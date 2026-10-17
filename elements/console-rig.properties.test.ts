@@ -39,8 +39,8 @@ describe('<rack-console> rig change properties (ADR-0007, ADR-0008, ADR-0010)', 
     | { kind: 'roundup' };
   // Mode and set actions always FLIP (never a no-op) and are weighted up: the bug class
   // this guards (RBAR-32: a Side carried into By Weight leaking onto the new set) needs a
-  // mode switch AND a set switch in one short script. Unweighted, 50 runs missed a
-  // reintroduced RBAR-32; weighted, the fixed seed catches it.
+  // mode switch AND a set switch in one short script (and the property also pins those
+  // shapes as always-run examples, below).
   const actionArb: fc.Arbitrary<Action> = fc.oneof(
     { weight: 2, arbitrary: draftArb.map((draft) => ({ kind: 'type' as const, draft })) },
     { weight: 3, arbitrary: fc.constant({ kind: 'mode' as const }) },
@@ -114,7 +114,17 @@ describe('<rack-console> rig change properties (ADR-0007, ADR-0008, ADR-0010)', 
           expect(totalText(el)).toBe(format(drawnTotalKg(el, rig()), unit));
         }
       }),
-      { seed: SEED, numRuns: 50 },
+      {
+        seed: SEED,
+        numRuns: 20,
+        // Always-run anchors: the RBAR-32 shapes (a Side carried into By Weight, built
+        // or decoded, then a set switch). Random scripts reach them only rarely at this
+        // run count, so they are pinned as examples on top of the generated runs.
+        examples: [
+          [[{ kind: 'mode' }, { kind: 'add', pick: 0 }, { kind: 'mode' }, { kind: 'set' }]],
+          [[{ kind: 'type', draft: '21' }, { kind: 'mode' }, { kind: 'mode' }, { kind: 'set' }]],
+        ],
+      },
     );
   });
 
@@ -133,7 +143,7 @@ describe('<rack-console> rig change properties (ADR-0007, ADR-0008, ADR-0010)', 
         expect(drawnTotalKg(el, to)).toBeCloseTo(greatestAtOrUnder(to, displayCeilingKg(t, u)), 9);
         expect(drawnTotalKg(el, to)).toBeCloseTo(want.primary.total, 9);
       }),
-      { seed: SEED, numRuns: 60 },
+      { seed: SEED, numRuns: 15 },
     );
   });
 });

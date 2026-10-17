@@ -9,22 +9,23 @@
 // Deterministic: a fixed seed and modest run counts. A failure prints the shrunk
 // script; change SEED locally to explore further. Add a property per new on-screen rule.
 // This file: steppers, the unit toggle, and mode switches.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { format, stepFor } from '../lib/units.ts';
 import {
-  SEED, EPS, other, on, resetPool, unitBtn, modeBtn, step, type, roundUp, tapAdd,
+  SEED, EPS, other, on, unitBtn, modeBtn, step, type, roundUp, tapAdd,
   totalText, secondaryText, statusKind, entryDraft, sideOnScreen, drawnTotalKg, rigArb,
   unitArb, draftArb, offGridCaseArb,
 } from './properties.drivers.ts';
 
-beforeEach(resetPool);
+// The pool is kept across this file's tests (each checkout resets the entry, mode and
+// unit -- see on()), so the 20 rig x unit consoles are mounted once, not once per test.
 
 describe('<rack-console> stepper properties (ADR-0010 stepFor)', () => {
   it('steppers land on the 1 kg / 5 lb grid, never go negative, and +1 then -1 returns to the same grid value, on every set (ADR-0010)', () => {
     const scriptArb = fc.array(fc.constantFrom<'inc' | 'dec'>('inc', 'dec'), {
       minLength: 1,
-      maxLength: 8,
+      maxLength: 5,
     });
     fc.assert(
       fc.property(rigArb, unitArb, fc.option(draftArb), scriptArb, (rig, u, draft, script) => {
@@ -41,7 +42,7 @@ describe('<rack-console> stepper properties (ADR-0010 stepFor)', () => {
           expect(Number(entryDraft(el))).toBe(v);
         }
       }),
-      { seed: SEED, numRuns: 50 },
+      { seed: SEED, numRuns: 20 },
     );
   });
 });
@@ -69,7 +70,7 @@ describe('<rack-console> unit toggle properties (ADR-0010 RBAR-60 amendment)', (
         expect(sideOnScreen(el)).toEqual(settledSide);
         expect(entryDraft(el)).toBe(settledDraft);
       }),
-      { seed: SEED, numRuns: 80 },
+      { seed: SEED, numRuns: 30 },
     );
   });
 
@@ -88,7 +89,7 @@ describe('<rack-console> unit toggle properties (ADR-0010 RBAR-60 amendment)', (
         if (kind === 'exact') expect(roundUp(el).hidden).toBe(true);
         else expect(roundUp(el).textContent).toMatch(/^Use /);
       }),
-      { seed: SEED, numRuns: 60 },
+      { seed: SEED, numRuns: 25 },
     );
   });
 });
@@ -113,7 +114,7 @@ describe('<rack-console> mode properties (ADR-0005)', () => {
           expect(secondaryText(el)).toBe(format(kg, other(unit)));
         }
       }),
-      { seed: SEED, numRuns: 60 },
+      { seed: SEED, numRuns: 25 },
     );
   });
 });

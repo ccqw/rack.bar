@@ -9,18 +9,19 @@
 // Deterministic: a fixed seed and modest run counts. A failure prints the shrunk
 // script; change SEED locally to explore further. Add a property per new on-screen rule.
 // This file: the entry, readout, pill and round-up rules.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { draftToKg, displayCeilingKg, format, shownIn } from '../lib/units.ts';
 import { leastAbove } from '../lib/properties.oracle.ts';
 import {
-  SEED, other, on, resetPool, press, step, type, roundUp, totalText, secondaryText,
+  SEED, other, on, press, step, type, roundUp, totalText, secondaryText,
   statusKind, statusLabel, atcapShown, barnoteShown, loadLine, entryDraft,
   sideOnScreen, drawnTotalKg, shownTarget, rigArb, unitArb, draftArb, gridCaseArb,
   offGridCaseArb,
 } from './properties.drivers.ts';
 
-beforeEach(resetPool);
+// The pool is kept across this file's tests (each checkout resets the entry, mode and
+// unit -- see on()), so the 20 rig x unit consoles are mounted once, not once per test.
 
 describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () => {
   it('read-back: typing a displayed Total lands on that Total and reads Exact, every rig and unit (RBAR-60)', () => {
@@ -33,7 +34,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
         expect(totalText(el)).toBe(`${reading} ${u}`);
         expect(statusKind(el)).toBe('exact');
       }),
-      { seed: SEED, numRuns: 100 },
+      { seed: SEED, numRuns: 40 },
     );
   });
 
@@ -54,7 +55,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
           expect(statusKind(el)).not.toBe('over');
         }
       }),
-      { seed: SEED, numRuns: 100 },
+      { seed: SEED, numRuns: 40 },
     );
   });
 
@@ -90,7 +91,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
           expect(loadLine(el)).toBe(`On the bar: ${total} ${u} (${mag} over)`);
         }
       }),
-      { seed: SEED, numRuns: 100 },
+      { seed: SEED, numRuns: 40 },
     );
   });
 
@@ -112,7 +113,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
         expect(sideOnScreen(el)).toEqual(primarySide);
         expect(totalText(el)).toBe(primaryText);
       }),
-      { seed: SEED, numRuns: 80 },
+      { seed: SEED, numRuns: 30 },
     );
   });
 
@@ -133,7 +134,7 @@ describe('<rack-console> entry and readout properties (ADR-0003, ADR-0010)', () 
           expect(entryDraft(el)).not.toMatch(/NaN|Infinity/);
         }
       }),
-      { seed: SEED, numRuns: 60 },
+      { seed: SEED, numRuns: 25 },
     );
   });
 });

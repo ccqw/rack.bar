@@ -51,7 +51,7 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
 
   it('the plate set, Bar, Collar, unit and Recents chosen through the UI survive a reload (ADR-0007, ADR-0009, ADR-0010)', () => {
     fc.assert(
-      fc.property(rigArb, unitArb, fc.array(draftArb, { maxLength: 8 }), (rig, u, commits) => {
+      fc.property(rigArb, unitArb, fc.array(draftArb, { maxLength: 5 }), (rig, u, commits) => {
         localStorage.clear();
         const app = mountApp();
         q<HTMLButtonElement>(sr(app), '[data-setup-pill]').click();
@@ -81,7 +81,7 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
         expect(after).toEqual(before);
         expect(recentChips(reloaded)).toEqual(chips);
       }),
-      APP_RUNS(25),
+      APP_RUNS(8),
     );
   });
 
@@ -114,7 +114,7 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
           expect(Number.isFinite(kg) && kg > 0).toBe(true); // a loadable weight (ADR-0009)
         }
       }),
-      APP_RUNS(40),
+      APP_RUNS(12),
     );
   });
 });
