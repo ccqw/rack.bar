@@ -21,10 +21,11 @@
 //
 // The Ramp: the Working set is exactly Decode's at-or-under Total (ADR-0003; its Side
 // may be any legal stack). Each Warm-up set is within RAMP_BAND of the Working Total
-// of pct x Working Total, at or above the bare rig, and Totals strictly increase to the
-// Working set. A row with no loadable Total in its band falls back to the nearest
-// loadable Totals either side; one that cannot climb repeats the row before
-// (sameAsPrevious). Those keys rank first: [band excess, repeated Totals], then the
+// of pct x Working Total, at or above the bare rig, and at or under the Working Total.
+// Totals never decrease, and a repeated Total (sameAsPrevious) is avoided wherever the
+// band allows: each repeat counts against the Ramp. A row with no loadable Total in
+// its band falls back to the nearest loadable Totals either side. Percentages must not
+// fall (planRamp throws). Those keys rank first: [band excess, repeated Totals], then the
 // weighted cost (RAMP_COST, summed over the Ramp):
 //   - missPerKg per kg of Total from the percentage (x overFactor when over);
 //   - perPlate per Plate on each Warm-up set;
@@ -84,7 +85,8 @@ export const CANDIDATES_PER_ROW = 30;
 /** On a full set: how many Plates a kept Side may add on top of the previous row's. */
 export const MAX_ADDED = 2;
 
-/** An Inventory with at most this many capped multisets is searched exhaustively. */
+/** An Inventory with at most this many ordered legal Sides (every capped multiset in
+ * every order of its big Plates) is searched exhaustively. */
 export const EXHAUSTIVE_LIMIT = 256;
 
 // On a full set: the best DP states carried to the next row, and how many of them seed
@@ -179,6 +181,12 @@ export interface EasyRamp {
   readonly station: number;
   /** The Ramp's whole weighted cost under RAMP_COST. */
   readonly cost: number;
+  /**
+   * True when the pruned search found no Ramp through its candidates and the rows are
+   * planRamp's own (nearest Totals, Decode's Working Side) instead. Never expected; the
+   * property suite asserts it stays false, so a pruning bug fails loudly there.
+   */
+  readonly degraded: boolean;
 }
 
 // --- The search ----------------------------------------------------------------
@@ -317,7 +325,7 @@ export function planEasyRamp(
     caps = sizes.map((s) => Math.max(PLATES_PER_SIZE, nearest.working.primary.side.filter((p) => p === s.plate).length));
     loadable = loadableUnits(sizes, caps, sleeveMm, workUnits);
   }
-  const exhaustive = caps.reduce((x, c) => x * (c + 1), 1) <= EXHAUSTIVE_LIMIT;
+  const exhaustive = orderedSides(sizes, caps, EXHAUSTIVE_LIMIT) <= EXHAUSTIVE_LIMIT;
 
   // Suffix bounds for the multiset walk: the most units sizes[j..] can add.
   const maxFrom = new Array<number>(n + 1).fill(0);
@@ -419,17 +427,12 @@ export function planEasyRamp(
     const before = [...new Set(beam.slice(0, exhaustive ? beam.length : SEED_STATES).map((st) => st.cand))]
       .filter((c) => c.total > -Infinity);
     const list = row.kind === 'bar' ? [{ ...makeCand([], 'bar', 0), total: barKg }] : candidates(i, row, before);
-    let next = advance(beam, list, row.kind);
-    if (next.length === 0 && row.kind === 'warmup') {
-      // Pruning left no candidate this row can climb to (a template whose percentages
-      // fall): repeat the Sides the beam ends on, so the Ramp never decreases.
-      const raw = raws[i];
-      next = advance(beam, [...new Map(beam.map((st) => [st.cand.key, makeCand(st.cand.seq, 'warmup', raw)])).values()], row.kind);
-    }
-    layer = next;
+    layer = advance(beam, list, row.kind);
+    // Beam pruning dropped every state this row could climb from: give the lifter
+    // planRamp's own Ramp (valid, non-decreasing, Decode's Working Side), flagged.
+    if (layer.length === 0) return finish(nearest, nearest.rows.map((r) => r.side), true);
     if (row.kind === 'bar') prevUnits = [];
   }
-  if (layer.length === 0) throw new Error('planEasyRamp: no non-decreasing Ramp through the candidates');
   let best = layer[0];
   for (const s of layer) if (lessKey(s, best)) best = s;
   const picks: Cand[] = [];
@@ -622,7 +625,7 @@ export function planEasyRamp(
     return true;
   }
 
-  function finish(ramp: Ramp, sides: readonly (readonly Plate[])[]): EasyRamp {
+  function finish(ramp: Ramp, sides: readonly (readonly Plate[])[], degraded = false): EasyRamp {
     let prevSide: readonly Plate[] = [];
     let prevTotal = -Infinity;
     let totalMoves = 0;
@@ -647,8 +650,32 @@ export function planEasyRamp(
     });
     const station = stationPlates(sides);
     cost += RAMP_COST.perStationPlate * station;
-    return { rows, working: ramp.working, totalMoves, station, cost };
+    return { rows, working: ramp.working, totalMoves, station, cost, degraded };
   }
+}
+
+/**
+ * How many ordered Sides the caps allow, ignoring the Sleeve: for every capped multiset,
+ * the distinct orders of its big Plates (k! / prod(c_j!)). Counting stops once past
+ * `stop`, so a full set costs no more than a small one.
+ */
+function orderedSides(sizes: readonly Size[], caps: readonly number[], stop: number): number {
+  if (caps.reduce((x, c) => x * (c + 1), 1) > stop) return stop + 1; // at least one each
+  const fact = (k: number): number => (k <= 1 ? 1 : k * fact(k - 1));
+  let total = 0;
+  const walk = (j: number, bigs: number, denom: number): boolean => {
+    if (j === sizes.length) {
+      total += fact(bigs) / denom;
+      return total <= stop;
+    }
+    for (let c = 0; c <= caps[j]; c++) {
+      const big = sizes[j].big;
+      if (!walk(j + 1, bigs + (big ? c : 0), denom * (big ? fact(c) : 1))) return false;
+    }
+    return true;
+  };
+  walk(0, 0, 1);
+  return total;
 }
 
 function cmpSeq(a: readonly number[], b: readonly number[]): number {

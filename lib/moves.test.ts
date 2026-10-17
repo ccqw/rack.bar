@@ -85,6 +85,12 @@ describe('movesBetween: the stack moves and their cost', () => {
   });
 });
 
+describe('RAMP_COST', () => {
+  it('is the ADR-0015 weights', () => {
+    expect(RAMP_COST).toEqual({ missPerKg: 1, overFactor: 1.5, perPlate: 1, bigOff: 2, perMove: 0.2, perStationPlate: 0.2 });
+  });
+});
+
 describe('stationPlates: the Plates the Ramp needs at the station', () => {
   it('for each size, the most the Ramp ever needs on one Side, summed', () => {
     expect(stationPlates([[], [kg(25)], [kg(25), kg(15)], [kg(25), kg(15), kg(15)]])).toBe(3);
@@ -263,10 +269,13 @@ describe('planEasyRamp: floors, collars and degenerate Ramps', () => {
     expect(easy.station).toBe(0);
   });
 
-  it('a descending template still plans (Totals never decrease)', () => {
-    const easy = planEasyRamp(140, [{ kind: 'pct', pct: 90 }, { kind: 'pct', pct: 50 }], COMP);
-    const t = totals(easy.rows);
-    t.forEach((x, i) => i > 0 && expect(x).toBeGreaterThanOrEqual(t[i - 1]));
+  it('a falling template throws, as planRamp does (ADR-0015 as amended)', () => {
+    expect(() => planEasyRamp(140, [{ kind: 'pct', pct: 90 }, { kind: 'pct', pct: 50 }], COMP)).toThrow(RangeError);
+  });
+
+  it('a planned Ramp is not degraded', () => {
+    expect(planEasyRamp(140, DEFAULT_RAMP, COMP).degraded).toBe(false);
+    expect(planEasyRamp(140, DEFAULT_RAMP, { ...COMP, inventory: [] }).degraded).toBe(false);
   });
 });
 
@@ -296,6 +305,24 @@ describe('planEasyRamp: speed', () => {
       }
     }
     expect(sum / n).toBeLessThan(15);
+    expect(worst).toBeLessThan(75);
+  }, 60000);
+
+  it('a bumpers-only Inventory (every Plate big) stays inside a frame, up to 350 kg', () => {
+    // Every order of the big Plates is a distinct Side, so this set is far past
+    // EXHAUSTIVE_LIMIT in ordered Sides and takes the pruned path.
+    const bumpers: RampRig = { barKg: 20, collarKg: 0, inventory: ELEIKO_KG.filter(isBigPlate) };
+    planEasyRamp(200, DEFAULT_RAMP, bumpers);
+    let worst = 0;
+    for (let w = 20; w <= 350; w += 10) {
+      let best = Infinity;
+      for (let k = 0; k < 3; k++) {
+        const t0 = performance.now();
+        planEasyRamp(w, DEFAULT_RAMP, bumpers);
+        best = Math.min(best, performance.now() - t0);
+      }
+      worst = Math.max(worst, best);
+    }
     expect(worst).toBeLessThan(75);
   }, 60000);
 });

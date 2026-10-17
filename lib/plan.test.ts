@@ -151,11 +151,10 @@ describe('planRamp: degenerate ramps (ADR-0015 floor and monotone rules)', () =>
     expect(rows[4].realPct).toBe(100);
   });
 
-  it('forces Totals non-decreasing when the steps are out of order', () => {
-    const { rows } = planRamp(140, [{ kind: 'pct', pct: 90 }, { kind: 'pct', pct: 50 }], COMP);
-    expect(totals(rows)).toEqual([126, 126, 140]);
-    expect(rows[1].sameAsPrevious).toBe(true);
-    expect(rows[1].pct).toBe(50); // the nominal step is kept; only the Total moved
+  it('rejects a falling percentage (ADR-0015 as amended): the template must not fall', () => {
+    expect(() => planRamp(140, [{ kind: 'pct', pct: 90 }, { kind: 'pct', pct: 50 }], COMP)).toThrow(RangeError);
+    // Equal percentages are allowed: the second set repeats or sits just above.
+    expect(() => planRamp(140, [{ kind: 'pct', pct: 70 }, { kind: 'pct', pct: 70 }], COMP)).not.toThrow();
   });
 
   it('plans just the Working set for an empty template', () => {

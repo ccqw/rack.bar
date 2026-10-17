@@ -170,11 +170,18 @@ to the point of messing up my ramp up completely."
    may be any legal stack.
 4. **Warm-up sets.** Each one sits within `RAMP_BAND` (5%) of the Working Total of
    pct x Working Total. The band is never narrower than one Plate-grid step. Totals
-   stay at or above the bare rig, rise strictly, and stay under the Working Total. A
-   row with nothing loadable in its band falls back to the nearest loadable Totals
-   either side of it. When nothing can climb, it repeats the row before
-   (`sameAsPrevious`, the 30 kg case). These rank first, in this order: band excess,
-   then repeated Totals.
+   stay at or above the bare rig and at or under the Working Total, and never
+   decrease. A row may repeat the row before (`sameAsPrevious`, the 30 kg case), but
+   each repeat counts against the Ramp, so Totals rise strictly wherever the band
+   allows. A row with nothing loadable in its band falls back to the nearest loadable
+   Totals either side of it. These rank first, in this order: band excess, then
+   repeated Totals.
+
+   **Percentages must not fall.** `planRamp` throws a RangeError for a percentage
+   step below the one before it. This replaces decision 4's "forced non-decreasing"
+   handling of an out-of-order template. A falling template would force a lighter set
+   to repeat a heavier one, and the band could not stay exact. The template editor
+   (slice 3) saves percentages ascending. Equal percentages are allowed.
 5. **The cost** is a weighted sum over the whole Ramp (`RAMP_COST`), minimised:
    - 1 per kg of Total from the percentage, x 1.5 when over;
    - 1 per Plate on each Warm-up set;
@@ -189,9 +196,11 @@ to the point of messing up my ramp up completely."
 6. **The search.** It is a dynamic programme over rows. A state is (this row's Side,
    the station so far). A state is dropped only when another beats it for every
    possible future. The station term is not local, and this dominance test keeps the
-   DP exact over its candidates. On a small Inventory (`EXHAUSTIVE_LIMIT`, at most 256
-   capped multisets), the candidates are every legal Side in every order, so the plan
-   is exact. On a full set, the candidates are pruned to:
+   DP exact over its candidates. On a small Inventory, the candidates are every legal
+   Side in every order, so the plan is exact. "Small" (`EXHAUSTIVE_LIMIT`) means at
+   most 256 ordered Sides: every capped multiset, counted once per distinct order of
+   its big Plates. A bumpers-only set has few multisets but many orders, so it takes
+   the pruned path. On a full set, the candidates are pruned to:
    - the 30 multisets cheapest on their own;
    - each of those in all big-Plate orders, up to 6 orders;
    - every Side that keeps the previous row's stack, or its big Plates, and adds up
@@ -214,6 +223,23 @@ to the point of messing up my ramp up completely."
 7. **No Plates to load.** With an empty Inventory, or when planRamp loads nothing on
    any row, every row is planRamp's bare-rig row. In that case the planner never
    asks for a Plate grid.
+8. **Degraded.** If beam pruning ever leaves a row with no state it can climb from,
+   the planner does not throw and does not quietly repeat a row. It returns planRamp's
+   own Ramp (nearest Totals, Decode's Working Side), which is always valid, and sets
+   `degraded: true`. The property suite asserts that this never happens.
+9. **What a caption says.** Each row's `moves` describes the Plate moves the cost
+   charges:
+   - `off`: everything outside the longest common inside run, outermost first;
+   - `on`: the rest of the new Side, inside to outside.
+
+   The Warm up captions (RBAR-65 slice 2) read `moves` directly, not a set difference
+   of the two Sides. Following a caption literally, taking `off` from the outside and
+   then putting `on` on, rebuilds the next Side exactly. On Caitlin's 75 kg Ramp,
+   15+1 -> 15+5+2.5+1 is "off 1, then on 5, 2.5 and 1". A set difference would say
+   "+5 +2.5", and following that literally gives the illegal stack 15+1+5+2.5.
+
+Bumpers-only timing (Eleiko 25-10 kg, 20 kg Bar, warm, 20-420 kg): about 0.4 ms mean
+and about 1 ms worst, including 350 kg.
 
 Her loads against the planner (Competition, 20 kg Bar, per Side, 50 / 70 / 90%):
 
