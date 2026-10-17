@@ -77,8 +77,9 @@ describe('Pairs of Plates on Hand (RBAR-72, ADR-0016)', () => {
     const inv = inventoryOnHand(setPairs(ALL_PLATES, 'comp', '15', 0), 'comp');
     expect(inv.map(plateFace)).toEqual(PLATE_SETS.comp.inventory.map(plateFace));
     expect(inv.find((p) => plateFace(p) === '15')?.maxPerSide).toBe(0);
-    // Built by hand past the validators: a stray face or count is skipped, not thrown.
-    expect(inventoryOnHand({ comp: { '45': 1, '20': 9 } }, 'comp')).toBe(PLATE_SETS.comp.inventory);
+    // Built by hand past the validators: a stray face or count is a bug, and throws.
+    expect(() => inventoryOnHand({ comp: { '45': 1 } }, 'comp')).toThrow(RangeError);
+    expect(() => inventoryOnHand({ comp: { '20': 1.5 } }, 'comp')).toThrow(RangeError);
   });
 
   it('one pair of 25s still makes 140 kg exactly, as 25 + 20 + 15', () => {

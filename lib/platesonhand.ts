@@ -83,8 +83,9 @@ function withSet(onHand: PlatesOnHand, key: PlateSetKey, limits: PairLimits): Pl
 /**
  * Set `key`'s Inventory with its limits applied (withLimits): what Decode, Round up and
  * the Warm up Ramp draw from, and what the By Plates palette badges. With no limits it is
- * the set's own Inventory array. Total: a face the set does not have, or a count out of
- * range, is skipped (never a throw), though parse and setPairs already keep both out.
+ * the set's own Inventory array. Not forgiving: the input comes from parsePlatesOnHand or
+ * setPairs, which already validate, so a face the set does not have or a bad count here
+ * is a bug, and withLimits' RangeError says so rather than quietly reading it as All.
  */
 export function inventoryOnHand(
   onHand: PlatesOnHand,
@@ -92,12 +93,9 @@ export function inventoryOnHand(
 ): readonly InventoryEntry[] {
   const base = PLATE_SETS[key].inventory;
   const limits = onHand[key];
-  if (limits === undefined) return base;
-  const valid: Record<string, number> = {};
-  for (const [face, n] of Object.entries(limits)) {
-    if (isFaceOf(key, face) && isPairCount(n)) valid[face] = n;
-  }
-  return Object.keys(valid).length > 0 ? withLimits(base, valid) : base;
+  return limits === undefined || Object.keys(limits).length === 0
+    ? base
+    : withLimits(base, limits);
 }
 
 /** The `rackbar.platesOnHand` value: `{"comp":{"15":2,"0.5":0}}`. Sets without limits

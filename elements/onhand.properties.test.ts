@@ -52,12 +52,28 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
     { weight: 6, arbitrary: fc.record({ op: fc.constant('set' as const), i: fc.nat(), pairs: fc.constantFrom<number | null>(0, 1, 2, 3, 4, null) }) },
     { weight: 1, arbitrary: fc.constant({ op: 'reset' as const }) },
   );
-  const caseArb = fc.record({
-    set: fc.constantFrom(...PLATE_SET_KEYS),
-    ops: fc.array(opArb, { minLength: 1, maxLength: 8 }),
-    // A kg Target from the bare Bar to past what most limits can load.
-    t: fc.integer({ min: 20, max: 320 }),
-  });
+  // Half the scripts start by limiting EVERY size to 0..2 pairs (a small home gym), so
+  // running out of plates on hand below the Target -- no round-up, Sleeve not full --
+  // is a common case, not a rare one.
+  const scarceArb = fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 10, maxLength: 10 });
+  const caseArb = fc
+    .record({
+      set: fc.constantFrom(...PLATE_SET_KEYS),
+      scarce: fc.option(scarceArb, { nil: undefined }),
+      ops: fc.array(opArb, { minLength: 1, maxLength: 8 }),
+      // A kg Target from the bare Bar to past a full Sleeve (about 370 kg on either set).
+      t: fc.integer({ min: 20, max: 420 }),
+    })
+    .map(({ set, scarce, ops, t }) => ({
+      set,
+      t,
+      ops: [
+        ...(scarce ?? []).slice(0, PLATE_SETS[set].inventory.length).map(
+          (pairs, i): Op => ({ op: 'set', i, pairs }),
+        ),
+        ...ops,
+      ],
+    }));
 
   // Replay the taps on a model: the pairs per face, last write wins, reset clears.
   function model(set: PlateSetKey, ops: readonly Op[]): Record<string, number> {
@@ -92,7 +108,7 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
     );
   };
 
-  it('limits set through Setup re-solve the standing Target at once, honour every cap, and survive a reload with the same load (ADR-0016, ADR-0003, ADR-0007)', () => {
+  it('limits set through Setup re-solve the standing Target at once, honour every cap, call the Bar at capacity only when the Sleeve is full, and survive a reload with the same load (ADR-0016, ADR-0003, ADR-0012, ADR-0007)', () => {
     fc.assert(
       fc.property(caseArb, ({ set, ops, t }) => {
         localStorage.clear();
@@ -117,6 +133,14 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
         const drawn = sideOnScreen(appConsole(app)).reduce((s, d) => s + d.kg, 0);
         expect(drawn).toBeCloseTo(best * o.gridKg, 9);
 
+        // "Bar at capacity" only when the Sleeve is full -- the full set has nothing
+        // loadable above the Target either (ADR-0012); out of plates on hand is plain
+        // short (ADR-0003, ADR-0016).
+        const full = cappedFewestOracle(inv, GRID_KG[set]);
+        const short = Number((bar + 2 * drawn).toFixed(2)) < t;
+        const sleeveFull = !full.sums.some((sum) => sum * full.gridKg > budget + EPS);
+        expect(!q(sr(appConsole(app)), '[data-atcap]').hidden).toBe(short && sleeveFull);
+
         // Stored as the model, and a reload solves the same Target to the same load.
         const stored = JSON.parse(localStorage.getItem('rackbar.platesOnHand') ?? '{}');
         expect(stored[set] ?? {}).toEqual(caps);
@@ -132,9 +156,11 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
           expect(sizeTile(reloaded, plateFace(p)).dataset.state).toBe(want);
         }
       }),
-      APP_RUNS(12),
+      APP_RUNS(16),
     );
-  });
+    // Several full app mounts per run: well under 5 s locally, but given the link
+    // properties' room so a loaded CI runner cannot time it out.
+  }, 30_000);
 
   it('a limit on one Plate set never changes a load on the other (ADR-0016)', () => {
     fc.assert(
@@ -155,7 +181,7 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
       }),
       APP_RUNS(6),
     );
-  });
+  }, 30_000);
 
   it('By Plates never blocks a tap on a none or limited size; only the sleeve refuses (ADR-0016, ADR-0005, ADR-0012)', () => {
     fc.assert(
@@ -183,5 +209,5 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
       ),
       APP_RUNS(8),
     );
-  });
+  }, 30_000);
 });

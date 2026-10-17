@@ -300,6 +300,19 @@ class RackConsole extends HTMLElement {
     return inv;
   }
 
+  // Whether a short load with no round-up is short because the SLEEVE is full -- the
+  // "Bar at capacity" claim (ADR-0012) -- rather than because the Plates on hand ran out
+  // (ADR-0016), which reads plain "N short" (ADR-0003). `over` absent on the capped solve
+  // means nothing heavier is loadable from the plates on hand; the Sleeve is the reason
+  // only when the full set, solved to the same ceiling, has no round-up either -- the
+  // core's own capacity signal, so a reshuffled heavier stack is never called "full".
+  private sleeveBinds(over: Loadout | undefined, targetKg: number, ceilingKg: number): boolean {
+    if (over !== undefined) return false;
+    const full = plateSetFor(this._plateSetKey).inventory;
+    if (this.inventory() === full) return true;
+    return decodeWithin(targetKg, ceilingKg, this.baselineKg(), full).over === undefined;
+  }
+
   // The display Unit: the lifter's choice on every plate set. The iron set used to force
   // lb (ADR-0010); RBAR-60 freed it -- a kg lifter loads iron by kg Targets too.
   private activeUnit(): Unit {
@@ -1297,7 +1310,9 @@ class RackConsole extends HTMLElement {
       // contradict the offer here: a capped-short side can be full to ADDS while a
       // RESHUFFLED heavier stack still fits (Target 346.8 -> primary 346 at 414 mm,
       // over 347 at 413 mm) -- there the honest pairing is "short" + the round-up.
-      const atCap = over === undefined;
+      // With Pairs of Plates on Hand (RBAR-72) a missing `over` can also mean the plates
+      // on hand ran out; sleeveBinds keeps the capacity claim to a full Sleeve.
+      const atCap = this.sleeveBinds(over, targetKg, displayCeilingKg(targetKg, unit));
       this.renderStatus(shown, targetKg, unit, atCap);
       this.renderOver(over ?? null, primary, targetKg, unit);
       // Feed the keypad sheet its "on the bar" line (RBAR-22): the loadable Total + delta,
@@ -1400,7 +1415,7 @@ class RackConsole extends HTMLElement {
   // is the selected row's Total + its pill.
   private renderWarmStatus(ramp: Ramp, row: RampRow, working: number, unit: Unit): void {
     const workingTotal = ramp.working.primary.total;
-    const atCap = ramp.working.over === undefined;
+    const atCap = this.sleeveBinds(ramp.working.over, working, displayCeilingKg(working, unit));
     const pill =
       warmStatus(row, workingTotal, unit) ??
       statusPill(shownIn(row.total, unit), shownIn(row.targetKg, unit), unit, atCap);

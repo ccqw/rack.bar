@@ -100,6 +100,66 @@ describe('<rack-console> Pairs of Plates on Hand (RBAR-72)', () => {
     expect(faces()).not.toContain('20');
   });
 
+  it('out of plates on hand reads "N kg short", never "Bar at capacity" (ADR-0003, ADR-0012, ADR-0016)', () => {
+    const el = mount();
+    const none = Object.fromEntries(PLATE_SETS.comp.inventory.map((p) => [plateFace(p), 0]));
+    el.platesOnHand = { comp: { ...none, '25': 1, '20': 1 } };
+    type(el, '200');
+    expect(faces()).toEqual(['25', '20']);
+    expect(totalText(el)).toContain('110');
+    const status = q(sr(el), '[data-status]');
+    expect(status.className).toBe('status short');
+    expect(status.textContent).toContain('90 kg short');
+    expect(q(sr(el), '[data-atcap]').hidden).toBe(true);
+    const spoken = q(sr(el), '[data-announce]').textContent ?? '';
+    const keypad = (q(sr(el), 'rack-entry') as HTMLElement & { loadLine: string | null }).loadLine ?? '';
+    for (const line of [spoken, keypad]) {
+      expect(line).toMatch(/90 (kg short|under)/);
+      expect(line.toLowerCase()).not.toContain('capacity');
+    }
+  });
+
+  it('every size none reads short against the bare Bar, with no capacity caption', () => {
+    const el = mount();
+    el.platesOnHand = {
+      comp: Object.fromEntries(PLATE_SETS.comp.inventory.map((p) => [plateFace(p), 0])),
+    };
+    type(el, '100');
+    expect(q(sr(el), '[data-status]').className).toBe('status short');
+    expect(q(sr(el), '[data-atcap]').hidden).toBe(true);
+  });
+
+  it('a truly full Sleeve still reads at capacity under limits (ADR-0012)', () => {
+    const el = mount();
+    el.platesOnHand = { comp: { '0.5': 0 } };
+    type(el, '1000');
+    expect(q(sr(el), '[data-status]').className).toBe('status capacity');
+    expect(q(sr(el), '[data-atcap]').hidden).toBe(false);
+  });
+
+  it('Warm up: a Working set out of plates on hand reads short, not at capacity', () => {
+    const el = mount();
+    const none = Object.fromEntries(PLATE_SETS.comp.inventory.map((p) => [plateFace(p), 0]));
+    el.platesOnHand = { comp: { ...none, '25': 1, '20': 1 } };
+    modeBtn(el, 'warmup').click();
+    commitWorking(el, '200');
+    const work = q(sr(el), 'rack-entry[data-working]') as HTMLElement & { loadLine: string | null };
+    expect(work.loadLine ?? '').toMatch(/90 under/);
+    expect((work.loadLine ?? '').toLowerCase()).not.toContain('capacity');
+    stairs(el)[stairs(el).length - 1].click();
+    expect(q(sr(el), '[data-status]').className).toBe('status short');
+  });
+
+  it('a share link whose Plates break the limits opens as the carry and stays put on a later limit change (ADR-0014, ADR-0016)', () => {
+    const el = mount() as Console & { applyLink(l: unknown): void };
+    el.platesOnHand = { comp: { '25': 1 } };
+    const by = (kg: number) => ELEIKO_KG.find((p) => p.kg === kg)!;
+    el.applyLink({ mode: 'decode', side: [by(25), by(25), by(10)], targetKg: 140, unit: 'kg' });
+    expect(faces()).toEqual(['25', '25', '10']); // the linked Plates, not a re-solve
+    el.platesOnHand = { comp: { '25': 0 } };
+    expect(faces()).toEqual(['25', '25', '10']); // a carry, not a live Decode
+  });
+
   it('limits on the other set change nothing here', () => {
     const el = mount();
     type(el, '140');

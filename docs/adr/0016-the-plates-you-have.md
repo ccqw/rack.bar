@@ -75,13 +75,16 @@ UI, scopes and persistence questions below; Warm up under caps stays with slice 
    read per ADR-0007 (`parsePlatesOnHand`, lib/platesonhand.ts): unparseable or
    non-object storage is All plates, and each bad entry (an unknown set or face, a
    count that is not a whole 0..4) is dropped on its own, its size reading as All.
-   Writes are best-effort. `inventoryOnHand` builds the capped Inventory and never
-   throws.
+   Writes are best-effort. `inventoryOnHand` builds the capped Inventory from that
+   already-validated value; a bad face or count reaching it is a bug and throws
+   (withLimits), never a silent All.
 3. **UI lives only in Setup**, a section titled "Pairs of Plates on Hand" with an
    "All plates" reset at the title's right, one tile per size in its Plate color
    reading "all", "N pair(s)" or "none" (dimmed, struck), and a None / 1 / 2 / 3 / 4
    / All row for the tapped size. No explanatory copy in the section. The sheet now
-   scrolls inside itself on a short phone; the page never does (ADR-0013).
+   scrolls inside itself on a short phone; the page never does (ADR-0013). Opening a
+   size's row scrolls it into view and focuses its current count; Escape or a second
+   tap on the tile closes it and returns focus to the tile.
 4. **Any change re-solves at once** everything that draws from the Inventory: a
    standing Decode Target re-decodes (a chosen round-up is dropped; the lifter re-opts
    in), and a Warm up Ramp re-plans. A hand-built By Plates Side is the lifter's and is
@@ -98,6 +101,10 @@ UI, scopes and persistence questions below; Warm up under caps stays with slice 
    solves on the recipient's own limits; when that differs from the linked Plates, the
    existing ADR-0014 carry shows the linked Plates.
 8. **No limits-active indicator** on the main screen (RBAR-77).
+9. **"Bar at capacity" stays a Sleeve fact** (ADR-0012). With limits, a short load can
+   lack a round-up because the plates on hand ran out, not because the Sleeve is full.
+   That reads plain "N short" (ADR-0003). The capacity pill and caption show only when
+   the full set, solved to the same ceiling, has no round-up either.
 
 ## Pending Caitlin's decision (not in this slice)
 

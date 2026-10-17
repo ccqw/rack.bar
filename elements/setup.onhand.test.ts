@@ -149,6 +149,43 @@ describe('<rack-setup> Pairs of Plates on Hand (RBAR-72)', () => {
     expect(tiles(root)).toHaveLength(6);
   });
 
+  it('opening a row focuses the size\'s current count; Escape or a re-tap closes it back to the tile', () => {
+    const { root } = mount({ comp: { '20': 3 } });
+    tile(root, '20').click();
+    expect(root.activeElement).toBe(choice(root, '3'));
+    choice(root, '3').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(row(root).hidden).toBe(true);
+    expect(root.activeElement).toBe(tile(root, '20'));
+    tile(root, '25').click();
+    expect(root.activeElement).toBe(choice(root, 'all'));
+    tile(root, '25').click();
+    expect(row(root).hidden).toBe(true);
+    expect(root.activeElement).toBe(tile(root, '25'));
+  });
+
+  it('Escape in the row closes only the row, not the sheet', () => {
+    const { el, root } = mount();
+    const closed = vi.fn();
+    el.addEventListener('close', closed);
+    tile(root, '25').click();
+    choice(root, 'all').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }));
+    expect(closed).not.toHaveBeenCalled();
+    expect(el.hidden).toBe(false);
+  });
+
+  it('re-assigning the same set keeps an open row open', () => {
+    const { el, root } = mount();
+    tile(root, '25').click();
+    el.plateSet = 'comp';
+    expect(row(root).hidden).toBe(false);
+  });
+
+  it('All plates has a 44px hit area around its small label', () => {
+    const { root } = mount();
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toMatch(/\.pairs-reset::after \{ content: ''; position: absolute; inset: -10px -12px; \}/);
+  });
+
   it('the sheet scrolls inside itself rather than growing the page (ADR-0013)', () => {
     const { root } = mount();
     const css = root.querySelector('style')!.textContent!;

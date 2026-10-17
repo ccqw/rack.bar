@@ -18,8 +18,9 @@
 // it runs above the viewport (`over`, 0 = it fits), and how far its Bar row scrolls
 // sideways inside the sheet. Since RBAR-72 the sheet may scroll inside itself (the Pairs
 // of Plates on Hand section), never the page: the Setup lines also give how far the
-// sheet scrolls inside (`scrolls inside`), and the RBAR-72 states open a size's
-// None..All row with limits stored.
+// sheet scrolls inside (`scrolls inside`, the most across both sets and units -- a
+// report, not an assertion), and the RBAR-72 states open a size's None..All row with
+// limits stored.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -180,8 +181,8 @@ async (shared) => {
         await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
         await inApp(`app.querySelector('[data-setup-pill]').click()`);
         await record('setup: 3 custom Bars');
-        // Pairs of Plates on Hand (RBAR-72): limits stored on both sets, the sheet open
-        // and scrolled to its end, with the first size's None..All row open.
+        // Pairs of Plates on Hand (RBAR-72): limits stored on both sets and the sheet
+        // open; then the first size's None..All row opened.
         await page.evaluate(() =>
           localStorage.setItem(
             'rackbar.platesOnHand',
@@ -192,10 +193,8 @@ async (shared) => {
         await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
         await inApp(`app.querySelector('[data-setup-pill]').click()`);
         await record('setup: limits stored');
-        await inApp(
-          `setup.querySelector('[data-face]').click();` +
-            `const p = setup.querySelector('[data-panel]'); p.scrollTop = p.scrollHeight;`,
-        );
+        // Opening a row scrolls it into view inside the sheet (RBAR-72 review).
+        await inApp(`setup.querySelector('[data-face]').click()`);
         await record('setup: size row open');
       }
     }
@@ -213,10 +212,12 @@ async (shared) => {
         ...r,
         iconsHit: r.iconsHit && (prev?.iconsHit ?? true),
         iconsMissing: r.iconsMissing || (prev?.iconsMissing ?? false),
+        sheetScroll: Math.max(r.sheetScroll, prev?.sheetScroll ?? 0),
       });
     } else {
       if (!r.iconsHit) prev.iconsHit = false;
       if (r.iconsMissing) prev.iconsMissing = true;
+      prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
     }
   }
   return [...worst.entries()].map(

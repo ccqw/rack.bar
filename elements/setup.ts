@@ -208,7 +208,11 @@ class RackSetup extends HTMLElement {
   }
 
   set plateSet(key: string) {
-    this._plateSetKey = isOfferedPlateSet(key) ? key : 'comp';
+    const k = isOfferedPlateSet(key) ? key : 'comp';
+    // The same set again (a same-set share link, a re-seed) changes nothing: keep the
+    // Bar row and any open None..All row as they are.
+    if (k === this._plateSetKey) return;
+    this._plateSetKey = k;
     if (this.barTilesEl) {
       this.adding = false;
       this.renderBarTiles(); // the offered Bars changed with the set
@@ -512,10 +516,13 @@ class RackSetup extends HTMLElement {
         /* Pairs of Plates on Hand (RBAR-72, prototype H): the reset sits at the title
            row's right in the accent, quiet while every size is All. */
         .pairs-reset {
+          position: relative;
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
           color: var(--rack-accent); background: transparent; border: none;
           padding: 4px 0; min-height: 24px; cursor: pointer;
         }
+        /* A 44px hit area around the small label, without growing the title row. */
+        .pairs-reset::after { content: ''; position: absolute; inset: -10px -12px; }
         .pairs-reset[aria-disabled="true"] { color: var(--rack-text-dim); opacity: .5; cursor: default; }
         .pairs-reset:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         /* One tile per size, in the set's columns: a Plate-color bar, the face, and
@@ -528,8 +535,8 @@ class RackSetup extends HTMLElement {
           border: 1px solid var(--rack-border-muted); border-radius: var(--rack-radius-tile);
         }
         .size .bar {
-          display: block; width: 22px; height: 6px; border-radius: 3px; background: var(--disc);
-          box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14);
+          display: block; width: 22px; height: 6px; background: var(--disc);
+          border-radius: var(--rack-radius-pill); box-shadow: var(--rack-shadow-disc);
         }
         .size .face { font-family: var(--rack-font-num); font-size: 12px; font-weight: 700; line-height: 1; }
         .size .state {
@@ -550,7 +557,7 @@ class RackSetup extends HTMLElement {
           min-height: 40px; padding: 0; cursor: pointer;
           font-family: var(--rack-font-num); font-size: 12px; font-weight: 700;
           color: var(--rack-text-secondary); background: transparent;
-          border: 1px solid var(--rack-border-muted); border-radius: 10px;
+          border: 1px solid var(--rack-border-muted); border-radius: var(--rack-radius-tile);
         }
         .pairs button[aria-pressed="true"] {
           color: var(--rack-bg); background: var(--rack-accent); border-color: var(--rack-accent);
@@ -690,8 +697,20 @@ class RackSetup extends HTMLElement {
       const t = (e.target as Element | null)?.closest<HTMLElement>('[data-face]');
       if (!t) return;
       const face = t.dataset.face!;
-      this.openFace = this.openFace === face ? null : face;
+      if (this.openFace === face) return this.closePairs();
+      this.openFace = face;
       this.syncOnhand();
+      // Bring the row into view (the sheet may scroll inside itself, ADR-0013) and put
+      // focus on the size's current count, a step from the tile, not ten Tabs away.
+      this.pairsRowEl.scrollIntoView?.({ block: 'nearest' });
+      this.pairsRowEl.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+    });
+    // Escape in the row closes it and returns focus to its tile (not the whole sheet).
+    this.pairsRowEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || this.openFace === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.closePairs();
     });
     this.pairsRowEl.addEventListener('click', (e) => {
       const b = (e.target as Element | null)?.closest<HTMLElement>('[data-pairs]');
@@ -703,6 +722,16 @@ class RackSetup extends HTMLElement {
       if (!hasLimits(this._onHand, this._plateSetKey)) return;
       this.emit('pairsreset', {});
     });
+  }
+
+  // Close the open None..All row and return focus to the tile that opened it.
+  private closePairs(): void {
+    const face = this.openFace;
+    this.openFace = null;
+    this.syncOnhand();
+    if (face !== null) {
+      this.onhandTilesEl.querySelector<HTMLButtonElement>(`[data-face="${face}"]`)?.focus();
+    }
   }
 
   // Render the Bar tiles for the active plate set's Bars (ADR-0010). The headline reads
