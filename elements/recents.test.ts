@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LONG_PRESS_MS, MOVE_SLOP_PX, UNDO_MS } from './recents.ts';
+import { COLLAPSE_MS, LONG_PRESS_MS, MOVE_SLOP_PX, UNDO_MS } from './recents.ts';
 import { removeRecent, restoreRecent } from '../lib/recents.ts';
 import { lbToKg } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
@@ -338,13 +338,15 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     expect(root.activeElement).toBe(chips(root)[1]); // focus lands on the restored chip
   });
 
-  it('the Undo lapses after UNDO_MS, leaving the removal final', () => {
+  it('the Undo lapses after UNDO_MS: its slot collapses (COLLAPSE_MS), leaving the removal final', () => {
     const { root, restored } = owned([120, 100]);
     chips(root)[0].dispatchEvent(del());
     expect(undoBtn(root)).not.toBeNull();
     vi.advanceTimersByTime(UNDO_MS - 1);
-    expect(undoBtn(root)).not.toBeNull();
+    expect(undoBtn(root)!.classList.contains('collapsing')).toBe(false);
     vi.advanceTimersByTime(1);
+    expect(undoBtn(root)!.classList.contains('collapsing')).toBe(true); // the transition
+    vi.advanceTimersByTime(COLLAPSE_MS);
     expect(undoBtn(root)).toBeNull();
     expect(faces(root)).toEqual(['100']);
     expect(restored).toEqual([]);
@@ -399,7 +401,7 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     expect(chips(root)).toHaveLength(0);
     expect(el.hidden).toBe(false);
     expect(el.undoPending).toBe(true);
-    vi.advanceTimersByTime(UNDO_MS);
+    vi.advanceTimersByTime(UNDO_MS + COLLAPSE_MS);
     expect(el.hidden).toBe(true);
     expect(el.undoPending).toBe(false);
   });
@@ -408,25 +410,91 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     const { el, root } = owned([120, 100]);
     chips(root)[0].dispatchEvent(del());
     el.hidden = true; // the console switched to By Plates
-    vi.advanceTimersByTime(UNDO_MS);
+    vi.advanceTimersByTime(UNDO_MS + COLLAPSE_MS);
     expect(el.hidden).toBe(true);
   });
 
-  it('a new history (a fresh commit) retires a pending Undo', () => {
+  it('a new history (a fresh commit) finalizes the pending Undos with the same collapse', () => {
     const { el, root } = owned([120, 100]);
     chips(root)[0].dispatchEvent(del());
     expect(undoBtn(root)).not.toBeNull();
     el.targets = [90, 100];
+    expect(undoBtn(root)!.classList.contains('collapsing')).toBe(true); // no jump
+    vi.advanceTimersByTime(COLLAPSE_MS);
     expect(undoBtn(root)).toBeNull();
+    expect(faces(root)).toEqual(['90', '100']);
   });
 
-  it('a second removal replaces the first Undo', () => {
-    const { root, removed } = owned([120, 100, 80]);
+  // The rail's slot structure, left to right: a chip's kg, or "undo:<kg>" for a slot
+  // holding an Undo (its aria-label names the removed Target).
+  const layout = (root: ShadowRoot) =>
+    [...root.querySelector('[data-rail]')!.children].map((c) => {
+      const b = c as HTMLElement;
+      return b.dataset.target ?? `undo:${b.getAttribute('aria-label')!.replace(/\D+$/, '').replace(/^\D+/, '')}`;
+    });
+
+  it('rapid removals never move a chip: each removed slot becomes its own Undo, in place', () => {
+    const { root, removed } = owned([120, 100, 80, 60]);
+    chips(root)[1].dispatchEvent(del()); // 100
+    expect(layout(root)).toEqual(['120', 'undo:100', '80', '60']);
+    vi.advanceTimersByTime(UNDO_MS - 100);
+    chips(root)[2].dispatchEvent(del()); // 60 (the third live chip)
+    expect(layout(root)).toEqual(['120', 'undo:100', '80', 'undo:60']);
+    chips(root)[0].dispatchEvent(del()); // 120
+    expect(layout(root)).toEqual(['undo:120', 'undo:100', '80', 'undo:60']);
+    // The console got each at its LIST index at the time (live chips before it).
+    expect(removed).toEqual([
+      { target: 100, index: 1 },
+      { target: 60, index: 2 },
+      { target: 120, index: 0 },
+    ]);
+    expect(faces(root)).toEqual(['80']);
+  });
+
+  it('the shared timer restarts on every removal; all slots collapse together after the last', () => {
+    const { root } = owned([120, 100, 80]);
     chips(root)[0].dispatchEvent(del());
-    chips(root)[1].dispatchEvent(del());
-    expect(removed.map((r) => r.target)).toEqual([120, 80]);
-    expect(root.querySelectorAll('[data-undo]')).toHaveLength(1);
-    expect(undoBtn(root)!.getAttribute('aria-label')).toBe('Undo remove 80 kg');
+    vi.advanceTimersByTime(UNDO_MS - 100);
+    chips(root)[0].dispatchEvent(del()); // 100, 4.9 s into the first window
+    vi.advanceTimersByTime(UNDO_MS - 1); // well past the FIRST removal's 5 s
+    expect(layout(root)).toEqual(['undo:120', 'undo:100', '80']);
+    expect(root.querySelectorAll('.undo.collapsing')).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(root.querySelectorAll('.undo.collapsing')).toHaveLength(2); // together
+    vi.advanceTimersByTime(COLLAPSE_MS);
+    expect(layout(root)).toEqual(['80']);
+  });
+
+  it('each Undo restores its own Target in its original slot while others stay pending', () => {
+    const { root, restored } = owned([120, 100, 80, 60]);
+    chips(root)[0].dispatchEvent(del()); // 120
+    chips(root)[1].dispatchEvent(del()); // 80
+    chips(root)[1].dispatchEvent(del()); // 60
+    expect(layout(root)).toEqual(['undo:120', '100', 'undo:80', 'undo:60']);
+    root.querySelector<HTMLButtonElement>('[data-undo][data-slot="2"]')!.click(); // 80
+    expect(layout(root)).toEqual(['undo:120', '100', '80', 'undo:60']);
+    expect(restored).toEqual([{ target: 80, index: 1 }]);
+    expect(root.activeElement).toBe(chips(root)[1]);
+    root.querySelector<HTMLButtonElement>('[data-undo][data-slot="0"]')!.click(); // 120
+    expect(layout(root)).toEqual(['120', '100', '80', 'undo:60']);
+    expect(restored.at(-1)).toEqual({ target: 120, index: 0 });
+    root.querySelector<HTMLButtonElement>('[data-undo][data-slot="3"]')!.click(); // 60
+    expect(layout(root)).toEqual(['120', '100', '80', '60']);
+    expect(restored.at(-1)).toEqual({ target: 60, index: 3 });
+  });
+
+  it('Delete on the next chip works from the keyboard without focus jumping (Tab past the Undo)', () => {
+    const { root, removed } = owned([120, 100, 80]);
+    chips(root)[0].focus();
+    chips(root)[0].dispatchEvent(del());
+    expect(root.activeElement).toBe(undoBtn(root)); // slot 0
+    chips(root)[0].focus(); // Tab: the next chip (100), still in its own slot
+    chips(root)[0].dispatchEvent(del());
+    expect(root.activeElement).toBe(
+      root.querySelector('[data-undo][data-slot="1"]'),
+    );
+    expect(removed.map((r) => r.target)).toEqual([120, 100]);
+    expect(layout(root)).toEqual(['undo:120', 'undo:100', '80']);
   });
 
   it('Backspace on the Undo chip is claimed too, and a held (repeating) key removes one chip only', () => {
@@ -489,7 +557,7 @@ describe('<rack-recents> (remove + undo, RBAR-73)', () => {
     chips(root)[0].focus();
     chips(root)[0].dispatchEvent(del());
     expect(root.activeElement).toBe(undoBtn(root));
-    vi.advanceTimersByTime(UNDO_MS);
+    vi.advanceTimersByTime(UNDO_MS + COLLAPSE_MS);
     expect(root.activeElement).toBe(chips(root)[0]);
     expect(chips(root)[0].dataset.target).toBe('100');
   });

@@ -567,6 +567,41 @@ describe('Recents properties (ADR-0009)', () => {
     );
   });
 
+  it('restoring any subset of pending removals, in any order, gives the row minus the un-restored ones (ADR-0009 RBAR-73)', () => {
+    // The rail's model while removals are pending: the row frozen into slots. Each
+    // removal and each restore uses the slot's list index -- the live slots before it --
+    // exactly as <rack-recents> hands them to the console.
+    const caseArb = rowArb.chain((row) =>
+      fc
+        .shuffledSubarray([...row.keys()])
+        .chain((removedIdx) =>
+          fc
+            .shuffledSubarray(removedIdx)
+            .map((restoredIdx) => ({ row, removedIdx, restoredIdx })),
+        ),
+    );
+    fc.assert(
+      fc.property(caseArb, ({ row, removedIdx, restoredIdx }) => {
+        const live = row.map(() => true);
+        const at = (slot: number) => live.slice(0, slot).filter(Boolean).length;
+        let list = row;
+        for (const slot of removedIdx) {
+          expect(list.indexOf(row[slot])).toBe(at(slot)); // the index the rail sends
+          list = removeRecent(list, row[slot]);
+          live[slot] = false;
+        }
+        for (const slot of restoredIdx) {
+          list = restoreRecent(list, row[slot], at(slot));
+          live[slot] = true;
+        }
+        const restored = new Set(restoredIdx);
+        expect(list).toEqual(row.filter((_, i) => !removedIdx.includes(i) || restored.has(i)));
+        isValidRow(list);
+      }),
+      opts,
+    );
+  });
+
   it('a restore never duplicates, never passes the cap, and never admits a non-loadable Target (ADR-0009 RBAR-73)', () => {
     fc.assert(
       fc.property(rowArb, targetLikeArb, fc.integer({ min: -10, max: 20 }), (list, t, i) => {

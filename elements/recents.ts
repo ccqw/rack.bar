@@ -22,10 +22,13 @@
 // one-item "Remove" popover on the chip; the context-menu key, Shift+F10 or a
 // right-click open the same popover, and Delete/Backspace on a focused chip removes it
 // outright. The element only emits the intent (`recentremove`, and `recentrestore`
-// for Undo); the console applies it with the pure core and feeds the list back. The
-// removed chip's slot then holds an Undo chip for UNDO_MS -- in place, inside the rail,
-// so it adds no row to the one-screen column (ADR-0013). That transient Undo is the
-// only state this element keeps of its own, and it is UI state, not history.
+// for Undo); the console applies it with the pure core and feeds the list back. Each
+// removed chip's slot then holds its own Undo chip, locked to the chip's width -- in
+// place, inside the rail, so no row is added (ADR-0013) and nothing moves while the
+// lifter is cleaning up. One shared timer (UNDO_MS, restarted by every removal) ends
+// the window, and then every pending slot collapses together (COLLAPSE_MS): the only
+// moment chips move. Those frozen slots are the only state this element keeps of its
+// own, and it is UI state, not history.
 import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { BOX_SIZING } from './boxsizing.ts';
@@ -48,8 +51,11 @@ export const LONG_PRESS_MS = 500;
 /** How far (px, either axis) a press may wander and still count as holding still.
  * Past this it is a rail scroll, and the hold is dropped -- scrolling never removes. */
 export const MOVE_SLOP_PX = 8;
-/** How long the Undo chip stays in the removed chip's slot before the removal is final. */
+/** How long the Undo slots stay after the LAST removal before the removals are final.
+ * Each removal resets it, so nothing in the rail moves while the lifter is cleaning up. */
 export const UNDO_MS = 5000;
+/** The one moment chips move: the pending Undo slots collapse together (width + fade). */
+export const COLLAPSE_MS = 200;
 // The hold fill starts this long into a press, so a quick tap never flashes it; it then
 // sweeps for the rest of LONG_PRESS_MS (the CSS transition below is the remainder).
 const HOLD_FILL_DELAY_MS = 150;
@@ -81,9 +87,15 @@ class RackRecents extends HTMLElement {
   private suppressClick = false;
   // The Target (kg) the open popover acts on, or null while it is closed.
   private menuFor: number | null = null;
-  // The pending Undo: the removed Target, the slot it held, and the lapse timer.
-  private undo: { target: number; index: number; timer: ReturnType<typeof setTimeout> } | null =
-    null;
+  // The frozen rail while removals are pending (RBAR-73 rev): every chip that was on
+  // screen when the cleanup began, in order, each either live or removed (an Undo slot).
+  // The live slots, in order, are always exactly `_targets` -- so a slot's list index is
+  // the count of live slots before it. Null when nothing is pending.
+  private slots: { kg: number; removed: boolean; width: number }[] | null = null;
+  // The shared lapse timer (reset by every removal) and the collapse in flight.
+  private undoTimer: ReturnType<typeof setTimeout> | undefined;
+  private collapseTimer: ReturnType<typeof setTimeout> | undefined;
+  private collapsing = false;
   // True while this element's own remove/restore event is being dispatched: the owner
   // echoes the new list back synchronously, and that echo must not retire the Undo the
   // way an unrelated new history (a fresh commit) does.
@@ -91,12 +103,14 @@ class RackRecents extends HTMLElement {
 
   /** The recent Targets to show, most-recent-first (kg). Assigning re-renders the row
    * and hides the element entirely when the history is empty (no stray empty rail).
-   * A new history from anywhere but this element's own remove/restore retires a pending
-   * Undo: its slot index no longer means anything once the row has moved on. */
+   * A new history from anywhere but this element's own remove/restore (a commit, a chip
+   * tap) finalizes the pending removals: their slots collapse (the same transition as a
+   * lapse), then the new list shows. */
   set targets(list: readonly number[]) {
-    if (this.undo && !this.echoing && list !== this._targets) this.retireUndo();
+    const finalize = this.slots !== null && !this.echoing && list !== this._targets;
     this._targets = list;
-    if (this.rail) this.renderChips();
+    if (finalize) this.startCollapse();
+    else if (this.rail) this.renderChips();
   }
   get targets(): readonly number[] {
     return this._targets;
@@ -105,7 +119,7 @@ class RackRecents extends HTMLElement {
   /** True while an Undo chip is showing. The owner keeps the row up for it even when
    * the history itself is empty (the last chip was just removed). */
   get undoPending(): boolean {
-    return this.undo !== null;
+    return this.slots !== null;
   }
 
   /** The display Unit the chip faces read in (the store stays kg). Re-renders.
@@ -205,8 +219,12 @@ class RackRecents extends HTMLElement {
           }
         }
         /* The Undo chip: the removed chip's slot, in the accent (the primary-action
-           colour) so the way back reads at a glance. Same pill, same footprint. */
+           colour) so the way back reads at a glance. Its width is locked inline to the
+           removed chip's, and the pill fills it with a tight inset, so "Undo" fits even a
+           two-digit chip's 44px and no neighbour ever shifts while removals are pending. */
+        .undo { overflow: hidden; }
         .undo .face {
+          width: 100%; justify-content: center; padding: 7px 4px;
           font-family: var(--rack-font); letter-spacing: .02em;
           color: var(--rack-accent);
           border-color: color-mix(in srgb, var(--rack-accent) 55%, transparent);
@@ -214,6 +232,16 @@ class RackRecents extends HTMLElement {
           animation: rack-undo-in .16s ease;
         }
         @keyframes rack-undo-in { from { opacity: 0; } to { opacity: 1; } }
+        /* The one moment chips move: every pending Undo slot collapses together once the
+           lifter has stopped (width + fade, ease-out). The negative margin eats the rail
+           gap so the last frame lands exactly where the plain list will. Reduced motion
+           never gets here -- the element skips straight to the plain list. */
+        .undo.collapsing {
+          width: 0 !important; min-width: 0; margin-right: -6px; opacity: 0;
+          transition: width ${COLLAPSE_MS}ms ease-out, min-width ${COLLAPSE_MS}ms ease-out,
+                      margin-right ${COLLAPSE_MS}ms ease-out, opacity ${COLLAPSE_MS}ms ease-out;
+        }
+        .undo.collapsing .face { animation: none; }
         /* The Remove popover: the help popover's raised card (RBAR-34 tokens), anchored
            above the pressed chip so it covers the entry for a moment rather than adding
            a row. Entrance as rack-help: a fade for everyone, the lift for no-preference. */
@@ -299,43 +327,43 @@ class RackRecents extends HTMLElement {
     this.nudges = undefined;
     this.cancelHold();
     this.closeMenu(false);
-    if (this.undo) this.retireUndo();
+    this.clearPending();
   }
 
-  // Render one chip per Target, plus the Undo chip in the removed chip's slot while one
-  // is pending. Empty history and no Undo -> hide the whole element so no bare "Recent"
-  // label or empty rail shows. The face is the bare number in the display Unit; the
-  // accessible name keeps the full "<n> <unit>" reading.
+  // Render the rail. With nothing pending: one chip per Target. While removals are
+  // pending: the frozen slots, each live chip as itself and each removed one as an Undo
+  // chip locked to the removed chip's width, so no neighbour shifts. Nothing pending and
+  // no Targets -> hide the whole element (no bare "Recent" label or empty rail). The face
+  // is the bare number in the display Unit; the accessible name keeps "<n> <unit>".
   private renderChips(): void {
-    this.hidden = this._targets.length === 0 && this.undo === null;
+    this.hidden = this._targets.length === 0 && this.slots === null;
     // Preserve the horizontal scroll position across the re-render (as loaded.ts
     // does): replacing innerHTML resets scrollLeft to 0, which would yank a
     // nudged-along rail back to the newest end whenever the console re-renders.
     const scrollLeft = this.rail.scrollLeft;
-    const items = this._targets.map((kg) => {
-      const on =
-        this._target !== null &&
-        (Math.abs(kg - this._target) < ACTIVE_EPS ||
-          shownIn(kg, this._unit) === shownIn(this._target, this._unit));
-      return `
+    const slots = this.slots ?? this._targets.map((kg) => ({ kg, removed: false, width: 0 }));
+    this.rail.innerHTML = slots
+      .map(({ kg, removed, width }, i) => {
+        if (removed) {
+          const w = width > 0 ? ` style="width:${width}px"` : '';
+          return `
+        <button type="button" class="undo${this.collapsing ? ' collapsing' : ''}"
+                role="listitem" data-undo data-slot="${i}"${w}
+                aria-label="Undo remove ${format(kg, this._unit)}"><span
+                class="face">Undo</span></button>`;
+        }
+        const on =
+          this._target !== null &&
+          (Math.abs(kg - this._target) < ACTIVE_EPS ||
+            shownIn(kg, this._unit) === shownIn(this._target, this._unit));
+        return `
         <button type="button" class="chip${on ? ' selected' : ''}" role="listitem"
                 data-target="${kg}"${on ? ' aria-current="true"' : ''}
                 aria-label="Set Target to ${format(kg, this._unit)}"
                 aria-describedby="${HINT_ID}" aria-keyshortcuts="Delete"><span
                 class="face">${shownIn(kg, this._unit)}</span></button>`;
-    });
-    if (this.undo) {
-      const at = Math.min(Math.max(0, this.undo.index), items.length);
-      items.splice(
-        at,
-        0,
-        `
-        <button type="button" class="undo" role="listitem" data-undo
-                aria-label="Undo remove ${format(this.undo.target, this._unit)}"><span
-                class="face">Undo</span></button>`,
-      );
-    }
-    this.rail.innerHTML = items.join('');
+      })
+      .join('');
     this.rail.scrollLeft = scrollLeft;
     this.nudges?.measure();
   }
@@ -347,8 +375,9 @@ class RackRecents extends HTMLElement {
       (e.target as Element | null)?.closest?.<HTMLButtonElement>('[data-target]') ?? null;
 
     this.rail.addEventListener('click', (e) => {
-      if ((e.target as Element | null)?.closest?.('[data-undo]')) {
-        this.restoreTarget();
+      const undo = (e.target as Element | null)?.closest?.<HTMLElement>('[data-undo]');
+      if (undo) {
+        this.restoreTarget(Number(undo.dataset.slot));
         return;
       }
       const chip = chipOf(e);
@@ -476,52 +505,99 @@ class RackRecents extends HTMLElement {
     );
   }
 
-  // Remove `kg`: tell the console (it owns the list and its persistence, ADR-0009), then
-  // show the Undo in the chip's old slot and put focus on it, so Enter/Space undoes.
+  // Remove `kg`: tell the console (it owns the list and its persistence, ADR-0009), turn
+  // the chip's slot into its own Undo (locked to the chip's width), focus that Undo, and
+  // restart the shared timer. Earlier pending Undos stay exactly where they are.
   private removeTarget(kg: number): void {
-    const index = this._targets.indexOf(kg);
-    if (index < 0) return;
-    if (this.undo) this.retireUndo(); // one Undo at a time: the newest removal wins
-    this.undo = { target: kg, index, timer: setTimeout(() => this.lapseUndo(), UNDO_MS) };
-    this.emit('recentremove', kg, index);
+    if (this.collapsing) this.finishCollapse(); // a removal right as the slots collapse
+    if (!this._targets.includes(kg)) return;
+    this.slots ??= this._targets.map((t) => ({ kg: t, removed: false, width: 0 }));
+    const at = this.slots.findIndex((sl) => sl.kg === kg && !sl.removed);
+    if (at < 0) return;
+    const slot = this.slots[at];
+    slot.removed = true;
+    // The exact (sub-pixel) width: a rounded offsetWidth would nudge neighbours by 1px.
+    slot.width = this.chipFor(kg)?.getBoundingClientRect().width ?? 0;
+    clearTimeout(this.undoTimer);
+    this.undoTimer = setTimeout(() => this.startCollapse(), UNDO_MS);
+    this.emit('recentremove', kg, this.liveIndex(at));
     this.renderChips();
-    this.root.querySelector<HTMLButtonElement>('[data-undo]')?.focus();
+    this.undoAt(at)?.focus();
     this.announcer.textContent = `Removed ${format(kg, this._unit)}`;
   }
 
-  // Undo: hand the Target and its slot back to the console, then focus the restored chip.
-  private restoreTarget(): void {
-    if (!this.undo) return;
-    const { target, index } = this.undo;
-    this.retireUndo();
-    this.emit('recentrestore', target, index);
+  // Undo one slot: hand its Target back to the console at its list index (the live slots
+  // before it), make the slot live again, and focus the restored chip. The other pending
+  // Undos and the shared timer are untouched; the last restore ends the cleanup.
+  private restoreTarget(at: number): void {
+    const slot = this.slots?.[at];
+    if (!slot || !slot.removed || this.collapsing) return;
+    const index = this.liveIndex(at);
+    slot.removed = false;
+    if (!this.slots!.some((sl) => sl.removed)) this.clearPending();
+    this.emit('recentrestore', slot.kg, index);
     this.renderChips();
-    this.chipFor(target)?.focus();
-    this.announcer.textContent = `Restored ${format(target, this._unit)}`;
+    this.chipFor(slot.kg)?.focus();
+    this.announcer.textContent = `Restored ${format(slot.kg, this._unit)}`;
   }
 
-  // The Undo window closed: the removal stands. Re-render without the Undo chip, but
-  // never UN-hide a row the owner hid meanwhile (the console hides it in By Plates);
-  // renderChips only knows emptiness. Keyboard focus that sat on the Undo moves to the
-  // chip now in its slot rather than falling to the page.
-  private lapseUndo(): void {
-    if (!this.undo) return;
-    const { index } = this.undo;
-    const hadFocus = this.root.activeElement?.hasAttribute('data-undo') ?? false;
-    this.undo = null;
+  // The list index of slot `at`: how many live slots sit before it.
+  private liveIndex(at: number): number {
+    return this.slots!.slice(0, at).filter((sl) => !sl.removed).length;
+  }
+
+  private undoAt(at: number): HTMLButtonElement | null {
+    return this.rail.querySelector<HTMLButtonElement>(`[data-undo][data-slot="${at}"]`);
+  }
+
+  // The removals are final (the timer lapsed, or a new history arrived): collapse every
+  // Undo slot together -- width and opacity over COLLAPSE_MS -- then show the plain list.
+  // This is the only moment chips move, and it comes after the lifter has stopped.
+  // Reduced motion skips straight to the end.
+  private startCollapse(): void {
+    if (this.slots === null || this.collapsing) {
+      if (this.rail && !this.collapsing) this.renderChips();
+      return;
+    }
+    clearTimeout(this.undoTimer);
+    if (!this.rail || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.finishCollapse();
+      return;
+    }
+    this.collapsing = true;
+    const undos = this.rail.querySelectorAll<HTMLElement>('[data-undo]');
+    // Pin each slot's current width so the transition has a start, then collapse.
+    undos.forEach((u) => (u.style.width = `${u.getBoundingClientRect().width}px`));
+    void this.rail.offsetWidth;
+    undos.forEach((u) => u.classList.add('collapsing'));
+    this.collapseTimer = setTimeout(() => this.finishCollapse(), COLLAPSE_MS);
+  }
+
+  // Show the plain list. Never UN-hide a row the owner hid meanwhile (the console hides
+  // it in By Plates; renderChips only knows emptiness). Keyboard focus that sat on an
+  // Undo moves to the chip now nearest its slot rather than falling to the page.
+  private finishCollapse(): void {
+    const focused = this.root.activeElement as HTMLElement | null;
+    const at = focused?.hasAttribute('data-undo') ? Number(focused.dataset.slot) : -1;
+    const index = at >= 0 && this.slots ? this.liveIndex(at) : -1;
+    this.clearPending();
+    if (!this.rail) return;
     const wasHidden = this.hidden;
     this.renderChips();
     if (wasHidden) this.hidden = true;
-    if (hadFocus) {
+    if (index >= 0) {
       const chips = this.rail.querySelectorAll<HTMLButtonElement>('[data-target]');
       chips[Math.min(index, chips.length - 1)]?.focus();
     }
   }
 
-  private retireUndo(): void {
-    if (!this.undo) return;
-    clearTimeout(this.undo.timer);
-    this.undo = null;
+  private clearPending(): void {
+    clearTimeout(this.undoTimer);
+    clearTimeout(this.collapseTimer);
+    this.undoTimer = undefined;
+    this.collapseTimer = undefined;
+    this.slots = null;
+    this.collapsing = false;
   }
 
   private emit(type: 'recentremove' | 'recentrestore', target: number, index: number): void {

@@ -84,9 +84,20 @@ removal is a long-press. Ownership does not change: the console still owns the l
   `contextmenu` (the context-menu key, Shift+F10, right-click) for the same popover,
   and Delete/Backspace on a focused chip, which removes it at once. Each chip carries
   an `aria-describedby` hint and `aria-keyshortcuts="Delete"`.
-- **Undo.** For 5 s the removed chip's slot holds an Undo chip, inside the rail. It
-  adds no row to the column (ADR-0013). That pending Undo is the one piece of state
-  the row keeps for itself, and it is UI state, not history. A new history from
-  anywhere else (a fresh commit or a chip re-apply) makes the removal final, because
-  the old slot index no longer means anything. The console keeps the row visible
-  while an Undo is pending, even when the list is empty.
+- **Undo.** A removal turns that chip's slot into its own Undo chip inside the rail.
+  The Undo is locked to the removed chip's width, so it adds no row (ADR-0013) and no
+  neighbour shifts. Several Undos can be pending at once. While any are pending, the
+  rail is frozen into slots, and each slot's list index is the number of live slots
+  before it. That is the index `recentremove` and `recentrestore` carry. Tapping an
+  Undo restores that Target to its own slot. One shared timer of 5 s restarts on every
+  removal. When it lapses, all the pending slots collapse together (width and opacity,
+  200 ms ease-out; with reduced motion they disappear at once). That collapse is the
+  only time chips move, and it comes after the lifter has stopped. A new history from
+  anywhere else (a fresh commit or a chip re-apply) makes the pending removals final
+  with the same collapse. The frozen slots are the only state the row keeps for
+  itself, and they are UI state, not history. The console keeps the row visible while
+  any Undo is pending, even when the list is empty.
+
+  *Revised the same day, after Caitlin's phone check:* the first cut kept one Undo at
+  a time, and each new removal collapsed the previous slot. During a quick cleanup of
+  several chips, that moved the rail under her finger.

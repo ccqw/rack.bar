@@ -85,27 +85,30 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
     );
   });
 
-  it('removing Recents (Delete on a chip) and their Undo survive a reload; Undo restores in place (ADR-0009 RBAR-73)', () => {
+  it('removing Recents (Delete on a chip) never moves a chip, any Undo restores in place, and it all survives a reload (ADR-0009 RBAR-73)', () => {
     // A stored row (distinct, loadable, 2 dp, capped), then a script of removals and
-    // Undos through the real chip paths. The expected row is modelled from the rule,
-    // not the core: a removal drops that chip; an Undo puts the LAST removal back in
-    // its old slot, and only while it is the pending one (one Undo at a time).
+    // Undos through the real chip paths, inside one Undo window. The expected rail is
+    // modelled from the rule, not the core: the rail is frozen into slots while removals
+    // are pending -- a removal turns ITS slot into an Undo, an Undo turns its slot back
+    // -- and the stored row is the live slots, in order.
     const rowArb = fc.uniqueArray(
       fc.integer({ min: 1, max: 50_000 }).map((c) => c / 100),
       { minLength: 1, maxLength: MAX_RECENTS },
     );
     const opArb = fc.oneof(
       fc.nat({ max: MAX_RECENTS - 1 }).map((i) => ({ op: 'del' as const, i })),
-      fc.constant({ op: 'undo' as const, i: 0 }),
+      fc.nat({ max: MAX_RECENTS - 1 }).map((i) => ({ op: 'undo' as const, i })),
     );
+    const rail = (app: App) =>
+      [...q(sr(appConsole(app)), 'rack-recents').shadowRoot!.querySelector('[data-rail]')!.children]
+        .map((c) => (c.hasAttribute('data-undo') ? 'undo' : (c as HTMLElement).dataset.target));
     const recentsRoot = (app: App) => sr(q(sr(appConsole(app)), 'rack-recents'));
     fc.assert(
-      fc.property(rowArb, fc.array(opArb, { maxLength: 6 }), (row, ops) => {
+      fc.property(rowArb, fc.array(opArb, { maxLength: 8 }), (row, ops) => {
         localStorage.clear();
         localStorage.setItem('rackbar.recents', JSON.stringify(row));
         const app = mountApp();
-        let expected = [...row].map(String);
-        let pending: { kg: string; at: number } | null = null;
+        const slots = row.map((kg) => ({ kg: String(kg), removed: false }));
         for (const { op, i } of ops) {
           if (op === 'del') {
             const chips = [...recentsRoot(app).querySelectorAll<HTMLElement>('.chip')];
@@ -114,20 +117,25 @@ describe('<rack-app> persistence properties (ADR-0007, ADR-0009, ADR-0010)', () 
             chip.dispatchEvent(
               new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, composed: true }),
             );
-            const at = expected.indexOf(chip.dataset.target!);
-            pending = { kg: expected[at], at };
-            expected = expected.filter((_, j) => j !== at);
+            slots.find((sl) => sl.kg === chip.dataset.target)!.removed = true;
           } else {
-            const undo = recentsRoot(app).querySelector<HTMLElement>('[data-undo]');
-            expect(undo !== null).toBe(pending !== null);
-            if (!undo || !pending) continue;
-            undo.click();
-            expected.splice(pending.at, 0, pending.kg);
-            pending = null;
+            const undos = [...recentsRoot(app).querySelectorAll<HTMLElement>('[data-undo]')];
+            if (undos.length === 0) continue;
+            const pick = i % undos.length;
+            undos[pick].click();
+            slots.filter((sl) => sl.removed)[pick].removed = false;
           }
-          expect(recentChips(app)).toEqual(expected);
+          // Nothing moved: the rail is exactly the slots, each live chip where it was.
+          const pending = slots.some((sl) => sl.removed);
+          expect(rail(app)).toEqual(
+            pending
+              ? slots.map((sl) => (sl.removed ? 'undo' : sl.kg))
+              : slots.map((sl) => sl.kg),
+          );
         }
-        expect(recentChips(mountApp())).toEqual(expected); // the reload
+        const live = slots.filter((sl) => !sl.removed).map((sl) => sl.kg);
+        expect(recentChips(app)).toEqual(live);
+        expect(recentChips(mountApp())).toEqual(live); // the reload
       }),
       APP_RUNS(10),
     );
