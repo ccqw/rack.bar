@@ -2342,6 +2342,8 @@ describe('<rack-console> the Training 20 kg Bar (RBAR-63)', () => {
     expect(misses).toEqual([]);
   });
 
+  // ~600 Targets typed through the real console: about 0.8 s locally but ~4.5 s on CI
+  // (Node 22), right at the 5 s default timeout, so it gets explicit headroom.
   it('never reads over in either unit for any whole-number Target (ADR-0003)', () => {
     const el = mountIron20();
     const overs: string[] = [];
@@ -2354,7 +2356,7 @@ describe('<rack-console> the Training 20 kg Bar (RBAR-63)', () => {
       }
     }
     expect(overs).toEqual([]);
-  });
+  }, 30_000);
 });
 
 describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {
