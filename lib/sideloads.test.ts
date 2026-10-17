@@ -1,0 +1,143 @@
+import { describe, it, expect } from 'vitest';
+import { sideLoads, canonicalSide, sideAtOrUnder, sideAbove, plateGridKg } from './sideloads.ts';
+import { ELEIKO_KG, IRON_LB, SLEEVE_MM, sideLoadKg, sideWidthMm } from './plates.ts';
+import type { Plate } from './plates.ts';
+import { lbToKg } from './units.ts';
+
+// The first `limit` ranked Side Loads (what RBAR-66's alternates will take).
+const rankSides = (sideKg: number, inv: readonly Plate[], sleeveMm = SLEEVE_MM, limit = 1) => {
+  const out: Plate[][] = [];
+  if (limit < 1) return out;
+  for (const side of sideLoads(sideKg, inv, sleeveMm)) {
+    out.push(side);
+    if (out.length >= limit) break;
+  }
+  return out;
+};
+const kgs = (side: readonly Plate[]) => side.map((p) => p.kg);
+const labels = (side: readonly Plate[]) => side.map((p) => p.label);
+
+describe('plateGridKg: the step every Side sum lies on', () => {
+  it('is the smallest Plate when it divides the rest', () => {
+    expect(plateGridKg(ELEIKO_KG)).toBe(0.5);
+    expect(plateGridKg(IRON_LB)).toBeCloseTo(lbToKg(2.5), 12);
+  });
+
+  it('is finer than the smallest Plate when the smallest does not divide the rest', () => {
+    // Without the 0.5s the smallest is 1 kg, but 2.5 and 1.5 still make half-kg sums.
+    expect(plateGridKg(ELEIKO_KG.filter((p) => p.kg !== 0.5))).toBe(0.5);
+    // Iron without the 2.5s steps by 5 lb.
+    expect(plateGridKg(IRON_LB.filter((p) => p.label !== '2.5'))).toBeCloseTo(lbToKg(5), 12);
+  });
+
+  it('throws a RangeError on an empty Inventory, a bad mass, or no common grid', () => {
+    expect(() => plateGridKg([])).toThrow(RangeError);
+    const odd: Plate = { kg: Math.PI, color: 'iron', diameterMm: 200, widthMm: 20 };
+    expect(() => plateGridKg([ELEIKO_KG[0], odd])).toThrow(RangeError);
+    expect(() => plateGridKg([{ ...odd, kg: 0 }])).toThrow(RangeError);
+    expect(() => plateGridKg([{ ...odd, kg: Number.NaN }])).toThrow(RangeError);
+  });
+
+  it('every shipped set and every single-size reduction has a grid (never throws in the app)', () => {
+    for (const inv of [ELEIKO_KG, IRON_LB]) {
+      expect(plateGridKg(inv)).toBeGreaterThan(0);
+      for (const gone of inv) expect(plateGridKg(inv.filter((p) => p !== gone))).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('sideLoads: every Side Load reaching an exact Side sum, ranked (RBAR-69)', () => {
+  it('ranks fewest Plates first, then heaviest-first (the RBAR-66 40 kg Side order)', () => {
+    const ranked = rankSides(40, ELEIKO_KG, SLEEVE_MM, 6).map(kgs);
+    expect(ranked).toEqual([
+      [25, 15],
+      [20, 20],
+      [25, 10, 5],
+      [20, 15, 5],
+      [20, 10, 10],
+      [15, 15, 10],
+    ]);
+  });
+
+  it('puts 35 + 25 ahead of 45 + 10 + 5 for a 60 lb iron Side', () => {
+    const ranked = rankSides(lbToKg(60), IRON_LB, SLEEVE_MM, 3).map(labels);
+    expect(ranked[0]).toEqual(['35', '25']);
+    expect(ranked[1]).toEqual(['45', '10', '5']);
+  });
+
+  it('is a stable ranking: a shorter limit is a prefix of a longer one', () => {
+    const long = rankSides(62.5, ELEIKO_KG, SLEEVE_MM, 12);
+    expect(rankSides(62.5, ELEIKO_KG, SLEEVE_MM, 5)).toEqual(long.slice(0, 5));
+  });
+
+  it('returns only distinct, heaviest-first, Sleeve-fitting stacks that hit the sum exactly', () => {
+    const ranked = rankSides(50, ELEIKO_KG, 200, 50);
+    expect(ranked.length).toBeGreaterThan(1);
+    const keys = new Set(ranked.map((s) => kgs(s).join(',')));
+    expect(keys.size).toBe(ranked.length);
+    for (const side of ranked) {
+      expect(sideLoadKg(side)).toBeCloseTo(50, 9);
+      expect(sideWidthMm(side)).toBeLessThanOrEqual(200);
+      expect(side.every((p, i) => i === 0 || side[i - 1].kg >= p.kg)).toBe(true);
+    }
+  });
+
+  it('drops a stack the Sleeve cannot hold, even when it is the fewest Plates', () => {
+    // 50 kg in 100 mm: 25 + 25 is 116 mm, so the two-Plate answer is gone and nothing
+    // with three or more Plates fits either.
+    expect(rankSides(50, ELEIKO_KG, 100, 3)).toEqual([]);
+    expect(kgs(rankSides(50, ELEIKO_KG, 116, 1)[0])).toEqual([25, 25]);
+  });
+
+  it('returns [] for an off-grid or unbuildable sum, and [[]] for zero', () => {
+    expect(rankSides(0.25, ELEIKO_KG)).toEqual([]);
+    expect(rankSides(500, ELEIKO_KG)).toEqual([]);
+    expect(rankSides(-1, ELEIKO_KG)).toEqual([]);
+    expect(rankSides(0, ELEIKO_KG)).toEqual([[]]);
+    expect(rankSides(10, [])).toEqual([]);
+  });
+
+  it('returns Plates from the given Inventory (same objects), whatever its order', () => {
+    const shuffled = [...IRON_LB].reverse();
+    const [best] = rankSides(lbToKg(60), shuffled);
+    expect(labels(best)).toEqual(['35', '25']);
+    for (const p of best) expect(shuffled).toContain(p);
+  });
+});
+
+describe('canonicalSide / sideAtOrUnder / sideAbove: the picks decode makes', () => {
+  it('canonicalSide is the first ranked Side Load, or null', () => {
+    expect(labels(canonicalSide(lbToKg(60), IRON_LB)!)).toEqual(['35', '25']);
+    expect(canonicalSide(0.25, ELEIKO_KG)).toBeNull();
+    expect(canonicalSide(0, ELEIKO_KG)).toEqual([]);
+  });
+
+  it('enumerates lazily: the first Side Load needs no full enumeration', () => {
+    const it = sideLoads(100, ELEIKO_KG);
+    expect(kgs(it.next().value as Plate[])).toEqual([25, 25, 25, 25]);
+    expect(kgs(it.next().value as Plate[])).toEqual([25, 25, 25, 20, 5]);
+  });
+
+  it('fills the greatest loadable sum at or under the budget, fewest Plates', () => {
+    expect(labels(sideAtOrUnder(lbToKg(61), IRON_LB))).toEqual(['35', '25']);
+    expect(kgs(sideAtOrUnder(40.3, ELEIKO_KG))).toEqual([25, 15]);
+    expect(sideAtOrUnder(0, ELEIKO_KG)).toEqual([]);
+    expect(sideAtOrUnder(0.4, ELEIKO_KG)).toEqual([]);
+    expect(sideAtOrUnder(10, [])).toEqual([]);
+  });
+
+  it('reaches a sum greedy cannot when the smallest Plate does not divide the rest', () => {
+    // No 0.5s: a 3 kg Side is 2 + 1 (greedy would stop at 2.5).
+    const no05 = ELEIKO_KG.filter((p) => p.kg !== 0.5);
+    expect(kgs(sideAtOrUnder(3, no05))).toEqual([2, 1]);
+  });
+
+  it('sideAbove is the least loadable sum strictly above, or null past the Sleeve', () => {
+    expect(kgs(sideAbove(40, ELEIKO_KG)!)).toEqual([25, 15, 0.5]);
+    expect(kgs(sideAbove(40.2, ELEIKO_KG)!)).toEqual([25, 15, 0.5]);
+    expect(labels(sideAbove(lbToKg(58), IRON_LB)!)).toEqual(['35', '25']);
+    expect(sideAbove(10, [])).toBeNull();
+    const full = sideAtOrUnder(1000, ELEIKO_KG);
+    expect(sideAbove(sideLoadKg(full), ELEIKO_KG)).toBeNull();
+  });
+});

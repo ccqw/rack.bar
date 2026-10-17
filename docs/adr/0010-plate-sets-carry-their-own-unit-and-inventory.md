@@ -190,3 +190,10 @@ one Bar into the other (Caitlin: no rounding fudges).
   (44.09 lb plus 5 lb steps), and every one types back Exact in both units (oracle in
   `console.test.ts`).
 
+
+## 2026-10-16 -- "the iron set is canonical" held for the Total only (RBAR-69)
+
+The DP check above proved greedy reaches the greatest Total at or under the Target on
+iron. It never checked the Plate count, and for count the iron ladder is not canonical
+(a 60 lb Side is 35 + 25, greedy loaded 45 + 10 + 5). Decode no longer relies on
+greedy at all; see the ADR-0003 amendment of this date.

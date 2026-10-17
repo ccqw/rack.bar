@@ -14,6 +14,7 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 ## Map
 
 - `lib/` — functional core: pure plate math (`plates.ts`); the `solve()` core lands here
+  (`decode.ts`), choosing its Plates through the exact search in `sideloads.ts`
 - `elements/` — imperative shell: Web Components (`app.ts` is a scaffold placeholder)
 - `tokens.css` — design tokens (`--rack-*`)
 - `scripts/fit-check.js` -- the phone-fit layout check (ADR-0013): a Playwright snippet
@@ -38,6 +39,9 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
   selection and adds optional collars to the Total; finite-Inventory UI stays deferred.
 - Decode never overshoots the Target by default (ADR-0003); a closer over-Target
   loadout is offered as an explicit opt-in only.
+- Fewest Plates is exact on every Inventory (ADR-0003, amended by RBAR-69): Sleeve fit,
+  then the greatest Total, then fewest Plates, then heaviest-first. Every loadout comes
+  from `lib/sideloads.ts`; never reintroduce a greedy fill.
 - Style through `--rack-*` tokens, not hard-coded values; elements use Shadow DOM.
 - Invariant (property) tests live in `lib/properties.test.ts` (core, vs the ADR-derived
   oracle in `lib/properties.oracle.ts`) and `elements/*.properties.test.ts` (shell, via
