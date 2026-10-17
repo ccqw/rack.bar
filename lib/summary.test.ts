@@ -165,10 +165,12 @@ describe('emojiRow', () => {
   it('a sleeve-full Side still reads as one short line', () => {
     // The heaviest Target the core will load: the sleeve caps the 25s (ADR-0012).
     const { side } = decode(1000, 20, ELEIKO_KG, SLEEVE_MM).primary;
-    const row = [...emojiRow(side)];
-    expect(row).toHaveLength(side.length);
-    expect(row.length).toBeLessThanOrEqual(12);
-    expect(row.length).toBeGreaterThanOrEqual(7); // genuinely deep, not a bare Bar
+    expect(emojiRow(side)).toBe(RED_SQ.repeat(7));
+  });
+
+  it('a sleeve-full iron Side is all black squares', () => {
+    const { side } = decode(2000, lbToKg(45), IRON_LB, SLEEVE_MM).primary;
+    expect(emojiRow(side)).toBe(IRON_SQ.repeat(8));
   });
 });
 
@@ -240,6 +242,41 @@ describe('loadingSummary', () => {
     );
     expect(text.split('\n')[1]).toBe(IRON_SQ);
     expect(text.split('\n')[3]).toBe('20 kg / 44 lb bar - Training');
+  });
+
+  it('a 5 kg Bar with a single change Plate', () => {
+    const text = loadingSummary(
+      { side: [eleiko(2.5)], barKg: 5, collarKg: 0, unit: 'kg' },
+      'Competition',
+    );
+    expect(text.split('\n').slice(0, 3)).toEqual([
+      'rack.bar - 10 kg',
+      RED_DOT,
+      'Per side: 1x 2.5',
+    ]);
+  });
+
+  it('bare Bar with Collars: no emoji row, Collars on the config line', () => {
+    const text = loadingSummary(
+      { side: [], barKg: 20, collarKg: 2.5, unit: 'kg' },
+      'Competition',
+    );
+    expect(text.split('\n')).toEqual([
+      'rack.bar - 25 kg',
+      'Bare bar - no plates',
+      '20 kg / 44 lb bar, collars 2.5 kg - Competition',
+      SHARE_LINK,
+    ]);
+  });
+
+  it('iron with Collars in lb: no collar glyph in the row', () => {
+    const text = loadingSummary(
+      { side: [iron('45')], barKg: lbToKg(45), collarKg: 2.5, unit: 'lb' },
+      'Training',
+    );
+    const lines = text.split('\n');
+    expect(lines[1]).toBe(IRON_SQ);
+    expect(lines[3]).toBe('20.41 kg / 45 lb bar, collars 2.5 kg - Training');
   });
 
   it('Collars stay on the config line, never in the emoji row', () => {

@@ -264,8 +264,8 @@ class RackShare extends HTMLElement {
     this.captionEl.textContent = `${configText(barKg, collarKg, setLabel)} - per side`;
   }
 
-  // Write the loading summary (emoji row + count line, RBAR-64) to the clipboard and confirm with a transient "Copied"
-  // (ADR-0011). The confirmation flips ONLY on a successful write -- a missing or denied
+  // Write the loading summary (emoji row + count line, RBAR-64) to the clipboard and
+  // confirm with a transient "Copied" (ADR-0011). The confirmation flips ONLY on a successful write -- a missing or denied
   // clipboard leaves the label unchanged rather than claiming a copy that did not happen.
   private copy(): void {
     const text = loadingSummary(this._load, plateSetFor(this._plateSet).label);

@@ -1,8 +1,8 @@
 // Loading summary -- the share card's text (RBAR-19, ADR-0011). Pure core (ADR-0001):
 // it folds a snapshot of the current load into the per-Side Plate groups the card
 // renders as colour chips and the short Wordle-style text the Copy button writes to
-// the clipboard (an emoji row per Side plus the plain count line, RBAR-64). Both the visible chips and the copied text derive from here, so they
-// cannot drift. No DOM, no clipboard -- the element wires those.
+// the clipboard (an emoji row per Side plus the plain count line, RBAR-64). Both the
+// visible chips and the copied text derive from here, so they cannot drift. No DOM, no clipboard -- the element wires those.
 //
 // Plate faces stay the Plate's own stamp (`label ?? kg`): kg on the Eleiko set even
 // when the display Unit is lb (the same kg-face-under-an-lb-readout convention the
