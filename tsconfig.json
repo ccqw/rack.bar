@@ -19,5 +19,5 @@
     "allowImportingTsExtensions": true,
     "skipLibCheck": true
   },
-  "include": ["lib", "elements", "vite.config.ts"]
+  "include": ["lib", "elements", "scripts/*.ts", "vite.config.ts"]
 }

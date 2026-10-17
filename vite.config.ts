@@ -1,5 +1,7 @@
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { defineConfig, configDefaults } from 'vitest/config';
+import { offline } from './scripts/offline.ts';
 
 // rack.bar is a static multi-page app (ADR-0001): each page is its own
 // hand-authored document. v1 ships a single entry (the calculator); the deferred
@@ -7,9 +9,12 @@ import { defineConfig, configDefaults } from 'vitest/config';
 // Listing entries from the start makes adding the game page additive, not a
 // restructure.
 const root = import.meta.dirname;
+const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 
 export default defineConfig({
   appType: 'mpa', // distinct documents, not a single-page app with a router
+  // RBAR-81 (ADR-0018): emit dist/sw.js precaching the build output. Build only.
+  plugins: [offline({ version, template: resolve(root, 'scripts/sw.js') })],
   server: {
     // rack.bar's home port. Other local projects camp on Vite's 5173 default;
     // strictPort makes a collision fail loudly instead of silently drifting to
