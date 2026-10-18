@@ -99,7 +99,8 @@ when the load misses it as read (ADR-0010); the chip quotes the Target exactly a
 in the active unit ("You asked 142.3 lb"), while the pill reads the rounded miss (Caitlin,
 2026-10-17). The bottom Target block (divider, label,
 stepper row) is gone. The By Weight `<rack-entry>` is headless: it adds only its keypad
-sheet and sits outside the column. In By Weight the status line under the hero reserves
+sheet and takes no room in the column (since RBAR-87 the one Target entry sits in the
+column at Warm up's working-weight slot, out of flow: `position: absolute`). In By Weight the status line under the hero reserves
 the chip's 24px (it was 18px), and the hero carries a 6px underline box, so the chip
 coming and going never moves the column. By Plates and Warm up keep the old metrics.
 

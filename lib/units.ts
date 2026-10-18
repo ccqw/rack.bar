@@ -94,3 +94,17 @@ export function displayCeilingKg(kg: number, unit: Unit): number {
   const top = shownIn(kg, unit) + (unit === 'lb' ? 0.5 : 0.005) - 1e-9;
   return Math.max(kg, unit === 'lb' ? lbToKg(top) : top);
 }
+
+/**
+ * The bottom of the rounding bucket a reading of `kg` in `unit` covers (RBAR-87): the
+ * smallest kg weight that still shows the same number (shownIn), the mirror of
+ * displayCeilingKg. A load at or above it reads as at least the Target, so Warm up does
+ * not round its Working set up past it (plan.ts workingLoad). Never above `kg`; a
+ * non-finite value passes through.
+ */
+export function displayFloorKg(kg: number, unit: Unit): number {
+  if (!Number.isFinite(kg)) return kg;
+  // Half a display step down, plus a hair so the bottom still rounds up to the reading.
+  const bottom = shownIn(kg, unit) - (unit === 'lb' ? 0.5 : 0.005) + 1e-9;
+  return Math.min(kg, unit === 'lb' ? lbToKg(bottom) : bottom);
+}

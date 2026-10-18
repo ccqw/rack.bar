@@ -31,9 +31,11 @@ import { decodeWithin } from '../lib/decode.ts';
 import { waysFor } from '../lib/ways.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, DEFAULT_COLLAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
-import { readPersisted, writePersisted } from './persist.ts';
+import { readPersisted, removePersisted, writePersisted } from './persist.ts';
 import {
   parseRecents,
+  parseTarget,
+  restoreTarget,
   pushRecent,
   removeRecent,
   restoreRecent,
@@ -49,7 +51,7 @@ import type { PlateSetKey } from '../lib/platesets.ts';
 import { ALL_PLATES, inventoryOnHand } from '../lib/platesonhand.ts';
 import type { PlatesOnHand } from '../lib/platesonhand.ts';
 import type { LoadSummary } from '../lib/summary.ts';
-import { format, shownIn, displayCeilingKg, draftToKg, stepFor } from '../lib/units.ts';
+import { format, shownIn, displayCeilingKg, displayFloorKg, draftToKg, stepFor } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
@@ -58,7 +60,7 @@ import type { LinkState } from '../lib/link.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import { planEasyRamp } from '../lib/moves.ts';
 import type { Ramp, RampRow } from '../lib/plan.ts';
-import { deltaSpoken, parseWorking, rowDelta, warmStatus, warmupView } from '../lib/warmup.ts';
+import { deltaSpoken, rowDelta, warmStatus, warmupView } from '../lib/warmup.ts';
 import type { WarmupView } from '../lib/warmup.ts';
 
 type Sleeve = HTMLElement & {
@@ -119,10 +121,13 @@ const RECENTS_KEY = 'rackbar.recents';
 // the Secondary readout shows.
 const UNIT_KEY = 'rackbar.unit';
 const SECONDARY_KEY = 'rackbar.secondary';
-// The Warm up mode's Working set Target, canonical kg (RBAR-65 slice 2, ADR-0007/0009):
-// console-owned like the By Weight display state. Absent = never set (Warm up seeds it
-// from the By Weight Target on first open); '' = the lifter cleared it.
-const WORKING_KEY = 'rackbar.working';
+// The one Target, canonical kg at full precision (RBAR-87, ADR-0015 as amended): By
+// Weight's Target and Warm up's Working set Target are this same number, console-owned
+// like the Target display state (ADR-0009). Absent = no Target (a cleared field).
+const TARGET_KEY = 'rackbar.target';
+// The pre-RBAR-87 Warm up working weight. Read once on connect: migrated into
+// TARGET_KEY when no Target is stored, then removed either way.
+const LEGACY_WORKING_KEY = 'rackbar.working';
 
 /** The lifter's persisted Primary unit (ADR-0010); a missing/blocked/garbage value is
  * kg (the app's default and canonical unit). Exported so <rack-app> can hand the
@@ -155,10 +160,10 @@ const HELD_CLICK_MS = 300;
 
 class RackConsole extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
+  // The one Target's field (RBAR-87): headless in By Weight (the hero is its editor,
+  // RBAR-58), the "Working weight" row in Warm up (variant="working", RBAR-65), hidden
+  // in By Plates. One draft, one keypad sheet, one keyboard path for both modes.
   private entry!: Entry;
-  // The Warm up mode's working-weight field: a second <rack-entry> (variant="working")
-  // with its own draft and the same keypad sheet + keyboard path (RBAR-65 slice 2).
-  private workEntry!: Entry;
   private warmup!: Warmup;
   private vizAdd!: HTMLElement;
   private recentsRow!: Recents;
@@ -246,20 +251,30 @@ class RackConsole extends HTMLElement {
   // Whether the last change to the loaded way was a step by the lifter (a bar tap or a
   // list row), so the spoken line names the Plates now on the Bar (RBAR-66).
   private wayStepped = false;
-  // Which mode's keypad sheet is open, if any (RBAR-53): By Weight's Target field or, since
-  // RBAR-65, Warm up's working-weight field. While that mode is active -- so the sheet
-  // actually shows -- the sheet's own "On the bar" load line is the live announcement
-  // source and the console's status region stays quiet (exactly one source at a time).
-  // Tracked off each entry's keypadopen/keypadclose events.
-  private keypadOwner: Mode | null = null;
-  // Warm up (RBAR-65 slice 2). `working` is the Working set's Target (kg, null = none
-  // yet); `ramp` is its plan on the current rig (null without a Working set); `warmIdx`
-  // is the selected row, whose Side is the shared Side Load while Warm up is active.
-  // `byWeightTarget` is the last By Weight Target, the seed for a first Warm up open.
-  private working: number | null = null;
+  // Whether the Target's keypad sheet is open (RBAR-53), off the entry's keypadopen /
+  // keypadclose events. While it shows -- By Weight or Warm up; the entry is hidden in
+  // By Plates -- the sheet's own "On the bar" load line is the live announcement source
+  // and the console's status region stays quiet (exactly one source at a time).
+  private keypadOpen = false;
+  // The one Target (RBAR-87, ADR-0015 as amended), canonical kg; null = none. By
+  // Weight decodes it; Warm up plans its Ramp from it (it is the Working set's Target).
+  // Only setTarget assigns it, and setTarget persists it (TARGET_KEY), so the field,
+  // the screen and the stored key never disagree. A non-positive Target (a typed 0) is
+  // kept for By Weight, which shows its own reading of it, but plans no Ramp and is not
+  // stored: it reads back as no Target.
+  private target: number | null = null;
+  // Warm up (RBAR-65 slice 2). `ramp` is the Target's plan on the current rig (null
+  // without a positive Target); `warmIdx` is the selected row, whose Side is the shared
+  // Side Load while Warm up is active.
   private ramp: Ramp | null = null;
   private warmIdx = 0;
-  private byWeightTarget: number | null = null;
+  // The By Plates visit (RBAR-87): the Side it was entered with, and whether going back
+  // to By Weight unchanged should keep By Weight's own load on the Bar (entered from By
+  // Weight) rather than decode the Target (entered from Warm up, or after a rig reset).
+  // Leaving By Plates with the Side still `side` keeps the Target: nothing was built. A
+  // set switch re-bases it (a rig reset is not a built load); an opened By Plates link
+  // clears it (null), so its load counts as built.
+  private platesEntry: { side: readonly Plate[]; keepCarry: boolean } | null = null;
 
   /**
    * The Bar the solver loads up from (RBAR-15). Setting it threads the new Bar into the
@@ -310,6 +325,10 @@ class RackConsole extends HTMLElement {
     if (this.mode === 'encode') {
       this.decoded = null;
       this.showingOver = false;
+      // A rig reset is not a built load (RBAR-87): re-base the visit on the emptied Bar,
+      // so leaving By Plates without a Plate tap keeps the Target. Its Plates are gone,
+      // so going back to By Weight decodes the Target instead of carrying a bare Bar.
+      this.platesEntry = { side: this.side, keepCarry: false };
     }
     this.reconfigure();
   }
@@ -371,19 +390,22 @@ class RackConsole extends HTMLElement {
   }
 
   // Re-apply a Bar/Collar/plate-set change: move the entry's anchor to the new baseline,
-  // then either re-decode the standing Target (rebuilding the Side Load) or, with no live
-  // decode, just re-render so the Total re-reads. The Target is re-derived from the decode
-  // result (`target = total - delta`), so no separate copy of it can drift.
+  // then either re-decode the standing Target (rebuilding the Side Load), re-plan Warm
+  // up's Ramp from it, or, with no live decode, just re-render so the Total re-reads.
+  // The Target itself is unchanged: a rig change is not an edit (RBAR-87).
   private reconfigure(): void {
     if (!this.entry) return; // pre-connect; connectedCallback renders from the fields
+    // The entry's Bar setter re-seeds an untouched field that reads the old Bar. When
+    // that field is the Target (shown by display(): a reload, a carry, a chip), it must
+    // keep reading itself, not the new Bar: put the same text back.
+    const reading = this.entry.reading;
     this.entry.barKg = this.baselineKg();
-    this.workEntry.barKg = this.baselineKg();
+    if (this.target !== null && this.entry.reading !== reading) {
+      this.entry.display(this.target, reading);
+    }
     if (this.mode === 'decode' && this.decoded) {
-      this.decodeTo(this.decoded.primary.total - this.decoded.primary.delta);
+      this.decodeTo(this.target);
     } else if (this.mode === 'warmup') {
-      // The entry's Bar setter re-seeds an untouched field that reads the Bar; a
-      // Working set equal to the old Bar must keep reading itself, not the new Bar.
-      if (this.working !== null) this.workEntry.display(this.working);
       this.planWarmup();
       this.render();
     } else {
@@ -770,10 +792,6 @@ class RackConsole extends HTMLElement {
           .readhead { margin-bottom: 4px; }
         }
       </style>
-      <!-- By Weight's Target (RBAR-58): headless -- the hero Total below is its visible
-           editor, so the element adds only the draft and the fixed keypad sheet. It sits
-           outside the column (zero height, no row and no gap in it), first in the root. -->
-      <rack-entry headless></rack-entry>
       <div class="stack">
         <!-- The user-facing labels name the INPUT you work from ("By Weight" =
              type a Target; "By Plates" = tap Plates), which is more intuitive than
@@ -871,9 +889,13 @@ class RackConsole extends HTMLElement {
                the offer or the caption, so the row's fixed height holds all three. -->
           <span class="barnote" data-barnote hidden></span>
         </div>
-        <!-- Warm up (RBAR-65 slice 2): the working-weight row, then the Ramp's stairs +
-             Next -- in the editor slot the Target block and Recents hold in By Weight. -->
-        <rack-entry variant="working" data-working hidden></rack-entry>
+        <!-- The one Target's field (RBAR-87). In Warm up it is the working-weight row
+             (variant="working", RBAR-65 slice 2) above the Ramp's stairs + Next, in the
+             editor slot Recents holds in By Weight. In By Weight it is headless (RBAR-58):
+             the hero Total is its visible editor, and it adds only the draft and the fixed
+             keypad sheet, out of flow (no box and no gap in the column). render() flips
+             the two attributes with the mode. -->
+        <rack-entry headless></rack-entry>
         <rack-warmup hidden></rack-warmup>
         <!-- Recent Targets: a quick-pick row under the entry, By-Weight mode only
              (RBAR-20). Hidden until the lifter has committed a Target. -->
@@ -888,8 +910,7 @@ class RackConsole extends HTMLElement {
       <rack-fullscreen></rack-fullscreen>
       <rack-ways></rack-ways>
     `;
-    this.entry = this.root.querySelector('rack-entry:not([data-working])') as Entry;
-    this.workEntry = this.root.querySelector('rack-entry[data-working]') as Entry;
+    this.entry = this.root.querySelector('rack-entry') as Entry;
     this.warmup = this.root.querySelector('rack-warmup') as Warmup;
     this.vizAdd = this.root.querySelector('[data-viz-add]')!;
     this.recentsRow = this.root.querySelector('rack-recents') as Recents;
@@ -921,42 +942,31 @@ class RackConsole extends HTMLElement {
     this.unitButtons = this.root.querySelectorAll('[data-unit]');
     this.modeButtons = this.root.querySelectorAll('[data-mode]');
 
-    // Decode: the Target entry derives the Side Load.
+    // Every edit of the one Target (RBAR-87) -- a keystroke, a stepper nudge -- sets it.
+    // By Weight decodes it into the Side Load; Warm up re-plans the Ramp live (the stairs
+    // and the sleeve follow the keypad, as By Weight's Side does). The entry is hidden in
+    // By Plates, which edits Plates, not the Target, so no edit can arrive there.
     this.entry.addEventListener('target', (e) => {
-      if (this.mode !== 'decode') return;
-      this.decodeTo((e as CustomEvent<{ target: number | null }>).detail.target);
+      const target = (e as CustomEvent<{ target: number | null }>).detail.target;
+      if (this.mode === 'decode') this.decodeTo(target);
+      else if (this.mode === 'warmup') this.setWarmTarget(target);
     });
     // The keypad sheet's open/closed edges hand the single announcement source back and
     // forth (RBAR-53): open -> the sheet's load line speaks, the console region mutes;
     // close -> re-render so the console region settles on the final decoded value.
     this.entry.addEventListener('keypadopen', () => {
-      this.keypadOwner = 'decode';
+      this.keypadOpen = true;
       this.renderHeroEditing();
     });
-    // A Target commit (the keypad closing) is remembered in the Recent row (RBAR-20).
-    // Distinct from `target`, which fires on every keystroke -- only the commit is kept,
-    // so mid-entry digits never litter the history. A null Target (empty field) is a
-    // no-op (rememberTarget guards it). The trailing render() unmutes the announcement
-    // region even on a null commit (rememberTarget only renders on a real Target).
+    // A Target commit (the keypad closing) is remembered in the Recent row (RBAR-20), in
+    // By Weight and Warm up alike (ADR-0009; Warm-up rows never are). Distinct from
+    // `target`, which fires on every keystroke -- only the commit is kept, so mid-entry
+    // digits never litter the history. A null Target (empty field) is a no-op
+    // (rememberTarget guards it). The trailing render() unmutes the announcement region
+    // even on a null commit (rememberTarget only renders on a real Target).
     this.entry.addEventListener('keypadclose', (e) => {
-      this.keypadOwner = null;
+      this.keypadOpen = false;
       this.renderHeroEditing();
-      this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
-      this.render();
-    });
-    // Warm up's working-weight field (RBAR-65 slice 2): every edit re-plans the Ramp
-    // live (the stairs and the sleeve follow the keypad, as By Weight's Target does) and
-    // persists it; the keypad commit -- and only that -- pushes the Working set's Target
-    // onto Recents, like a By Weight Target commit (ADR-0009). Warm-up rows never do.
-    this.workEntry.addEventListener('target', (e) => {
-      if (this.mode !== 'warmup') return;
-      this.setWorking((e as CustomEvent<{ target: number | null }>).detail.target);
-    });
-    this.workEntry.addEventListener('keypadopen', () => {
-      this.keypadOwner = 'warmup';
-    });
-    this.workEntry.addEventListener('keypadclose', (e) => {
-      this.keypadOwner = null;
       this.rememberTarget((e as CustomEvent<{ target: number | null }>).detail.target);
       this.render();
     });
@@ -1005,25 +1015,21 @@ class RackConsole extends HTMLElement {
     // Encode: palette taps add, sleeve disc taps remove -- both pure transforms.
     this.palette.addEventListener('addplate', (e) => {
       if (this.mode !== 'encode') return;
-      this.side = addPlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate);
-      this.render();
+      this.editSide(addPlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate));
     });
     this.sleeve.addEventListener('removeplate', (e) => {
       if (this.mode !== 'encode') return;
-      this.side = removePlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate);
-      this.render();
+      this.editSide(removePlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate));
     });
     // Encode: the "On the bar" chips remove one of a Plate (mirroring a sleeve disc tap);
     // Clear empties the Side wholesale (RBAR-27). Both guard the mode and re-render.
     this.loadedRow.addEventListener('removeplate', (e) => {
       if (this.mode !== 'encode') return;
-      this.side = removePlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate);
-      this.render();
+      this.editSide(removePlate(this.side, (e as CustomEvent<{ plate: Plate }>).detail.plate));
     });
     this.loadedRow.addEventListener('clearbar', () => {
       if (this.mode !== 'encode') return;
-      this.side = [];
-      this.render();
+      this.editSide([]);
     });
     // The over-target opt-in toggles between the at-or-under primary and the over option.
     // The control is only shown with a decode result on hand (renderOver), so a missing
@@ -1114,12 +1120,59 @@ class RackConsole extends HTMLElement {
     this.recentsRow.unit = this.activeUnit();
     this.recentsRow.targets = this.recents;
     this.entry.barKg = this.baselineKg(); // anchor the entry to the bare-rig baseline
-    // The Working set's Target survives a reload (rackbar.working, read-validated).
-    this.working = parseWorking(readPersisted(WORKING_KEY));
-    this.workEntry.unit = this.activeUnit();
-    this.workEntry.barKg = this.baselineKg();
-    this.workEntry.display(this.working);
-    this.render(); // initial state: Decode, a bare rig, no Target typed yet
+    // The one Target survives a reload (RBAR-87): By Weight opens on it, decoded on this
+    // default rig until the app pushes the persisted one (reconfigure re-solves it).
+    const target = this.loadTarget();
+    if (target !== null) {
+      this.entry.display(target);
+      this.solveTo(target);
+    }
+    this.render(); // initial state: Decode, on the stored Target or a bare rig
+  }
+
+  // Read the stored Target, migrating the pre-RBAR-87 Warm up working weight. The choice
+  // is the pure restoreTarget (lib/recents.ts, ADR-0007): both keys pass the same
+  // parseTarget range check (a positive plain decimal up to MAX_TARGET_KG), so a corrupt
+  // or out-of-range value in either reads as no Target, like a missing key. A valid
+  // LEGACY_WORKING_KEY value becomes the Target only when no valid Target is stored (an
+  // explicit Target always wins), and the legacy key is removed either way. The caller's solveTo stores the migrated Target
+  // (setTarget stays the only writer). The migration runs once only if that removal
+  // succeeds: storage that reads but cannot remove would offer the legacy value again on
+  // a later reload with no Target stored (best-effort, ADR-0009).
+  private loadTarget(): number | null {
+    const legacyRaw = readPersisted(LEGACY_WORKING_KEY);
+    if (legacyRaw !== null) removePersisted(LEGACY_WORKING_KEY);
+    return restoreTarget(readPersisted(TARGET_KEY), legacyRaw);
+  }
+
+  // Set the one Target (RBAR-87) and persist it best-effort (ADR-0009). A Target that
+  // parseTarget reads back as itself (a positive plain decimal up to MAX_TARGET_KG) is
+  // stored at full precision, so a reload reads back the same number. Anything else (an
+  // emptied field, a typed 0, a Target past the cap) removes the key, which reads back as
+  // no Target -- and so does a failed write, so a stale Target can never come back on
+  // reload. The only writer of `target` and of TARGET_KEY.
+  private setTarget(target: number | null): void {
+    this.target = target;
+    const raw = target === null ? null : String(target);
+    if (raw !== null && parseTarget(raw) === target && writePersisted(TARGET_KEY, raw)) return;
+    removePersisted(TARGET_KEY);
+  }
+
+  // The Target of the live decode (RBAR-87): the one Target, which solveTo sets together
+  // with `decoded`, so a live decode always has one. A null here is a broken invariant:
+  // throw, rather than quietly skip a re-solve or read a different number.
+  private liveTarget(): number {
+    if (this.target === null) {
+      throw new Error('rack-console: a live decode with no Target (RBAR-87 invariant)');
+    }
+    return this.target;
+  }
+
+  // A By Plates edit: the new Side, then render. Whether it built a load is judged on
+  // leaving By Plates, against the Side it was entered with (setMode, RBAR-87).
+  private editSide(next: readonly Plate[]): void {
+    this.side = next;
+    this.render();
   }
 
   // Adopt a Primary-unit choice from the toggle: record it, persist, and re-render every
@@ -1132,7 +1185,10 @@ class RackConsole extends HTMLElement {
   //    bucket changed). A short load can only move UP -- the new reading may admit a
   //    heavier load (27.2 kg on iron reads 60 lb, which 60 lb of iron meets) -- never
   //    down: the old load is at or under the Target, so the new ceiling still covers
-  //    it. A chosen round-up stays chosen only while the same load is still
+  //    it. (Warm up's rounded-up Working set is the exception, RBAR-87: it is re-judged
+  //    on the new reading, so when the at-or-under load reads exact there -- 140.3 kg
+  //    rounds up to 141 kg, but 140 kg reads 309 lb like the Target -- Work steps down
+  //    to it.) A chosen round-up stays chosen only while the same load is still
   //    the round-up; if the new reading makes it the Exact primary (100.95 kg -> 223 lb,
   //    and 101 kg reads 223 lb), it is shown as the primary instead -- never a stale
   //    "over" whose "use" button would step the lifter down to a short load.
@@ -1142,21 +1198,22 @@ class RackConsole extends HTMLElement {
     this.unitPref = unit;
     writePersisted(UNIT_KEY, unit);
     if (this.mode === 'warmup') {
-      // The working weight is kept as read, by By Weight's RBAR-60 rule: when the Working
-      // set read Exact in the old unit, that load IS the working weight, so it becomes
-      // the weight itself (586 lb on Comp loads 266 kg; re-solving the typed 265.8 kg
-      // would drop to 265). Otherwise the field re-reads the SAME canonical kg in the
-      // new unit (the entry's RBAR-38 reformat). Either way the Ramp re-plans against
-      // the new reading's ceiling (ADR-0015 Q7).
-      const workKg = this.ramp?.working.primary.total;
+      // The Target is kept as read, by By Weight's RBAR-60 rule: when the Working set
+      // read Exact in the old unit, that load IS the Target, so it becomes the weight
+      // itself (586 lb on Comp loads 266 kg; re-solving the typed 265.8 kg would drop
+      // to 265). Otherwise the field re-reads the SAME canonical kg in the new unit (the
+      // entry's RBAR-38 reformat). Either way the Ramp re-plans against the new
+      // reading's ceiling and floor (ADR-0015 Q7; RBAR-87: a rounded-up Working set never
+      // reads Exact, so it is re-judged on the new reading and may step down to a load
+      // that reads exact there).
+      const workKg = this.ramp?.rows[this.ramp.rows.length - 1].total;
       if (
-        this.working !== null &&
+        this.target !== null &&
         workKg !== undefined &&
-        shownIn(workKg, was) === shownIn(this.working, was)
+        shownIn(workKg, was) === shownIn(this.target, was)
       ) {
-        this.working = workKg;
-        writePersisted(WORKING_KEY, String(workKg));
-        this.workEntry.retarget(workKg);
+        this.setTarget(workKg);
+        this.entry.retarget(workKg);
       }
       this.planWarmup();
       this.render();
@@ -1167,7 +1224,7 @@ class RackConsole extends HTMLElement {
       return;
     }
     const { primary, over } = this.decoded;
-    const target = primary.total - primary.delta;
+    const target = this.liveTarget();
     // The way on the Bar (RBAR-66) is kept when the toggle leaves the Total as it was.
     const loaded = this.side;
     if (!this.showingOver && shownIn(primary.total, was) === shownIn(target, was)) {
@@ -1215,13 +1272,16 @@ class RackConsole extends HTMLElement {
     this.decoded = null;
     this.showingOver = false;
     this.side = link.side;
+    // A linked By Plates load is a built load, even when it matches the Side the visit
+    // began with: leaving By Plates makes its Total the Target (RBAR-87).
+    this.platesEntry = null;
     if (link.mode === 'encode') {
       this.render();
       return;
     }
     const target = link.targetKg;
     if (target === undefined) {
-      this.entry.display(link.side.length > 0 ? encode(link.side, this.baselineKg()) : null);
+      this.carryTarget();
       this.render();
       return;
     }
@@ -1244,7 +1304,7 @@ class RackConsole extends HTMLElement {
     if (at < 0) {
       this.decoded = null; // drift: the carry, not a decode that disagrees with the Plates
       this.side = link.side;
-      this.entry.display(encode(link.side, this.baselineKg()));
+      this.carryTarget(encode(link.side, this.baselineKg()));
       this.render();
     } else {
       this.loadWay(at);
@@ -1345,9 +1405,8 @@ class RackConsole extends HTMLElement {
       const reading = String(shownIn(row.total, load.unit));
       return linkUrl({ ...load, mode: 'decode', targetKg: row.total, reading });
     }
-    const d = this.decoded;
-    if (!d) return linkUrl({ ...load, mode: 'decode' });
-    const targetKg = d.primary.total - d.primary.delta;
+    if (!this.decoded) return linkUrl({ ...load, mode: 'decode' });
+    const targetKg = this.liveTarget();
     // A mid-entry draft ("142.") normalises to its number; a reading that still does not
     // fit (not expected) falls back to the Target alone, which opens to its readout.
     const n = Number(this.entry.reading);
@@ -1398,10 +1457,11 @@ class RackConsole extends HTMLElement {
   }
 
   // decodeTo without the render, for a caller that adjusts the result first (the kg|lb
-  // toggle keeping a way) and then renders -- and so announces -- once.
+  // toggle keeping a way) and then renders -- and so announces -- once. The decoded
+  // Target is the one Target (RBAR-87), so it is set (and stored) here.
   private solveTo(target: number | null): void {
     this.showingOver = false;
-    this.byWeightTarget = target;
+    this.setTarget(target);
     this.decoded =
       target === null
         ? null
@@ -1465,65 +1525,97 @@ class RackConsole extends HTMLElement {
     this.waysSheet.open(); // focuses the loaded way's row
   }
 
-  // Switch modes without disturbing the shared Side Load (ADR-0005). Entering Decode
-  // drops the decode state and seeds the Target box with the carried loadout's Total
-  // (so the +/- steppers move from the real current weight, not zero) -- silently, so
-  // the loadout shows with no delta until the lifter acts; entering Encode just hands
-  // editing to the taps.
+  // Switch modes (RBAR-87, ADR-0015 as amended). The Target is kept both ways between
+  // By Weight and Warm up: entering By Weight decodes it (its round-up choice and way
+  // start over), entering Warm up plans its Ramp. Leaving By Plates is the ADR-0005
+  // carry: the load built there stays on the Bar and its Total becomes the Target (none
+  // on a bare Bar), shown silently in the field so the steppers move from the real
+  // weight. A By Plates visit that left the Side as it found it built nothing, whatever
+  // mode it came from: the Target is kept (a By Weight peek does not rewrite 141.3 as
+  // the 141 load, nor a Warm up peek 140 as the 70 kg row). Back in By Weight, such a
+  // visit from By Weight keeps By Weight's own load on the Bar (the ADR-0005 carry,
+  // round-up included, with no live decode until the lifter acts); one from Warm up, or
+  // after a set switch emptied the Bar, decodes the Target.
+  // Entering By Plates hands editing to the taps on the shared Side (ADR-0005).
   private setMode(mode: Mode): void {
     if (mode === this.mode) return;
+    const from = this.mode;
+    const visit = this.platesEntry;
     this.mode = mode;
     this.decoded = null;
     this.showingOver = false;
+    // Whether By Weight keeps the Side on the Bar as a carry rather than decoding.
+    let keepSide = false;
+    if (from === 'encode') {
+      if (visit !== null && sameSide(this.side, visit.side)) {
+        keepSide = visit.keepCarry;
+      } else {
+        this.carryTarget();
+        keepSide = true;
+      }
+      this.platesEntry = null;
+    }
+    // With no Target the field is empty (the muted Bar anchor), as Warm up and the bare
+    // carry always showed it -- not the entry's untouched Bar seed, which a fresh By
+    // Weight starts on.
+    if (mode !== 'encode' && this.target === null && this.entry.reading !== '') {
+      this.entry.display(null);
+    }
     if (mode === 'decode') {
-      this.entry.display(this.side.length > 0 ? encode(this.side, this.baselineKg()) : null);
+      if (!keepSide) this.solveTo(this.target);
     } else if (mode === 'warmup') {
-      this.enterWarmup();
+      this.planWarmup();
+    } else {
+      this.platesEntry = { side: this.side, keepCarry: from === 'decode' };
     }
     this.render();
   }
 
-  // Enter Warm up (RBAR-65 slice 2). The first time, with no Working set ever saved
-  // (the key is absent, not merely cleared), the By Weight Target seeds it (Q12). The
-  // field shows it silently, and the Ramp is planned from it; the selected row's Side
-  // becomes the shared Side Load.
-  private enterWarmup(): void {
-    const seed = this.byWeightTarget;
-    if (this.working === null && readPersisted(WORKING_KEY) === null && seed !== null && seed > 0) {
-      this.working = seed;
-      writePersisted(WORKING_KEY, String(seed));
-    }
-    this.workEntry.display(this.working);
-    this.planWarmup();
+  // The ADR-0005 carry (RBAR-87): the Side on the Bar becomes the Target -- its Total,
+  // or no Target on a bare Bar -- and the field shows it silently (a pristine seed, so
+  // the next digit replaces it and an idle peek commits nothing to Recents). A drifted
+  // By Weight link passes its Side's Total explicitly, the bare-Bar Total included: its
+  // sender asked for a weight, so the field reads one (as before RBAR-87).
+  private carryTarget(
+    total: number | null = this.side.length > 0 ? encode(this.side, this.baselineKg()) : null,
+  ): void {
+    this.setTarget(total);
+    this.entry.display(total);
   }
 
-  // Adopt a working-weight edit: a positive weight is the Working set's Target, anything
-  // else (an emptied field, a typed 0) is "none yet". Persisted either way ('' = cleared,
-  // so the next open does not re-seed), then re-planned.
-  private setWorking(target: number | null): void {
-    this.working = target !== null && target > 0 ? target : null;
-    writePersisted(WORKING_KEY, this.working === null ? '' : String(this.working));
+  // Adopt a working-weight edit in Warm up: it is the one Target (RBAR-87), so By Weight
+  // shows it too. Stored, then re-planned.
+  private setWarmTarget(target: number | null): void {
+    this.setTarget(target);
     this.planWarmup();
     this.render();
   }
 
   // Plan the Ramp for the Working set on the current rig by Caitlin's station rule
-  // (lib/moves.ts, ADR-0015 as amended), and load the selected row. The Working set
-  // solves at or under its reading in the display unit (displayCeilingKg, RBAR-60),
-  // exactly as By Weight would. The template
-  // is DEFAULT_RAMP (editing it is slice 3). The selection is kept across re-plans,
-  // clamped into the rows.
+  // (lib/moves.ts, ADR-0015 as amended), and load the selected row. The Working set's
+  // Target is the one Target (RBAR-87); with none, or a non-positive one (a typed 0),
+  // there is no Ramp: the prompt and a bare Bar. The Working set solves at or under its
+  // reading in the display unit (displayCeilingKg, RBAR-60), exactly as By Weight would,
+  // then -- when that load reads short of the Target's reading -- rounds UP to the least
+  // loadable Total above that reading (displayFloorKg + plan.ts workingLoad, RBAR-87), so
+  // "Work" is what is really on the Bar. The Target itself stays as typed; By Weight
+  // still decodes it at or under (ADR-0003). The template is DEFAULT_RAMP (editing it is
+  // slice 3). The selection is kept across re-plans, clamped into the rows.
   private planWarmup(): void {
-    if (this.working === null) {
+    const working = this.target;
+    if (working === null || !isRememberable(working)) {
       this.ramp = null;
       this.side = [];
       return;
     }
     this.ramp = planEasyRamp(
-      this.working,
+      working,
       DEFAULT_RAMP,
       { barKg: this._barKg, collarKg: this._collarKg, inventory: this.inventory() },
-      { ceilingKg: displayCeilingKg(this.working, this.activeUnit()) },
+      {
+        ceilingKg: displayCeilingKg(working, this.activeUnit()),
+        floorKg: displayFloorKg(working, this.activeUnit()),
+      },
     );
     this.warmIdx = Math.min(this.warmIdx, this.ramp.rows.length - 1);
     this.side = this.ramp.rows[this.warmIdx].side;
@@ -1574,7 +1666,6 @@ class RackConsole extends HTMLElement {
     this.vizAdd.hidden = view?.addCaption == null;
     this.vizAdd.textContent = view?.addCaption ?? '';
     this.entry.unit = unit;
-    this.workEntry.unit = unit;
     this.recentsRow.unit = unit;
     // The Recent rail highlights the chip matching the live Target (RBAR-37): fed in
     // canonical kg, so a chip applied in lb still matches its own echo. Fed HERE, before
@@ -1582,7 +1673,7 @@ class RackConsole extends HTMLElement {
     // recomputes its own emptiness-hidden, which would otherwise undo the Encode hide.
     this.recentsRow.target =
       this.mode === 'decode' && this.decoded
-        ? this.decoded.primary.total - this.decoded.primary.delta
+        ? this.liveTarget()
         : null;
     // Value and suffix split (RBAR-39): only the value rolls; the suffix just tracks
     // the active unit. Together they still read "142 kg" (format's shape).
@@ -1590,9 +1681,16 @@ class RackConsole extends HTMLElement {
     this.totalUnit.textContent = ` ${unit}`;
     this.renderUnitToggle(unit);
     this.renderSecondary(unit);
-    this.entry.hidden = this.mode !== 'decode';
-    this.workEntry.hidden = this.mode !== 'warmup';
-    this.warmup.hidden = this.mode !== 'warmup';
+    // The one Target's field (RBAR-87): the "Working weight" row in Warm up, headless
+    // under the hero in By Weight, hidden in By Plates (which edits Plates, not it).
+    const warm = this.mode === 'warmup';
+    this.entry.hidden = this.mode === 'encode';
+    this.entry.toggleAttribute('headless', !warm);
+    if (warm !== (this.entry.getAttribute('variant') === 'working')) {
+      if (warm) this.entry.setAttribute('variant', 'working');
+      else this.entry.removeAttribute('variant');
+    }
+    this.warmup.hidden = !warm;
     // The Total-tap affordance is By-Weight only (RBAR-57): By Plates has no keypad,
     // so the wrapper goes inert there (its look never changes -- see .totaltap).
     this.totalTap.disabled = this.mode !== 'decode';
@@ -1627,7 +1725,7 @@ class RackConsole extends HTMLElement {
     if (this.mode === 'decode' && this.decoded) {
       const { primary, over } = this.decoded;
       const shown = this.showingOver && over ? over : primary;
-      const targetKg = primary.total - primary.delta;
+      const targetKg = this.liveTarget();
       // "At capacity" is the CORE's own signal (ADR-0012): the capped solver omits
       // `over` exactly when no physical round-up exists, so short-with-no-over means
       // the miss cannot be closed. A per-side room check (atSleeveCapacity) would
@@ -1681,9 +1779,11 @@ class RackConsole extends HTMLElement {
         (pill.kind === 'capacity' ? `${pill.label}, bar at capacity` : pill.label) + way,
       );
       this.announce(note === null ? line : `${line}. ${note}`);
-    } else if (this.mode === 'warmup' && this.ramp && this.working !== null) {
+    } else if (this.mode === 'warmup' && this.ramp && this.target !== null) {
+      // No "You asked" chip in Warm up (RBAR-58 is By Weight's; kept so by RBAR-87): the
+      // working-weight row already shows the Target as typed.
       this.renderAsked(null, unit);
-      this.renderWarmStatus(this.ramp, this.warmIdx, this.working, unit);
+      this.renderWarmStatus(this.ramp, this.warmIdx, this.target, unit);
     } else {
       this.status.hidden = true;
       this.status.className = 'status'; // drop any prior state class/label while hidden
@@ -1692,7 +1792,6 @@ class RackConsole extends HTMLElement {
       this.over.textContent = '';
       this.atcap.hidden = true; // capacity is a decode-outcome caption (RBAR-47)
       this.entry.loadLine = null; // nothing decoded -> the keypad sheet hides the line
-      this.workEntry.loadLine = null;
       this.barnote.hidden = true;
       this.barnote.textContent = '';
       this.renderAsked(null, unit);
@@ -1741,13 +1840,14 @@ class RackConsole extends HTMLElement {
   }
 
   // Update the screen-reader announcement region (RBAR-53). Two gates keep it honest:
-  // while the keypad sheet is showing (open AND Decode active) the sheet's own load line
-  // is the single live source, so the console stays quiet; and an unchanged line is left
-  // untouched, so an action that renders more than once (a Recent re-apply decodes, then
-  // re-remembers) still settles to exactly one announcement -- and the numRoll transition
-  // never drives it, because only render() writes here, once, with the final value.
+  // while the keypad sheet is showing (open, in By Weight or Warm up -- By Plates hides
+  // the entry, and so its sheet) the sheet's own load line is the single live source, so
+  // the console stays quiet; and an unchanged line is left untouched, so an action that
+  // renders more than once (a Recent re-apply decodes, then re-remembers) still settles
+  // to exactly one announcement -- and the numRoll transition never drives it, because
+  // only render() writes here, once, with the final value.
   private announce(text: string): void {
-    if (this.keypadOwner !== null && this.keypadOwner === this.mode) return;
+    if (this.keypadOpen && this.mode !== 'encode') return;
     if (this.announcer.textContent === text) return;
     this.announcer.textContent = text;
   }
@@ -1782,9 +1882,10 @@ class RackConsole extends HTMLElement {
 
   // The hero's open-keypad state: the accent underline, and aria-expanded on both
   // controls that open the pad (the hero and the chip), off the entry's
-  // keypadopen/keypadclose edges (keypadOwner).
+  // keypadopen/keypadclose edges (keypadOpen). In By Weight only: Warm up's row is the
+  // field itself, and its value button carries its own aria-expanded.
   private renderHeroEditing(): void {
-    const editing = this.keypadOwner === 'decode' && this.mode === 'decode';
+    const editing = this.keypadOpen && this.mode === 'decode';
     this.totalTap.classList.toggle('editing', editing);
     this.asked.setAttribute('aria-expanded', String(editing));
     if (this.mode === 'decode') this.totalTap.setAttribute('aria-expanded', String(editing));
@@ -1830,7 +1931,8 @@ class RackConsole extends HTMLElement {
 
   // Warm up's status (RBAR-65 slice 2): the pill reads the selected row off the
   // DISPLAYED numbers (warmStatus: "Bare bar", "70% - exact", "71% of 140 kg"); a Working
-  // set that is not exact reads Decode's own pill (short / at capacity, ADR-0003). The
+  // set that is not exact reads the By Weight pill for its own Total: "1 kg over" when
+  // it rounded up (RBAR-87), else short / at capacity when nothing loads above. The
   // By Weight round-up row is not part of Warm up, so its occupants stay hidden. The
   // working-weight keypad's "On the bar" line reads the Working set, and the spoken line
   // is the selected row's Total + its pill + what to change to load it ("add 10 and 2.5
@@ -1838,7 +1940,7 @@ class RackConsole extends HTMLElement {
   // the announcement is where a screen reader hears what to load.
   private renderWarmStatus(ramp: Ramp, idx: number, working: number, unit: Unit): void {
     const row = ramp.rows[idx];
-    const workingTotal = ramp.working.primary.total;
+    const workingTotal = ramp.rows[ramp.rows.length - 1].total;
     const atCap = this.sleeveBinds(ramp.working.over, working, displayCeilingKg(working, unit));
     const pill =
       warmStatus(row, workingTotal, unit) ??
@@ -1851,8 +1953,7 @@ class RackConsole extends HTMLElement {
     this.atcap.hidden = true;
     this.barnote.hidden = true;
     this.barnote.textContent = '';
-    this.entry.loadLine = null;
-    this.workEntry.loadLine = onBarLine(workingTotal, working, unit, atCap);
+    this.entry.loadLine = onBarLine(workingTotal, working, unit, atCap);
     const change = deltaSpoken(rowDelta(ramp.rows, idx), plateSetFor(this._plateSetKey).unit);
     this.announce(
       announceLine(shownIn(row.total, unit), unit, change === null ? pill.label : `${pill.label}, ${change}`),

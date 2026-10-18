@@ -136,8 +136,9 @@ function blockToken(child: Element): string {
   for (const cls of ['modes', 'viz', 'readout', 'over']) {
     if (child.classList.contains(cls)) return cls;
   }
-  // Warm up's working-weight field is a second <rack-entry> (RBAR-65 slice 2).
-  if (child.matches('rack-entry[data-working]')) return 'working';
+  // The one Target field (RBAR-87): Warm up's working-weight row (RBAR-65 slice 2), or
+  // headless in By Weight (RBAR-58), where it draws no block of its own.
+  if (child.matches('rack-entry')) return child.hasAttribute('headless') ? 'headless' : 'working';
   return child.tagName.toLowerCase();
 }
 
@@ -148,12 +149,13 @@ function blockOrder(el: HTMLElement): string[] {
 }
 
 // The order of just the VISIBLE blocks, filtering on the `hidden` the shell drives
-// (entry/recents/palette/over toggle per mode + state). This is what the lifter actually
-// sees top-to-bottom -- the handoff section 4a/4b order.
+// (entry/recents/palette/over toggle per mode + state) and dropping the headless entry,
+// which is out of flow. This is what the lifter actually sees top-to-bottom -- the
+// handoff section 4a/4b order.
 function visibleBlockOrder(el: HTMLElement): string[] {
   const stack = el.shadowRoot!.querySelector('.stack')!;
   return [...stack.children]
-    .filter((c) => !(c as HTMLElement).hidden)
+    .filter((c) => !(c as HTMLElement).hidden && !c.matches('rack-entry[headless]'))
     .map(blockToken);
 }
 
@@ -163,14 +165,15 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
     // mode toggle, then the Total region, then the editors). One DOM order serves both
     // modes -- the palette sits where the Recent editor does, all toggled by hidden.
     // RBAR-58: no Target block -- the hero Total is the Target's editor, and the
-    // headless entry (its keypad sheet) sits outside the column.
+    // headless entry (its keypad sheet) is out of flow. RBAR-87: that entry is the one
+    // Target field, so it sits in Warm up's working-weight slot.
     const el = mountConsole();
     expect(blockOrder(el)).toEqual([
       'modes',
       'viz',
       'readout',
       'over',
-      'working',
+      'headless',
       'rack-warmup',
       'rack-recents',
       'rack-loaded',
@@ -189,9 +192,11 @@ describe('<rack-console> (bar-as-hero vertical order, RBAR-25)', () => {
     const el = mountConsole();
     commit(el, '100.5'); // off-grid: a Recent chip exists and the round-up is offered
     expect(visibleBlockOrder(el)).toEqual(['modes', 'viz', 'readout', 'over', 'rack-recents']);
-    // The By Weight entry is headless and outside the column (only its sheet draws).
+    // The By Weight entry is headless and out of the column's flow (only its fixed
+    // sheet draws): no flex slot and no gap (RBAR-87; the fit check measures it).
     expect(entry(el).hasAttribute('headless')).toBe(true);
-    expect(entry(el).closest('.stack')).toBeNull();
+    const css = entry(el).shadowRoot!.querySelector('style')!.textContent!;
+    expect(css).toMatch(/:host\(\[headless\]\) \{ position: absolute;/);
   });
 
   it('By Plates reads mode -> bar -> Total -> On the bar -> Add palette (4b)', () => {

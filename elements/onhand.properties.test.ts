@@ -167,7 +167,7 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
     // a loaded local run, and CI runners are ~2.5x slower than that.
   }, 30_000);
 
-  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" (name and spoken label) exactly when it drifts past the band off the bare Bar, and the Working set reads short exactly when it is (ADR-0016 as amended, ADR-0015, ADR-0003)', async () => {
+  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" (name and spoken label) exactly when it drifts past the band off the bare Bar, and the Working set rounds up when it would read short, else reads short exactly when it is (ADR-0016 as amended, ADR-0015 as amended RBAR-87, ADR-0003)', async () => {
     // The band as ADR-0015 states it: a Warm-up set further than 5% of the Working Total
     // from its percentage has drifted (RBAR-72 slice 3) -- unless it is the bare Bar,
     // which cannot be lighter. In kg or lb: the working weight is typed in the display
@@ -222,11 +222,22 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
         });
         expect(names[n - 1]).toBe('Work');
 
-        // The Working set is at or under the Target (ADR-0003; floored at the bare Bar
-        // for a Target under it); it reads "N short" exactly when the reading is short.
+        // The Working set is the greatest Total the pairs on hand load at or under the
+        // Target's reading (ADR-0003; floored at the bare Bar for a Target under it) --
+        // unless that reads short and some Total loads above it: then Warm up rounds up
+        // to the least such Total (RBAR-87), read off the bounded-knapsack oracle. It
+        // reads "N over" exactly when it rounded up, "N short" exactly when it is short.
         stairs(c)[n - 1].click();
-        expect(work).toBeLessThanOrEqual(Math.max(displayCeilingKg(tKg, u), bar) + EPS);
-        if (shownIn(work, u) < shownIn(tKg, u)) expect(statusLabel(c)).toMatch(new RegExp(` ${u} short$`));
+        const o = cappedFewestOracle(withLimits(inv, caps), GRID_KG[set]);
+        const budgetUnits = Math.floor(((Math.max(displayCeilingKg(tKg, u), tKg) - bar) / 2 + EPS) / o.gridKg);
+        const under = bar + 2 * greatestSumAtOrUnder(o, budgetUnits) * o.gridKg;
+        const up = o.sums.find((x) => x > budgetUnits);
+        const roundsUp = shownIn(under, u) < shownIn(tKg, u) && up !== undefined;
+        expect(work).toBeCloseTo(roundsUp ? bar + 2 * up * o.gridKg : under, 6);
+        if (roundsUp) expect(statusLabel(c)).toMatch(new RegExp(` ${u} over$`));
+        else if (shownIn(work, u) < shownIn(tKg, u)) expect(statusLabel(c)).toMatch(new RegExp(` ${u} short$`));
+        else if (shownIn(tKg, u) >= shownIn(bar, u)) expect(statusLabel(c)).not.toMatch(/(short|over)$/);
+        // A Target under the bare Bar reads the Bar "over", as By Weight does.
         else expect(statusLabel(c)).not.toMatch(/short$/);
       }),
       APP_RUNS(20),

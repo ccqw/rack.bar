@@ -1,10 +1,10 @@
 // Shell-side persistence primitives (ADR-0007). Every piece of lifter configuration
 // and state survives a reload under its own `rackbar.*` localStorage key, owned by a
-// shell element -- never the pure core (ADR-0001). These two wrappers are the one
-// place that touches `localStorage`, so the best-effort contract lives in exactly one
-// spot: a blocked, quota-full, or private-mode Storage degrades to "no persistence"
-// rather than throwing into the caller. Persistence is a convenience, not core
-// function -- losing it must never break a session.
+// shell element -- never the pure core (ADR-0001). These three wrappers (read, write,
+// remove) are the one place that touches `localStorage`, so the best-effort contract
+// lives in exactly one spot: a blocked, quota-full, or private-mode Storage degrades to
+// "no persistence" rather than throwing into the caller. Persistence is a convenience,
+// not core function -- losing it must never break a session.
 //
 // Validation and (de)serialization stay with each concern (the Bar against its offered
 // set, recents through parseRecents): these helpers only move opaque strings in and out.
@@ -20,12 +20,25 @@ export function readPersisted(key: string): string | null {
   }
 }
 
-/** Write a persisted string, best-effort. A failed write (quota, private mode) is
- * swallowed -- the session keeps working without persistence. Never throws. */
-export function writePersisted(key: string, value: string): void {
+/** Remove a persisted key, best-effort (RBAR-87: a cleared Target, a migrated legacy
+ * key). A failed removal is swallowed like a failed write. Never throws. */
+export function removePersisted(key: string): void {
   try {
-    localStorage.setItem(key, value);
+    localStorage.removeItem(key);
   } catch {
     /* persistence is best-effort; the session keeps working without it. */
+  }
+}
+
+/** Write a persisted string, best-effort. A failed write (quota, private mode) is
+ * swallowed -- the session keeps working without persistence -- and reported: false
+ * means the key still holds whatever it held before (RBAR-87: the Target removes its
+ * key then, so a stale value cannot come back on reload). Never throws. */
+export function writePersisted(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false; // persistence is best-effort; the session keeps working without it.
   }
 }

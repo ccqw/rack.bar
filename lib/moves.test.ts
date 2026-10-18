@@ -311,13 +311,26 @@ describe('planEasyRamp under Plate limits (RBAR-72 slice 3, ADR-0016 as amended)
     expect(Math.round(easy.rows[3].realPct)).toBe(83);
   });
 
-  it('a Working set the pairs on hand cannot reach stays at or under it (ADR-0003): 75 kg loads 70 kg', () => {
+  it('a Working set the pairs on hand cannot load exactly rounds UP for Warm up (RBAR-87): 75 kg loads 80 kg', () => {
     const easy = planEasyRamp(75, DEFAULT_RAMP, NO_CHANGE);
-    expect(easy.rows[4].total).toBe(70);
+    expect(easy.rows[4].total).toBe(80);
+    // Decode itself is unchanged: at or under (ADR-0003), the round-up only offered.
     expect(easy.working.primary.total).toBe(70);
-    // 50% of 70 kg is 35 kg; 30 kg is the nearest a 5 kg Side grid allows above the Bar.
-    expect(easy.rows[1].total).toBe(30);
-    expect(easy.rows[1].drift).toBe(true);
+    expect(easy.working.over?.total).toBe(80);
+    // 50% of 80 kg is 40 kg, which a 5 kg Side grid loads exactly.
+    expect(easy.rows[1].total).toBe(40);
+    expect(easy.rows[1].drift).toBe(false);
+  });
+
+  it('a Working set past every pair on hand stays at or under it (ADR-0003): no round-up to take', () => {
+    // One pair of each big Plate and nothing else: 20 + 2 x (25+20+15+10) = 160 kg tops.
+    const rig: RampRig = {
+      ...COMP,
+      inventory: withLimits(ELEIKO_KG, { '25': 1, '20': 1, '15': 1, '10': 1, '5': 0, '2.5': 0, '2': 0, '1.5': 0, '1': 0, '0.5': 0 }),
+    };
+    const easy = planEasyRamp(170, DEFAULT_RAMP, rig);
+    expect(easy.working.over).toBeUndefined();
+    expect(easy.rows[4].total).toBe(160);
   });
 
   it('one pair of 10s at 100 kg: the 70% set goes to a 25 rather than a second 10', () => {

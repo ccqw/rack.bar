@@ -264,3 +264,167 @@ Tests:
   `stationRampOracle`. That oracle enumerates every legal Side of a small Inventory by
   plain recursion and runs an unpruned DP over (Side, station) states. It never calls
   sideloads.ts or the planner.
+
+## 2026-10-17 -- one Target for By Weight and Warm up (RBAR-87)
+
+Caitlin, 2026-10-17: "If I'm on any of the other screens, like By Weight or By Plates,
+and I set some weight and then I go to Warm up, it would be awesome if Warm up used
+whatever weight I set in the other screens as the working target." Until now Warm up
+kept its own working weight: a second `<rack-entry variant="working">`, the
+`rackbar.working` key, and a rule that seeded it from the By Weight Target only on the
+first open. All three are gone. The Working set's Target is the Target.
+
+1. **One Target, kept across mode switches both ways.** The console holds one Target
+   (canonical kg) and one `<rack-entry>`. In By Weight the entry is headless under the
+   hero (RBAR-58); in Warm up the console flips it to `variant="working"`, the same
+   "Working weight" row as before; in By Plates it is hidden. Editing the working
+   weight in Warm up changes the Target By Weight shows, and the other way round.
+   Entering By Weight from Warm up decodes the Target. It no longer carries the
+   selected warm-up row, because that row is not the weight the lifter asked for. The
+   By Weight round-up choice and the loaded way start over on that decode. A keypad
+   left open across the switch stays open on the same Target.
+2. **By Plates carries into Warm up as it does into By Weight (ADR-0005).** Leaving By
+   Plates with a load built there, the Side stays on the Bar and its Total becomes the
+   Target. A bare Bar means no Target. A visit that left the Side exactly as it found
+   it built nothing, whatever mode it came from, so the Target is kept. Otherwise
+   Warm up -> By Plates -> Warm up would quietly turn a 140 kg Target into the 70 kg
+   row, and a By Weight peek would rewrite 141.3 as the 141 load. Back in By Weight
+   after such a visit:
+   - from By Weight, By Weight's own load stays on the Bar (the ADR-0005 carry, a
+     chosen round-up included, with no live decode until the lifter acts), and the
+     Target is still the typed one;
+   - from Warm up, the Target is decoded.
+
+   A set switch in Setup while in By Plates empties the Bar. That is a rig reset, not
+   a built load: the visit is re-based on the empty Bar, the Target is kept, and By
+   Weight decodes it on the new set. An opened By Plates link counts as built, even
+   when its Plates match the Side the visit began with.
+
+   Whether a round-up chosen in By Weight should become Warm up's working weight is
+   open with Caitlin. As built, it does not, by either path.
+3. **Persistence: `rackbar.target`.** The Target survives a reload under its own key.
+   It is console-owned, like the Target display state (ADR-0009). It is stored at full
+   precision (`String(kg)`), so a reload reads back the same number, and it is read
+   through `parseTarget` (`lib/recents.ts`, ADR-0007). `parseTarget` accepts only a
+   plain decimal (no sign, exponent or hex) up to `MAX_TARGET_KG`, the share link's
+   1000 kg cap. A reload opens By Weight on the stored Target, decoded.
+   - A non-positive Target (a typed 0), an emptied field, or a Target that
+     `parseTarget` would not read back removes the key. By Weight still shows its own
+     reading of a typed 0, but Warm up plans no Ramp from it, and a reload reads it
+     back as no Target.
+   - A failed write also removes the key, so a stale Target cannot come back on
+     reload.
+   - A Target typed finer than the readout (52.5 lb) reloads as its readout (53 lb).
+     The kg, and so the load, is unchanged.
+   - An opened share link's Target is the lifter's Target, like its Recents chip
+     (ADR-0014 as amended). The link still writes no rig key.
+4. **Migrating `rackbar.working`, once.** On connect, a valid legacy value becomes the
+   Target only when no valid Target is stored, so an explicit Target always wins. The
+   choice is the pure `restoreTarget` (`lib/recents.ts`): both keys go through the same
+   `parseTarget` check (a positive plain decimal up to `MAX_TARGET_KG`), so a corrupt or
+   out-of-range value in either (-5, 0, 1e9, "140abc") reads as no Target. The
+   legacy key is then removed either way: valid, cleared (`''`) or corrupt. The
+   migration runs once only if that removal succeeds. Storage that reads but cannot
+   remove would offer the legacy value again on a later reload with no Target stored.
+   That is accepted under best-effort persistence (ADR-0009): in practice storage
+   fails as a whole.
+5. **No "You asked" chip in Warm up.** RBAR-58's chip stays By Weight's. Warm up's
+   working-weight row already shows the Target as typed.
+6. **Recents are unchanged (ADR-0009).** A keypad commit of the Target pushes it in
+   either mode, as the separate working-weight commit did. Warm-up rows, Next, Share
+   and the unit toggle in Warm up never push.
+7. **Share links are unchanged (RBAR-78, ADR-0014).** A Warm up share still opens in By
+   Weight on the selected row's load.
+8. **Fit (ADR-0013).** Nothing visible changed. The working-weight row keeps its
+   styling and its slot. In By Weight the headless entry now sits in the
+   column at that slot, out of flow (`position: absolute`), so it takes no flex slot
+   and no gap. It took no room before either, outside the column, so removing the
+   second entry frees no room. The fit check stores `rackbar.target` where it stored
+   `rackbar.working`.
+9. **One source.** Everything that means the Target reads the one Target: the share
+   link's `t`, the Recents highlight, the status pill and the unit toggle. None of them
+   re-derives it from the decode (`total - delta`). A live decode with no Target is a
+   broken invariant and throws.
+
+The Next button and its `warmupselect` event are untouched.
+
+Tests: in `elements/warmup.properties.test.ts`, "the Target is identical across mode
+switches and reloads" and "a By Plates load's Total becomes the Warm up working
+weight". In `elements/warmup.test.ts`: the one-time migration; the By Plates rule (a
+set switch, a By Weight peek, an opened link); `parseTarget` on stored hex, exponent
+and over-cap values; and a failed write. `lib/recents.test.ts` covers `parseTarget`
+itself.
+
+## 2026-10-18 -- Warm up rounds a short Working set UP (RBAR-87, PR #132)
+
+The owner's call on PR #132: when the working weight cannot be loaded exactly (in
+the owner's words, "141 -> 142"; on the default Competition set, 140.3 kg loads 141),
+the Working set rounds UP to the loadable Total, instead of holding Decode's
+at-or-under load under the typed value. "Work" then shows what is really on
+the Bar. This amends decision 1 ("The Working set is Decode, unchanged") and decision 3
+of the station-rule amendment, for Warm up only.
+
+**This is a Warm up rule, not a Decode change.** Decode, and so By Weight, still never
+overshoots by default (ADR-0003, unchanged). The shared Target stays exactly what the
+lifter typed: switching to By Weight decodes that typed Target at or under, with the
+round-up offered as before.
+
+1. **The rule.** `lib/plan.ts` `workingLoad(decoded, floorKg)`, a pure function of
+   Decode's own result (`decodeWithin`, as read in the display unit). When Decode's
+   at-or-under `primary` reads as the Target or above, it is the Working set, as before.
+   When it reads short, the Working set is Decode's round-up `over`: the least loadable
+   Total above the Target's reading. So the Working Total is loadable, at or above the
+   Target, and no loadable Total lies between the Target and it.
+2. **"Reads short" is judged on the display reading** (ADR-0010). `floorKg` is the
+   bottom of the Target's reading, `displayFloorKg` in `lib/units.ts`, the mirror of
+   `displayCeilingKg`. A load that reads as the Target is exact, even a hair under the
+   typed kg: 146 lb on Competition is 66.22 kg, and 66 kg reads 146 lb, so it stays.
+   Judged on the raw kg it would round up to 67 kg, which reads 148 lb. Callers that
+   pass no floor (kg-only) use the Target itself.
+3. **The fallback.** When nothing loads above the Target (the Sleeve is full, ADR-0012,
+   or the pairs on hand ran out, ADR-0016), there is no round-up, and the Working set is
+   the at-or-under load, short, as before. Its pill reads Decode's "N short" (or the
+   capacity reading).
+4. **The Ramp reads off the rounded-up Total.** The "Work" stair, its Total, the sleeve
+   and readout, the "On the bar" line and the pill all show the Working row's Total.
+   A rounded-up Working set is not exact, so its pill is the By Weight pill for that
+   Total: "1 kg over". The percentages (decision 2: of the achieved Working Total) are of
+   it, so the Warm-up sets ramp to what is really loaded. The station rule's Plate caps
+   use the round-up's own Side where it uses Decode's.
+5. **`Ramp.working` is still Decode's full result**, untouched, as By Weight would
+   solve the Target. The shell reads the Working row, never `working.primary`, for what
+   is on the Bar.
+6. **Unit toggle.** The RBAR-60 carry in Warm up (an Exact Working set becomes the
+   Target in the new unit) reads the Working row. A rounded-up Working set never reads
+   Exact, so the toggle keeps the typed Target and re-plans on its new reading. That
+   can step Work DOWN: 140.3 kg rounds up to 141 kg in kg, but the Target reads 309 lb
+   and 140 kg also reads 309 lb, so in lb the at-or-under load is exact and Work is 140
+   kg. This is the rule applied to the reading on screen, not a lost load, so it is
+   accepted; the old "a load never moves down on a toggle" property now holds only for
+   a Working set that was not rounded up (a rounded-up one is checked against the
+   oracle on the new reading), and `elements/warmup.test.ts` pins the 140.3 kg case.
+
+Worked example (Training iron, 45 lb Bar, typed 137 lb): By Weight decodes 135 lb, "2 lb
+short", with 140 lb offered. Warm up's Working set is 140 lb, "3 lb over", and the
+station-rule Ramp is 45 / 70 / 95 / 125 / 140 lb (50% of 140 = 70, 70% = 98 -> 95, 90%
+= 126 -> 125). The field still reads 137, and By Weight still shows 135.
+
+Tests:
+- `lib/properties.test.ts`: "Warm up's Working Total rounds up to the least loadable
+  Total at or above the Target (RBAR-87, ADR-0015 as amended)" checks, against the
+  oracle's achievable Totals, that the Working Total is loadable, at or above the
+  Target, with no loadable Total in between, and that it falls back to at or under when
+  nothing is above. The existing Working-set properties now compare with
+  `warmWorkingOracle` / `cappedWorkingOracle` (`lib/properties.oracle.ts`), which apply
+  the same rule by brute force, and still check `working` is Decode's own solve.
+- `elements/warmup.properties.test.ts`: "Warm up's Working set rounds up to the least
+  loadable Total at or above the Target; By Weight still decodes the typed Target at or
+  under", through the working-weight keypad, judged from the stair, the sleeve, the
+  readout and the pill. `elements/onhand.properties.test.ts` checks the same under
+  Plate limits against the bounded-knapsack oracle.
+- Examples: `lib/plan.test.ts` (137 lb iron, the 146 lb floor, past the Sleeve),
+  `lib/moves.test.ts` (75 kg with no change Plates loads 80; past every pair on hand
+  stays at or under), `elements/warmup.test.ts` (140.3 kg reads "0.7 kg over" in Warm up
+  and "0.3 kg short" in By Weight), `lib/units.test.ts` (`displayFloorKg`).
+- Each new test fails with `workingLoad` returning the primary unconditionally.
+

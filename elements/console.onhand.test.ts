@@ -143,7 +143,7 @@ describe('<rack-console> Pairs of Plates on Hand (RBAR-72)', () => {
     el.platesOnHand = { comp: { ...none, '25': 1, '20': 1 } };
     modeBtn(el, 'warmup').click();
     commitWorking(el, '200');
-    const work = q(sr(el), 'rack-entry[data-working]') as HTMLElement & { loadLine: string | null };
+    const work = q(sr(el), 'rack-entry') as HTMLElement & { loadLine: string | null };
     expect(work.loadLine ?? '').toMatch(/90 kg short/);
     expect((work.loadLine ?? '').toLowerCase()).not.toContain('capacity');
     stairs(el)[stairs(el).length - 1].click();

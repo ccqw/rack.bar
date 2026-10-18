@@ -122,9 +122,9 @@ export interface WarmStatus {
  * The status pill for a Ramp row, read off the DISPLAYED numbers (ADR-0010, ADR-0015
  * Q7): "Bare bar" on a bare-Bar row; "70% - exact" when the Total reads the same as the
  * percentage asked for; otherwise the real percentage of the Working Total, "71% of 140
- * kg". The Working set's own short or at-capacity reading is Decode's (ADR-0003), so
- * for a Working row that is not exact this returns null and the shell shows the By
- * Weight pill.
+ * kg". A Working row that is not exact -- rounded up past the Target (RBAR-87), or short
+ * with nothing loadable above it (ADR-0003) -- returns null and the shell shows the By
+ * Weight pill for its Total ("1 kg over", "3 kg short").
  */
 export function warmStatus(row: RampRow, workingTotal: number, unit: Unit): WarmStatus | null {
   if (row.kind === 'bar') return { kind: 'bare', label: 'Bare bar' };
@@ -200,15 +200,4 @@ export function warmupView(
   const addCaption =
     rows[sel].kind === 'bar' ? null : deltaText(rowDelta(rows, sel), plateUnit);
   return { steps, selected: sel, next, addCaption };
-}
-
-/**
- * Read the persisted Working set Target (`rackbar.working`, canonical kg, ADR-0007/0009).
- * A missing, blank, non-numeric, non-finite or non-positive value reads as null (no
- * Working set yet), so a corrupt key can never reach the planner.
- */
-export function parseWorking(raw: string | null): number | null {
-  if (raw === null || raw.trim() === '') return null;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
 }

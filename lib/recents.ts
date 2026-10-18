@@ -5,12 +5,44 @@
 // ADR-0009). Targets are stored canonically in kilograms (ADR-0006); the chip row
 // renders them in the Primary unit when that layer lands (RBAR-17).
 
+import { MAX_TARGET_KG } from './link.ts';
+
 /** The most Targets kept in the Recent row. Oldest fall off the end past this. */
 export const MAX_RECENTS = 6;
 
 /** True for a Target worth remembering: a real, loadable weight (finite and > 0). */
 export function isRememberable(target: number): boolean {
   return Number.isFinite(target) && target > 0;
+}
+
+/**
+ * Read a persisted Target (canonical kg): the one Target By Weight and Warm up share
+ * (`rackbar.target`, RBAR-87), or the legacy Warm up `rackbar.working` value it migrates
+ * from. Stored at full precision (String(kg)), so a reload reads back the same number.
+ * Only a plain decimal (`String(kg)` of anything the keypad produces) is read: no sign,
+ * exponent, hex or blank. Over MAX_TARGET_KG (the share link's cap, ADR-0014), zero, or
+ * anything else reads as null (no Target), so a corrupt key can never reach the solver,
+ * the planner or the field (ADR-0007).
+ */
+export function parseTarget(raw: string | null): number | null {
+  if (raw === null) return null;
+  const s = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  const n = Number(s);
+  return isRememberable(n) && n <= MAX_TARGET_KG ? n : null;
+}
+
+/**
+ * The Target a reload restores (RBAR-87, ADR-0007): the stored `rackbar.target` value
+ * when it is valid, else a valid legacy `rackbar.working` value (the one-time
+ * migration), else null -- exactly as if neither key existed. Both raw values go through
+ * parseTarget, the same check: a plain decimal, positive, finite and at most
+ * MAX_TARGET_KG. So a corrupt, negative, zero or out-of-range value in EITHER key falls
+ * back to no Target and never reaches the solver or the planner. An explicit valid
+ * Target always wins over the legacy one.
+ */
+export function restoreTarget(storedRaw: string | null, legacyRaw: string | null): number | null {
+  return parseTarget(storedRaw) ?? parseTarget(legacyRaw);
 }
 
 // Targets are kept to two decimals -- the precision the chip and every other readout

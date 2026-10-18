@@ -218,12 +218,12 @@ async (shared) => {
         );
         await record('plates: loaded');
         // Warm up (RBAR-65 slice 2): the working-weight row + stairs + Next, keypad
-        // closed. With no Working set yet (the prompt), then a saved one (rackbar.working,
+        // closed. With no Target yet (the prompt), then a saved one (rackbar.target, RBAR-87;
         // 140 kg -- 309 lb) on the bare-Bar row, the 90% row (a swap on Comp kg) and the Working set.
         await reset(null);
         await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
         await record('warmup: no working weight');
-        await page.evaluate(() => localStorage.setItem('rackbar.working', '140'));
+        await page.evaluate(() => localStorage.setItem('rackbar.target', '140'));
         await page.reload();
         await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
         await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
@@ -241,7 +241,7 @@ async (shared) => {
         // 60 kg Comp Ramp's 90% set drifts to 50 kg and its stair reads "~83%" (Training
         // keeps only its big Plates). The drifted row selected, then the Working set.
         await page.evaluate(() => {
-          localStorage.setItem('rackbar.working', '60');
+          localStorage.setItem('rackbar.target', '60');
           localStorage.setItem(
             'rackbar.platesOnHand',
             JSON.stringify({

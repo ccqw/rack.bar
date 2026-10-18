@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_RECENTS, pushRecent, parseRecents, removeRecent, restoreRecent } from './recents.ts';
+import fc from 'fast-check';
+import {
+  MAX_RECENTS,
+  pushRecent,
+  parseRecents,
+  parseTarget,
+  restoreTarget,
+  removeRecent,
+  restoreRecent,
+} from './recents.ts';
+import { lbToKg } from './units.ts';
+import { MAX_TARGET_KG } from './link.ts';
 
 describe('pushRecent', () => {
   it('adds a Target to the front (most-recent-first)', () => {
@@ -148,5 +159,72 @@ describe('restoreRecent (RBAR-73 Undo)', () => {
     const full = [60, 50, 40, 30, 20, 10];
     expect(restoreRecent(full, 70, 0)).toEqual([70, 60, 50, 40, 30, 20]);
     expect(restoreRecent(full, 70, 0)).toHaveLength(MAX_RECENTS);
+  });
+});
+
+describe('parseTarget (rackbar.target and legacy rackbar.working read validation, RBAR-87, ADR-0007)', () => {
+  it('reads a positive finite kg weight back at full precision', () => {
+    expect(parseTarget('140')).toBe(140);
+    expect(parseTarget('142.88')).toBe(142.88);
+    // An lb Target is an irrational-looking kg: String() round-trips it exactly.
+    expect(parseTarget(String(lbToKg(309)))).toBe(lbToKg(309));
+  });
+
+  it('reads missing, blank, garbage, zero, negative and non-finite values as no Target', () => {
+    for (const raw of [null, '', '  ', 'abc', '0', '-5', 'Infinity', 'NaN', '1e999']) {
+      expect(parseTarget(raw)).toBeNull();
+    }
+  });
+
+  it('reads only a plain decimal the app could have written, within the Target cap', () => {
+    // Number() would take these (0x8C is 140); the field would then show "1e+300".
+    for (const raw of ['0x8C', '1e300', '1e2', '+140', '140.', '.5', '1_000', '1000.01']) {
+      expect(parseTarget(raw)).toBeNull();
+    }
+    expect(parseTarget(String(MAX_TARGET_KG))).toBe(MAX_TARGET_KG);
+    expect(parseTarget(' 140 ')).toBe(140);
+  });
+});
+
+describe('restoreTarget (the reload Target and the rackbar.working migration share one range check, RBAR-87, ADR-0007)', () => {
+  // Garbage, out-of-range and non-positive values the keypad could never have written.
+  const corrupt = ['-5', '0', '1e9', '1000000000', 'NaN', '140abc', '', 'Infinity', '1000.5', '0x8C'];
+
+  it('reads a valid stored Target, and a valid legacy value only when none is stored', () => {
+    expect(restoreTarget('100', null)).toBe(100);
+    expect(restoreTarget(null, '120')).toBe(120);
+    expect(restoreTarget('100', '120')).toBe(100);
+    expect(restoreTarget(null, null)).toBeNull();
+  });
+
+  it('a corrupt or out-of-range legacy value falls back to no Target, as a missing key does', () => {
+    for (const raw of corrupt) expect(restoreTarget(null, raw), raw).toBeNull();
+  });
+
+  it('a corrupt or out-of-range stored Target falls back to no Target, or to a valid legacy value', () => {
+    for (const raw of corrupt) {
+      expect(restoreTarget(raw, null), raw).toBeNull();
+      expect(restoreTarget(raw, '120'), raw).toBe(120);
+    }
+  });
+
+  it('never returns anything but null or a positive finite kg within the cap (property)', () => {
+    const rawArb = fc.oneof(
+      fc.string(),
+      fc.double().map(String),
+      fc.integer({ min: -2000, max: 2_000_000 }).map(String),
+      fc.constantFrom(null, ...corrupt),
+    );
+    fc.assert(
+      fc.property(rawArb, rawArb, (stored, legacy) => {
+        const t = restoreTarget(stored, legacy);
+        if (t !== null) {
+          expect(Number.isFinite(t)).toBe(true);
+          expect(t).toBeGreaterThan(0);
+          expect(t).toBeLessThanOrEqual(MAX_TARGET_KG);
+        }
+      }),
+      { seed: 87, numRuns: 500 },
+    );
   });
 });

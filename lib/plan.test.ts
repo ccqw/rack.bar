@@ -5,7 +5,7 @@ import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import type { RampRig, RampRow, RampStep } from './plan.ts';
 import { ELEIKO_KG, IRON_LB, SLEEVE_MM, sideLoadKg } from './plates.ts';
 import { decode, decodeWithin } from './decode.ts';
-import { lbToKg, kgToLb, displayCeilingKg } from './units.ts';
+import { lbToKg, kgToLb, displayCeilingKg, displayFloorKg } from './units.ts';
 
 const COMP: RampRig = { barKg: 20, collarKg: 0, inventory: ELEIKO_KG };
 const COMP_COLLARS: RampRig = { barKg: 20, collarKg: 2.5, inventory: ELEIKO_KG };
@@ -61,12 +61,41 @@ describe('planRamp: Caitlin\'s 140 kg deadlift ramp (Competition, 20 kg Bar, no 
 });
 
 describe('planRamp: rounding to the nearest loadable Total (ADR-0015)', () => {
-  it('rounds a warm-up UP when the next Total is closer (an off-grid Working Total)', () => {
-    // 137.5 kg on the Competition grid is 137 at or under; 70% of 137 = 95.9 -> 96.
+  it('rounds a warm-up UP when the next Total is closer', () => {
+    // 137.5 kg is off the Competition grid: Warm up's Working set rounds up to 138
+    // (RBAR-87); 70% of 138 = 96.6 -> 97.
     const { rows } = planRamp(137.5, [{ kind: 'pct', pct: 70 }], COMP);
-    expect(rows[1].total).toBe(137);
-    expect(rows[0].targetKg).toBeCloseTo(95.9, 9);
-    expect(rows[0].total).toBe(96);
+    expect(rows[1].total).toBe(138);
+    expect(rows[0].targetKg).toBeCloseTo(96.6, 9);
+    expect(rows[0].total).toBe(97);
+  });
+
+  it('rounds a Working set that cannot load exactly UP for Warm up; Decode stays at or under (RBAR-87)', () => {
+    // 137 lb on Training iron (45 lb Bar, 5 lb grid): By Weight decodes 135 lb, but
+    // Warm up's Working set is 140 lb, the least loadable Total above it, and the
+    // percentages are of 140: 70 / 98 -> 100 / 126 -> 125.
+    const { rows, working } = planRamp(lbToKg(137), DEFAULT_RAMP, IRON);
+    expect(lbTotals(rows)).toEqual([45, 70, 100, 125, 140]);
+    expect(rows[4].targetKg).toBeCloseTo(lbToKg(137), 9);
+    expect(rows[4].side).toEqual(working.over!.side);
+    expect(Math.round(kgToLb(working.primary.total))).toBe(135);
+    expect(working).toEqual(decodeWithin(lbToKg(137), lbToKg(137), lbToKg(45), IRON_LB));
+  });
+
+  it('keeps a Working set that reads as the Target even a hair under it (floorKg, RBAR-87)', () => {
+    // 146 lb on Competition is 66.22 kg; 66 kg reads 146 lb, so it is exact and stays.
+    const t = lbToKg(146);
+    const opts = { ceilingKg: displayCeilingKg(t, 'lb'), floorKg: displayFloorKg(t, 'lb') };
+    expect(planRamp(t, [], COMP, opts).rows[0].total).toBe(66);
+    // With the floor left at the Target (kg-only callers), 66 is short and rounds up.
+    expect(planRamp(t, [], COMP, { ceilingKg: opts.ceilingKg }).rows[0].total).toBe(67);
+  });
+
+  it('falls back to at or under when nothing loads above the Target (RBAR-87)', () => {
+    // Past the Sleeve there is no round-up: the Working set stays Decode's full Bar.
+    const { rows, working } = planRamp(1000, [], COMP);
+    expect(working.over).toBeUndefined();
+    expect(rows[0].total).toBe(working.primary.total);
   });
 
   it('breaks an exact tie DOWN: 45 lb iron Bar, 225 lb Working set', () => {

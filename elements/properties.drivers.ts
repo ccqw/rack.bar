@@ -266,8 +266,9 @@ export function expectedFor(rig: Rig, u: Unit, draft: string) {
 
 // ---- Warm up (RBAR-65 slice 2) -----------------------------------------------------
 
-// The working-weight field (the second <rack-entry>, variant="working") and the stairs.
-export const workRoot = (el: HTMLElement) => sr(q(sr(el), 'rack-entry[data-working]'));
+// The working-weight field and the stairs. Since RBAR-87 the field is the one Target's
+// <rack-entry>, which the console shows as the "Working weight" row in Warm up.
+export const workRoot = (el: HTMLElement) => sr(q(sr(el), 'rack-entry'));
 export const warmupRoot = (el: HTMLElement) => sr(q(sr(el), 'rack-warmup'));
 export const stairs = (el: HTMLElement) =>
   [...warmupRoot(el).querySelectorAll<HTMLButtonElement>('.st')];
