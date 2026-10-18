@@ -276,3 +276,126 @@ describe('the way in and the page', () => {
     expect(precacheUrls(pages)).toEqual(['/', '/game.html']);
   });
 });
+
+describe('<rack-quiz> Build the bar (RBAR-101)', () => {
+  type Built = Quiz & { quizMode: string };
+  const mountBuild = (seed = 7, extra: Record<string, unknown> = {}) => {
+    localStorage.setItem(QUIZ_KEY, JSON.stringify({ mode: 'build', ...extra }));
+    return mount(seed) as { el: Built; root: ShadowRoot };
+  };
+  const keys = (root: ShadowRoot) => [
+    ...root.querySelector('rack-palette')!.shadowRoot!.querySelectorAll<HTMLButtonElement>('.key'),
+  ];
+  const tapFaces = (root: ShadowRoot, faces: string[]) => {
+    for (const f of faces) keys(root).find((k) => k.querySelector('.face')!.textContent === f)!.click();
+  };
+  const faces = (side: readonly Plate[]) => side.map((p) => p.label ?? String(p.kg));
+  const btn = (root: ShadowRoot, sel: string) => root.querySelector<HTMLButtonElement>(sel)!;
+  const phaseOf = (root: ShadowRoot) => root.querySelector<HTMLElement>('[data-viz]')!.dataset.phase;
+
+  afterEach(() => localStorage.clear());
+
+  it('the mode track switches drills, marks the active one, and the choice is saved', () => {
+    localStorage.clear();
+    const { el, root } = mount();
+    expect((el as Built).quizMode).toBe('read');
+    expect(btn(root, '[data-qmode="read"]').getAttribute('aria-pressed')).toBe('true');
+    btn(root, '[data-qmode="build"]').click();
+    expect((el as Built).quizMode).toBe('build');
+    expect(el.dataset.mode).toBe('build');
+    expect(btn(root, '[data-qmode="build"]').getAttribute('aria-pressed')).toBe('true');
+    expect(parseQuizSaved(localStorage.getItem(QUIZ_KEY)).mode).toBe('build');
+    expect(sleeveOf(root).sideLoad).toEqual([]);
+    expect(text(root, '[data-target]')).toBe(`${el.question!.totalShown}kg`);
+  });
+
+  it("opens on the saved drill; the Target's fewest Side, tapped on, is right and moves on", () => {
+    vi.useFakeTimers();
+    const { el, root } = mountBuild();
+    expect(el.quizMode).toBe('build');
+    const q = el.question!;
+    expect(btn(root, '[data-check]').disabled).toBe(true);
+    tapFaces(root, faces(q.side));
+    expect(sleeveOf(root).sideLoad.map((p) => p.kg)).toEqual(q.side.map((p) => p.kg));
+    btn(root, '[data-check]').click();
+    expect(phaseOf(root)).toBe('right');
+    expect(text(root, '[data-streak]')).toBe('1');
+    expect(root.querySelector('[data-note]')).toBeNull();
+    vi.advanceTimersByTime(RIGHT_PAUSE_MS);
+    expect(el.question!.index).toBe(1);
+    expect(sleeveOf(root).sideLoad).toEqual([]);
+  });
+
+  it('a right Side with more Plates than the fewest gets the note and waits for Next', () => {
+    vi.useFakeTimers();
+    // Find a question whose Side has a 25 to split into 20 + 5.
+    let seed = 1;
+    let el: Built;
+    let root: ShadowRoot;
+    for (;;) {
+      ({ el, root } = mountBuild(seed));
+      if (faces(el.question!.side).includes('25')) break;
+      document.body.innerHTML = '';
+      seed++;
+    }
+    tapFaces(root, faces(el.question!.side).flatMap((f) => (f === '25' ? ['20', '5'] : [f])));
+    btn(root, '[data-check]').click();
+    expect(phaseOf(root)).toBe('right');
+    expect(text(root, '[data-note]')).toMatch(/^Fewest plates: /);
+    expect(btn(root, '[data-check]').textContent).toBe('Next');
+    vi.advanceTimersByTime(RIGHT_PAUSE_MS * 4);
+    expect(el.question!.index).toBe(0);
+    btn(root, '[data-check]').click();
+    expect(el.question!.index).toBe(1);
+  });
+
+  it('a wrong Side strikes its Total, names the miss, shows what was built and one way, then Next', () => {
+    localStorage.setItem(QUIZ_KEY, JSON.stringify({ mode: 'build', streak: 3, best: 5 }));
+    const { el, root } = mount();
+    const q = el.question!;
+    tapFaces(root, [...faces(q.side), ...faces(q.side)]);
+    btn(root, '[data-check]').click();
+    expect(phaseOf(root)).toBe('wrong');
+    expect(text(root, '[data-streak]')).toBe('0');
+    expect(text(root, '[data-why]')).not.toBe('');
+    expect(text(root, '[data-math]')).toContain('x 2+ 20 kg bar');
+    expect(text(root, '[data-oneway]')).toBe(`One way: ${faces(q.side).join('')}`);
+    expect(root.querySelector('[data-target] s')).not.toBeNull();
+    expect(root.querySelector('rack-palette')!.hasAttribute('inert')).toBe(true);
+    expect((sleeveOf(root) as Sleeve & { interactive: boolean }).interactive).toBe(false);
+    expect(btn(root, '[data-check]').textContent).toBe('Next');
+    btn(root, '[data-check]').click();
+    expect(el.question!.index).toBe(1);
+  });
+
+  it('Undo takes the last tap, Clear empties the Side, a tapped disc comes off, Backspace is Undo', () => {
+    const { root } = mountBuild();
+    expect(btn(root, '[data-undo]').disabled).toBe(true);
+    tapFaces(root, ['10', '25', '5']);
+    expect(faces(sleeveOf(root).sideLoad)).toEqual(['25', '10', '5']);
+    btn(root, '[data-undo]').click();
+    expect(faces(sleeveOf(root).sideLoad)).toEqual(['25', '10']);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
+    expect(faces(sleeveOf(root).sideLoad)).toEqual(['10']);
+    tapFaces(root, ['20']);
+    sleeveOf(root).dispatchEvent(
+      new CustomEvent('removeplate', { detail: { plate: sleeveOf(root).sideLoad[0] } }),
+    );
+    expect(faces(sleeveOf(root).sideLoad)).toEqual(['10']);
+    btn(root, '[data-clear]').click();
+    expect(sleeveOf(root).sideLoad).toEqual([]);
+    expect(btn(root, '[data-check]').disabled).toBe(true);
+  });
+
+  it('a size limited to none is disabled, and a limited one once its pairs are on', () => {
+    localStorage.setItem('rackbar.platesOnHand', JSON.stringify({ comp: { 25: 1, 15: 0 } }));
+    const { root } = mountBuild();
+    const key = (f: string) => keys(root).find((k) => k.querySelector('.face')!.textContent === f)!;
+    expect(key('15').disabled).toBe(true);
+    expect(key('25').disabled).toBe(false);
+    key('25').click();
+    expect(key('25').disabled).toBe(true);
+    key('25').click();
+    expect(faces(sleeveOf(root).sideLoad)).toEqual(['25']);
+  });
+});

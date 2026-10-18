@@ -37,7 +37,10 @@
 // a wrong answer with its named mistake and breakdown, and the gear sheet open, on both
 // plate sets with Setup's collars off and on, at Plates per side up to 6. Each line has
 // the bar block's height, how far the breakdown line runs past the column (MATH CLIPPED
-// n) and how far the gear sheet would scroll inside (SHEET SCROLLS n).
+// n) and how far the gear sheet would scroll inside (SHEET SCROLLS n). Since RBAR-101
+// the walk adds Build the bar ("quiz: build:" lines): the Target, a Side mid-build, a
+// right Side, a right Side with the fewest-plates note, and a wrong Side with its
+// breakdown and one way.
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -376,6 +379,43 @@ async (shared) => {
         await record('wrong answer + breakdown');
         await inQuiz(`q.querySelector('[data-gear]').click()`);
         await record('gear open');
+        // Build the bar (RBAR-101): the Target, a Side mid-build, a right one, a right
+        // one with more Plates than the fewest (the note waits for Next), and a wrong
+        // one with its breakdown and one way -- the double Side, the longest breakdown.
+        await page.evaluate(() => {
+          const v = JSON.parse(localStorage.getItem('rackbar.quiz'));
+          localStorage.setItem('rackbar.quiz', JSON.stringify({ ...v, mode: 'build' }));
+        });
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-quiz')?.question);
+        const faces = () =>
+          inQuiz(`return el.question.side.map((p) => p.label ?? String(p.kg))`);
+        const tap = (fs) =>
+          inQuiz(
+            `const keys = [...q.querySelector('rack-palette').shadowRoot.querySelectorAll('.key')];` +
+              `for (const f of ${JSON.stringify(fs)}) keys.find((b) => b.querySelector('.face').textContent === f)?.click();`,
+          );
+        const checkBuilt = () => inQuiz(`q.querySelector('[data-check]').click()`);
+        await record('build: target');
+        const side = await faces();
+        await tap(side.slice(0, 1));
+        await record('build: building');
+        await tap(side.slice(1));
+        await checkBuilt();
+        await record('build: right');
+        await page.waitForTimeout(900);
+        const split = { 25: ['20', '5'], 20: ['10', '10'], 15: ['10', '5'], 45: ['25', '10', '10'], 35: ['25', '10'] };
+        await tap((await faces()).flatMap((f) => split[f] ?? [f]));
+        await checkBuilt();
+        await record('build: right + fewest note');
+        await page.waitForTimeout(900);
+        if (await inQuiz(`return q.querySelector('[data-check]').textContent === 'Next'`)) {
+          await checkBuilt();
+        }
+        const twice = await faces();
+        await tap([...twice, ...twice]);
+        await checkBuilt();
+        await record('build: wrong + breakdown');
       }
     }
   }

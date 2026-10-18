@@ -20,7 +20,7 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `elements/` -- imperative shell: Web Components. `app.ts` (`<rack-app>`) is the app shell
   and composition root (ADR-0007): header + Setup pill, `<rack-console>`, `<rack-setup>`,
   and the rig config it persists and feeds down
-- `game.html` -- the Loadout quiz page (RBAR-92): `elements/quiz.ts` + `quizgear.ts` over
+- `game.html` -- the Loadout quiz page (RBAR-92; Build the bar, RBAR-101): `elements/quiz.ts` + `quizgear.ts` over
   the pure, seeded `lib/quiz.ts`; reads Setup's rig through `elements/rig.ts` and keeps
   its settings and streak under `rackbar.quiz`
 - `tokens.css` — design tokens (`--rack-*`)
