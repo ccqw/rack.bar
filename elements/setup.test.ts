@@ -261,6 +261,21 @@ describe('<rack-setup> plate-set row swatches + selected check (RBAR-29)', () =>
     expect(row(root, 'training').getAttribute('aria-label')).toContain('lb');
   });
 
+  // RBAR-86: the visible family/Unit subtitle is cut; the accessible name keeps it.
+  it('shows only the set name; the aria-label still carries the family + Unit', () => {
+    const { root } = mountSetup();
+    expect(row(root, 'comp').getAttribute('aria-label')).toBe(
+      'Competition plates (Eleiko - color-coded - kg)',
+    );
+    expect(row(root, 'training').getAttribute('aria-label')).toBe(
+      'Training plates (Plain black iron - lb)',
+    );
+    for (const key of ['comp', 'training']) {
+      expect(row(root, key).querySelector('.sub')).toBeNull();
+      expect(row(root, key).textContent!.trim()).toBe(key === 'comp' ? 'Competition' : 'Training');
+    }
+  });
+
   it('both rows carry a check whose visibility keys off the pressed row', () => {
     const { el, root } = mountSetup();
     expect(row(root, 'comp').querySelector('.check')).toBeTruthy();

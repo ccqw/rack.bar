@@ -119,11 +119,10 @@ describe('legacy collapsed names survive only as aliases onto the scale', () => 
 });
 
 describe('RBAR-34: prototype-inline hexes are captured as tokens', () => {
-  // These three live inline in docs/design-handoff/rack.bar.dc.html only (the
+  // These live inline in docs/design-handoff/rack.bar.dc.html only (the
   // README --rb-* list never named them), so the RBAR-26 reconcile missed them.
   const captured: Record<string, string> = {
     '--rack-popover-border': '#262b31',      // prototype L84
-    '--rack-popover-ink': '#c2c7cd',         // prototype L86-87 (body tier; strong stays --rack-text)
     '--rack-sleeve-empty-glyph': '#3f454c',  // prototype L106 (the empty-box + glyph)
   };
   for (const [name, want] of Object.entries(captured)) {

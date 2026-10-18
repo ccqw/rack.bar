@@ -101,3 +101,9 @@ removal is a long-press. Ownership does not change: the console still owns the l
   *Revised the same day, after Caitlin's phone check:* the first cut kept one Undo at
   a time, and each new removal collapsed the previous slot. During a quick cleanup of
   several chips, that moved the rail under her finger.
+
+## 2026-10-17 -- `isOfferedBar` is gone (RBAR-86)
+
+The Bar's validation above now lives in `<rack-app>`'s `offeredBars()` over the active
+set's `offeredBarKgs` (ADR-0010; see the ADR-0007 note). `isOfferedBar` was removed as
+unreferenced. The split this ADR records is unchanged.

@@ -121,12 +121,11 @@
   --rack-fullscreen-glow: #16181c;
   --rack-fullscreen-deep: #0a0b0d;
 
-  /* Help popover (RBAR-34, prototype L84-L87). Its border and body ink sit between
-     the named border/text tiers, inlined in the prototype only -- captured here per
-     ADR-0001. Body text is two-tier: --rack-popover-ink for the running copy, plain
-     --rack-text (#f4f4f5) for the <strong> lead-ins. */
+  /* Popover card (RBAR-34, prototype L84-L87; first drawn for the Help popover, cut in
+     RBAR-86, now the Recents Remove popover's card). Its border sits between
+     the named border tiers, inlined in the prototype only -- captured here per
+     ADR-0001. */
   --rack-popover-border: #262b31;
-  --rack-popover-ink: #c2c7cd;
 
   /* The metrics sweep (RBAR-74): more values the prototype inlines, captured per
      ADR-0001. target = the Target value's ink, a step below --rack-text (L150);

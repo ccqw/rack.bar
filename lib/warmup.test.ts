@@ -15,7 +15,7 @@ import {
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import { planEasyRamp } from './moves.ts';
 import type { RampRig } from './plan.ts';
-import { ELEIKO_KG, IRON_LB } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, withLimits } from './plates.ts';
 import { lbToKg } from './units.ts';
 
 const COMP: RampRig = { barKg: 20, collarKg: 0, inventory: ELEIKO_KG };
@@ -113,6 +113,89 @@ describe('deltaText / deltaSpoken (every number carries its unit)', () => {
 describe('stepName', () => {
   it('names the stairs Bar, N%, Work -- the percent sign on every percentage', () => {
     expect(RAMP140.map(stepName)).toEqual(['Bar', '50%', '70%', '90%', 'Work']);
+  });
+});
+
+describe('stepName: a drifted row (RBAR-72 slice 3)', () => {
+  // No change Plates on hand: a 60 kg 90% set can only be 50 or 60 kg.
+  const NO_CHANGE: RampRig = {
+    ...COMP,
+    inventory: withLimits(ELEIKO_KG, { '2.5': 0, '2': 0, '1.5': 0, '1': 0, '0.5': 0 }),
+  };
+  const rows = planEasyRamp(60, DEFAULT_RAMP, NO_CHANGE).rows;
+
+  it('names what the row really loads, with a tilde: "~83%"', () => {
+    expect(rows.map(stepName)).toEqual(['Bar', '50%', '70%', '~83%', 'Work']);
+  });
+
+  it('carries the tilde into Next and says both percentages to a screen reader', () => {
+    const v = warmupView(rows, 2, 'kg', 'kg');
+    expect(v.next.label).toBe('Next: ~83% - 50 kg');
+    expect(v.steps[3].label).toBe(
+      'Set 4 of 5, 90 percent planned, about 83 percent loaded, 50 kilograms, add 5 kilograms per side',
+    );
+  });
+
+});
+
+describe('stepName: a Warm-up set on the bare rig never reads a tilde (RBAR-72 slice 3 review)', () => {
+  // The Bar cannot be lighter, so stairs sharing the bare Bar share their step names
+  // instead of reading "~74%" beside "70%" at the same 20 kg.
+  const names = (w: number, rig: RampRig) => [
+    planRamp(w, DEFAULT_RAMP, rig).rows.map(stepName),
+    planEasyRamp(w, DEFAULT_RAMP, rig).rows.map(stepName),
+  ];
+  const STEPS = ['Bar', '50%', '70%', '90%', 'Work'];
+
+  it('Comp 22 kg: three Warm-up sets on the 20 kg Bar keep their step names', () => {
+    expect(names(22, COMP)).toEqual([STEPS, STEPS]);
+  });
+
+  it('Comp 27 kg: 50% and 70% both on the 20 kg Bar read "50%" and "70%"', () => {
+    expect(names(27, COMP)).toEqual([STEPS, STEPS]);
+  });
+
+  it('Comp 30 kg: the 50% set on the 20 kg Bar reads "50%"', () => {
+    expect(names(30, COMP)).toEqual([STEPS, STEPS]);
+  });
+
+  it('Training 60 lb: 50% and 70% on the 45 lb Bar read "50%" and "70%"', () => {
+    expect(names(lbToKg(60), IRON)).toEqual([STEPS, STEPS]);
+  });
+
+  it('a Working set at or under the Bar reads no tilde anywhere', () => {
+    expect(names(20, COMP)).toEqual([STEPS, STEPS]);
+    expect(names(lbToKg(45), IRON)).toEqual([STEPS, STEPS]);
+  });
+});
+
+describe('drift at the exact band edge (RBAR-72 slice 3 review)', () => {
+  it('Comp, 5 kg Bar, 8 kg: the 70% set at 6 kg is exactly 5% of 8 kg off, so it does not drift', () => {
+    // 0.4 kg off in float is 5% of 8 kg plus 3e-16: only the EPS in drifted() keeps it in.
+    const rig: RampRig = { ...COMP, barKg: 5 };
+    for (const r of [planRamp(8, DEFAULT_RAMP, rig), planEasyRamp(8, DEFAULT_RAMP, rig)]) {
+      expect(r.rows[2].total).toBe(6);
+      expect(r.rows[2].drift).toBe(false);
+      expect(stepName(r.rows[2])).toBe('70%');
+    }
+  });
+
+  it('Training, 45 lb Bar, 60 lb: the 70% set (42 lb asked, 45 lb loaded, exactly 5% off) reads "70%"', () => {
+    for (const r of [planRamp(lbToKg(60), DEFAULT_RAMP, IRON), planEasyRamp(lbToKg(60), DEFAULT_RAMP, IRON)]) {
+      expect(r.rows[2].drift).toBe(false);
+      expect(stepName(r.rows[2])).toBe('70%');
+    }
+  });
+});
+
+describe('a drifted row in pounds (RBAR-72 slice 3 review)', () => {
+  it('the Next label keeps the tilde and reads the Total in lb', () => {
+    const NO_CHANGE: RampRig = {
+      ...COMP,
+      inventory: withLimits(ELEIKO_KG, { '2.5': 0, '2': 0, '1.5': 0, '1': 0, '0.5': 0 }),
+    };
+    const rows = planEasyRamp(60, DEFAULT_RAMP, NO_CHANGE).rows;
+    expect(warmupView(rows, 2, 'lb', 'kg').next.label).toBe('Next: ~83% - 110 lb');
   });
 });
 

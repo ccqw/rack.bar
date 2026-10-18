@@ -24,6 +24,7 @@ import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
 import './warmup.ts';
+import { ScreenWake } from './wakelock.ts';
 import { wayName } from './ways.ts';
 import { LONG_PRESS_MS } from './recents.ts';
 import { decodeWithin } from '../lib/decode.ts';
@@ -52,7 +53,7 @@ import { format, shownIn, displayCeilingKg, draftToKg, stepFor } from '../lib/un
 import type { Unit } from '../lib/units.ts';
 import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
-import { linkUrl } from '../lib/link.ts';
+import { linkUrl, restackForLink } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import { planEasyRamp } from '../lib/moves.ts';
@@ -165,6 +166,8 @@ class RackConsole extends HTMLElement {
   private sleeve!: Sleeve;
   private share!: Share;
   private fullscreen!: Fullscreen;
+  // RBAR-80: the screen stays awake exactly while fullscreen or Warm up is showing.
+  private readonly wake = new ScreenWake();
   private totalNum!: HTMLElement;
   private totalTap!: HTMLButtonElement;
   private totalUnit!: HTMLElement;
@@ -1080,6 +1083,7 @@ class RackConsole extends HTMLElement {
     this.root
       .querySelector('[data-fullscreen]')!
       .addEventListener('click', () => this.openFullscreen());
+    this.fullscreen.addEventListener('close', () => this.syncWake());
     // The kg|lb Primary unit toggle (ADR-0010), live on every plate set (RBAR-60); the
     // chosen unit persists and the surfaces re-render in it (see chooseUnit).
     this.unitButtons.forEach((b) =>
@@ -1312,16 +1316,34 @@ class RackConsole extends HTMLElement {
   // and solves the same display window. Null when the load has no exact link (e.g. an
   // off-menu Bar, a Target over MAX_TARGET_KG): the card then shows a disabled "No
   // link" with its reason under the row, never a link that opens to a different load.
+  //
+  // The link describes exactly what the card shows (RBAR-78, ADR-0014): the same Collar
+  // rule (loadCollarKg -- the bare-Bar Ramp row carries none), so the card's Total is
+  // the link's. A Warm up share opens in By Weight on the selected row's load: its Total
+  // as the Target, read as the readout shows it, with the row's Plates (ADR-0014's
+  // "Plates win" keeps them even if the recipient's solve would pick another way).
+  // The link carries the Plates heaviest-first, its one Side order: a Warm-up stack
+  // with a big Plate outside a lighter one (ADR-0015 as amended) travels as the same
+  // Plates restacked, never as "No link".
   private shareLink(): string | null {
+    // Restacked against the set's base Inventory by value (restackForLink). A Plate the
+    // set lacks (not expected: a set switch drops the Side, ADR-0010) restacks to null;
+    // then the Side goes as is and serializeLink refuses it ("No link").
+    const stacked = restackForLink(this.side, plateSetFor(this._plateSetKey).inventory);
     const load = {
       set: this._plateSetKey,
       barKg: this._barKg,
       // serializeLink validates the Collar against the offered options.
-      collarKg: this._collarKg as LinkState['collarKg'],
+      collarKg: this.loadCollarKg() as LinkState['collarKg'],
       unit: this.activeUnit(),
-      side: this.side,
+      side: stacked ?? this.side,
     };
     if (this.mode === 'encode') return linkUrl({ ...load, mode: 'encode' });
+    const row = this.warmRow();
+    if (row) {
+      const reading = String(shownIn(row.total, load.unit));
+      return linkUrl({ ...load, mode: 'decode', targetKg: row.total, reading });
+    }
     const d = this.decoded;
     if (!d) return linkUrl({ ...load, mode: 'decode' });
     const targetKg = d.primary.total - d.primary.delta;
@@ -1350,6 +1372,18 @@ class RackConsole extends HTMLElement {
     // (ADR-0011 shape, shared with the share card) deliberately stays set-agnostic.
     this.fullscreen.plateSet = this._plateSetKey;
     this.fullscreen.open();
+    this.syncWake();
+  }
+
+  // Hold the screen wake lock exactly while fullscreen or Warm up is showing (RBAR-80).
+  // Idempotent, so render calls it on every pass (that covers mode changes and a
+  // reload straight into Warm up).
+  private syncWake(): void {
+    this.wake.hold(this.isConnected && (this.mode === 'warmup' || !this.fullscreen.hidden));
+  }
+
+  disconnectedCallback(): void {
+    this.wake.hold(false);
   }
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
@@ -1512,6 +1546,7 @@ class RackConsole extends HTMLElement {
   }
 
   private render(): void {
+    this.syncWake();
     const unit = this.activeUnit();
     this.sleeve.sideLoad = this.side;
     this.sleeve.interactive = this.mode === 'encode';

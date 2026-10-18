@@ -30,7 +30,6 @@
 import { persistedPrimaryUnit } from './console.ts';
 import type { LinkLoad } from './console.ts';
 import './setup.ts';
-import './help.ts';
 import { SLIDERS_GLYPH } from './sliders.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
 import { readPersisted, writePersisted } from './persist.ts';
@@ -145,8 +144,6 @@ class RackApp extends HTMLElement {
           display: flex; align-items: center; justify-content: space-between;
           gap: 12px; padding: 14px 22px;
         }
-        /* Left cluster: the wordmark next to the how-it-works help icon. */
-        .brand { display: inline-flex; align-items: center; gap: 9px; }
         /* The single h1 (RBAR-53): the page title heading navigation starts from. As a
            flex item its display was already blockified; margin pinned so the UA heading
            margin cannot move the header row. */
@@ -193,12 +190,7 @@ class RackApp extends HTMLElement {
         }
       </style>
       <header>
-        <!-- A div, not a span: the h1 is flow content and a span may hold only
-             phrasing content. .brand is inline-flex either way. -->
-        <div class="brand">
-          <h1 class="wordmark">rack<span class="dot">.</span>bar</h1>
-          <rack-help></rack-help>
-        </div>
+        <h1 class="wordmark">rack<span class="dot">.</span>bar</h1>
         <button type="button" class="pill" data-setup-pill
                 aria-haspopup="dialog" aria-expanded="false">
           <svg class="sliders" data-pill-icon width="13" height="13" viewBox="0 0 16 16"

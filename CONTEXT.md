@@ -135,7 +135,9 @@ A lighter set before the Working set, specified as a percentage of the Working
 set's Total (or as the bare Bar). Its Total is the nearest loadable Total to that
 percentage, ties down (ADR-0015) -- unlike Decode, it may land slightly over. In
 Warm up mode the station rule may move it within 5% of the Working Total of that
-percentage, so the Ramp is easy to load.
+percentage, so the Ramp is easy to load. A Warm-up set that the Plates on hand push
+further than that is a **drifted** set; its stair shows its real percentage, "~83%"
+(ADR-0016 as amended). A set on the bare Bar never counts as drifted.
 _Avoid_: ramp-up set, light set, feeder set.
 
 **Ramp**:

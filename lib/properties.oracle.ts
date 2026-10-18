@@ -320,12 +320,21 @@ function lessStation(a: StationCost, b: StationCost): boolean {
 }
 
 /**
+ * The pairs on hand of Plate `p` (ADR-0016): its `maxPerSide`, or unlimited. 0 = none.
+ * Read straight off the entry, so a rig built with withLimits carries its own limits.
+ */
+export function onHand(p: Plate): number {
+  return (p as InventoryEntry).maxPerSide ?? Infinity;
+}
+
+/**
  * The caps the station rule loads with: rule.cap of each Plate when that loads
  * `total`; otherwise each Plate's cap rises to its count in the ADR-0003 stack for
- * `total` (fewest Plates, then heaviest-first), found here by brute force.
+ * `total` (fewest Plates, then heaviest-first), found here by brute force. Either way
+ * no Plate goes past its pairs on hand (ADR-0016; a none size is capped at 0).
  */
 export function oracleCaps(rig: Rig, total: number, rule: StationRule): Caps {
-  const flat: Caps = () => rule.cap;
+  const flat: Caps = (p) => Math.min(rule.cap, onHand(p));
   const reaches = (s: readonly Plate[]) => Math.abs(rig.baselineKg + 2 * sumKg(s) - total) < 1e-6;
   if (legalSides(rig.inventory, rule, flat).some(reaches)) return flat;
   let best: readonly Plate[] | null = null;
@@ -338,10 +347,13 @@ export function oracleCaps(rig: Rig, total: number, rule: StationRule): Caps {
   }
   if (best === null) throw new Error('oracleCaps: Working Total unreachable');
   const stack = best;
-  return (p) => Math.max(rule.cap, stack.filter((q) => q === p).length);
+  return (p) => Math.min(onHand(p), Math.max(rule.cap, stack.filter((q) => q === p).length));
 }
 
-/** Every Side of `inventory` within `sleeveMm` with no cap, heaviest-first. */
+/**
+ * Every Side of `inventory` within `sleeveMm`, heaviest-first, with no cap but the pairs
+ * on hand (ADR-0016): never more of a Plate than its `maxPerSide`.
+ */
 function allSides(inventory: readonly Plate[], sleeveMm: number = SLEEVE_MM): (readonly Plate[])[] {
   const plates = [...inventory].sort((a, b) => b.kg - a.kg || a.widthMm - b.widthMm);
   const out: (readonly Plate[])[] = [];
@@ -350,6 +362,7 @@ function allSides(inventory: readonly Plate[], sleeveMm: number = SLEEVE_MM): (r
     out.push([...stack]);
     for (let j = from; j < plates.length; j++) {
       if (mm + plates[j].widthMm > sleeveMm + 1e-9) continue;
+      if (stack.filter((q) => q === plates[j]).length >= onHand(plates[j])) continue;
       stack.push(plates[j]);
       walk(j, mm + plates[j].widthMm);
       stack.pop();
@@ -360,11 +373,46 @@ function allSides(inventory: readonly Plate[], sleeveMm: number = SLEEVE_MM): (r
 }
 
 /**
+ * The Working Total under Plate limits (ADR-0016, ADR-0003 as read): the greatest Total
+ * some Side within the pairs on hand and the Sleeve reaches at or under the solve
+ * ceiling (max(ceiling, Target)), floored at the bare rig; a non-finite Target is the
+ * bare rig. Brute force over allSides, so for SMALL Inventories only.
+ */
+export function cappedWorkingOracle(rig: Rig, workingTarget: number, ceiling: number): number {
+  if (!Number.isFinite(workingTarget)) return rig.baselineKg;
+  const solveTo = Number.isFinite(ceiling) ? Math.max(ceiling, workingTarget) : workingTarget;
+  let best = rig.baselineKg;
+  for (const s of allSides(rig.inventory)) {
+    const t = rig.baselineKg + 2 * sumKg(s);
+    if (t <= solveTo + 1e-9 && t > best) best = t;
+  }
+  return best;
+}
+
+/**
+ * The Plate grid of the sizes on hand (a none size is no size): the largest step every
+ * such Plate is a whole multiple of, found as the smallest Plate divided by the least
+ * whole d that works (0.5 kg for Eleiko 2 / 1.5 / 1, 1.5 / 3). Infinity with none on hand.
+ */
+export function oracleGridKg(inventory: readonly Plate[]): number {
+  const have = inventory.filter((p) => onHand(p) > 0).map((p) => p.kg);
+  if (have.length === 0) return Infinity;
+  const least = Math.min(...have);
+  for (let d = 1; d <= 1000; d++) {
+    const g = least / d;
+    if (have.every((kg) => Math.abs(kg / g - Math.round(kg / g)) < 1e-6)) return g;
+  }
+  throw new Error('oracleGridKg: the Plates share no grid');
+}
+
+/**
  * The least [excess, repeats, cost] any Ramp can reach on `rig` (ADR-0015 as amended
  * 2026-10-17, the station rule):
  *   - bare-Bar rows are the empty Side at the Bar;
  *   - the Working row is any legal Side reaching exactly the Working Total (the
- *     at-or-under Total as read, from rampTotalsOracle);
+ *     at-or-under Total as read, from rampTotalsOracle; under Plate limits, from
+ *     cappedWorkingOracle);
+ *   - no Side holds more of a Plate than its pairs on hand (ADR-0016, oracleCaps);
  *   - a percentage row is any legal Side whose Total is at or above the bare rig and at
  *     or under the Working Total (the band is a cost key, not a filter);
  *   - Totals never decrease down the Ramp.
@@ -377,10 +425,10 @@ export function stationRampOracle(
   steps: readonly OracleStep[],
   rule: StationRule,
 ): { readonly best: StationCost; readonly tol: number; readonly caps: Caps } {
-  const nearest = rampTotalsOracle(rig, workingTarget, ceiling, steps);
-  const working = nearest[nearest.length - 1];
-  const grid = Math.min(...rig.inventory.map((p) => p.kg));
-  const tol = Math.max(rule.band * working, grid);
+  const working = rig.inventory.some((p) => onHand(p) !== Infinity)
+    ? cappedWorkingOracle(rig, workingTarget, ceiling)
+    : rampTotalsOracle(rig, workingTarget, ceiling, steps).at(-1)!;
+  const tol = Math.max(rule.band * working, oracleGridKg(rig.inventory));
   const caps = oracleCaps(rig, working, rule);
   const sides = legalSides(rig.inventory, rule, caps).map((side) => ({ side, total: rig.baselineKg + 2 * sumKg(side) }));
   const raws: (number | null)[] = steps.map((s) => (s.kind === 'pct' ? (working * s.pct) / 100 : null));

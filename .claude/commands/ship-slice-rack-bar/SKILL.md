@@ -17,11 +17,11 @@ Tickets are **Linear team Rack Bar** (`RBAR-N`, project `rack.bar`), read via th
 
 ### 2 -- Spec (ADR, not temper)
 - If the slice makes a **real, hard-to-reverse architectural decision**, write or append an ADR (`docs/adr/000N-slug.md`). **Amend/supersede, don't rewrite history** -- dated notes, never silent edits.
-- Most slices just **conform to an existing ADR**: 0001 static MPA + core/shell split, 0002 `solve(target, bar, inventory)` parameterized solver, 0003 Decode never overshoots by default, 0004 realistic side-on plate sizing. No DESIGN.md, no `temper verify`.
+- Most slices just **conform to an existing ADR**: 0001 static MPA + core/shell split, 0002 parameterized solver (`decode`/`decodeWithin`, sketched as `solve()`), 0003 Decode never overshoots by default, 0004 realistic side-on plate sizing. No DESIGN.md, no `temper verify`.
 
 ### 3 -- TDD (red -> green, Vitest)
 - **Write failing tests first**, then `npm test` to confirm **red**. If green without code, the test is too weak.
-- **Pure core** (`lib/plates.ts`, the `solve()` core) -> unit tests (input -> output, assert behavior not internals). Reuse the existing plate model (`ELEIKO_KG`, `sideLoadKg`, `totalKg`) -- do not duplicate it.
+- **Pure core** (`lib/plates.ts`, the `decode()` core) -> unit tests (input -> output, assert behavior not internals). Reuse the existing plate model (`ELEIKO_KG`, `sideLoadKg`, `totalKg`) -- do not duplicate it.
 - **Element/shell behavior** -> **happy-dom shell test** (`elements/*.test.ts`): mount the element, assert the contract + the interaction path. The shell is unit-testable directly; don't extract logic into pure functions *just* to test it (that tests implementation).
 - Implement -> full suite **green** (`npm test`), `npm run typecheck` clean.
 

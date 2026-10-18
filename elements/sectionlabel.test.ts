@@ -2,7 +2,7 @@
 // tracking, uppercase, text-muted ink (handoff "Typography": 'section label 11px/600
 // mono, .14em, uppercase') -- across every section label: console Total, entry Target,
 // loaded On the bar, recents Recent, palette Add (visible since RBAR-54's head row),
-// setup Bar/Collars/Plates, share Loading card, help How it works. Plus the two
+// setup Bar/Collars/Plates, share Loading card. Plus the two
 // layout adoptions the ticket names: the Total row
 // becomes flex space-between (toggle at the right edge, prototype L131) and the Target
 // section opens with a divider (prototype L146: border-top + 15px padding).
@@ -14,7 +14,6 @@ import './recents.ts';
 import './palette.ts';
 import './setup.ts';
 import './share.ts';
-import './help.ts';
 import { VISUALLY_HIDDEN } from './sectionlabel.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
 
@@ -40,7 +39,6 @@ describe('section-label system (RBAR-40)', () => {
     ['rack-recents', '.label'],
     ['rack-setup', '.section-label'],
     ['rack-share', '.label'],
-    ['rack-help', '.heading'],
   ];
 
   it.each(SITES)('%s %s uses the section-label recipe', (tag, selector) => {
@@ -94,7 +92,6 @@ describe('section labels are headings (RBAR-53)', () => {
     ['rack-entry', 'h2.caption', 'Target'],
     ['rack-recents', 'h2.label', 'Recent'],
     ['rack-share', 'h2.label', 'Loading card'],
-    ['rack-help', 'h2.heading', 'How it works'],
   ];
 
   it.each(HEADINGS)('%s: %s reads "%s"', (tag, selector, text) => {
