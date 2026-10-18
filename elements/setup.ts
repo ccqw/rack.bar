@@ -66,21 +66,9 @@ const CROSS_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" a
   <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
 </svg>`;
 
-// The Competition Bar weights, heaviest-first (men's / women's / technique). The other
-// sets carry their own Bars (ADR-0010, lib/platesets -- the app validates against
-// offeredBarKgs there); these stay exported as a Competition reference.
-export const BAR_OPTIONS = [20, 15, 5] as const;
-
-/** A Competition Bar the lifter can pick. */
-export type BarKg = (typeof BAR_OPTIONS)[number];
-
-/** True when `kg` is one of the Competition Bars. */
-export function isOfferedBar(kg: number): kg is BarKg {
-  return (BAR_OPTIONS as readonly number[]).includes(kg);
-}
-
-// A one-line descriptor for each plate-set row (the family + its native Unit).
-// Handoff prototype copy, middots rendered as ASCII hyphens (RBAR-22 precedent).
+// A one-line descriptor for each plate-set row (the family + its native Unit), read
+// only in the row's accessible name: the visible subtitle repeated the swatches and
+// the Unit, so it was cut (RBAR-86). Middots as ASCII hyphens (RBAR-22 precedent).
 const PLATE_SET_SUB: Record<PlateSetKey, string> = {
   comp: 'Eleiko - color-coded - kg',
   training: 'Plain black iron - lb',
@@ -493,7 +481,7 @@ class RackSetup extends HTMLElement {
         .menu button:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: -2px; }
         .menu svg { display: block; }
         /* The plate-set rows (RBAR-29, handoff section 6): stacked full-width rows,
-           each swatch cluster + name/sub + check, unlike the side-by-side tiles above.
+           each swatch cluster + name + check, unlike the side-by-side tiles above.
            Selected = the active-row fill + active border ring (prototype tiers). */
         .rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
         .row {
@@ -511,12 +499,10 @@ class RackSetup extends HTMLElement {
           display: block; width: 14px; height: 14px; border-radius: 4px;
           box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .14);
         }
-        .names {
-          display: flex; flex-direction: column; align-items: flex-start;
-          flex: 1; margin-left: 12px; gap: 1px;
+        .name {
+          flex: 1; margin-left: 12px; text-align: left;
+          font-size: 14px; font-weight: 700; color: var(--rack-text);
         }
-        .name { font-size: 14px; font-weight: 700; color: var(--rack-text); }
-        .row .sub { font-size: 12px; font-weight: 500; color: var(--rack-text-dim); }
         .check { color: var(--rack-accent); opacity: 0; }
         .row[aria-pressed="true"] .check { opacity: 1; }
         /* Pairs of Plates on Hand (RBAR-72, prototype H): the reset sits at the title
@@ -1125,9 +1111,10 @@ class RackSetup extends HTMLElement {
   }
 
   // Render the plate-set rows (Competition / Training): swatch cluster + name +
-  // family/Unit sub + selected check (RBAR-29, handoff section 6). The swatches and
-  // check are decorative (aria-hidden); the row's aria-label announces the set + Unit
-  // and aria-pressed carries the selected state.
+  // selected check (RBAR-29, handoff section 6; the visible family/Unit sub was cut in
+  // RBAR-86). The swatches and check are decorative (aria-hidden); the row's
+  // aria-label still announces the set + family + Unit and aria-pressed carries the
+  // selected state.
   private renderPlatesetTiles(): void {
     this.platesetTilesEl.innerHTML = PLATE_SET_KEYS.map(
       (key) => `
@@ -1136,10 +1123,7 @@ class RackSetup extends HTMLElement {
           <span class="swatches" aria-hidden="true">${PLATE_SET_SWATCHES[key]
             .map((fill) => `<span class="swatch" style="background:${fill}"></span>`)
             .join('')}</span>
-          <span class="names">
-            <span class="name">${PLATE_SETS[key].label}</span>
-            <span class="sub">${PLATE_SET_SUB[key]}</span>
-          </span>
+          <span class="name">${PLATE_SETS[key].label}</span>
           ${CHECK_SVG}
         </button>`,
     ).join('');

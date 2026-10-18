@@ -1,18 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-// Importing every shell registers all eleven custom elements.
+// Importing every shell registers all thirteen custom elements.
 import './app.ts';
 import './console.ts';
 import './entry.ts';
 import './fullscreen.ts';
-import './help.ts';
 import './loaded.ts';
 import './palette.ts';
 import './recents.ts';
 import './setup.ts';
 import './share.ts';
 import './sleeve.ts';
+import './update.ts';
+import './warmup.ts';
+import './ways.ts';
 
 // RBAR-59: on iPhone, two quick taps on a control (plate keys, keypad digits, steppers)
 // were read by Safari as double-tap-to-zoom, zooming the page mid-interaction.
@@ -44,13 +46,15 @@ const TAGS = [
   'rack-console',
   'rack-entry',
   'rack-fullscreen',
-  'rack-help',
   'rack-loaded',
   'rack-palette',
   'rack-recents',
   'rack-setup',
   'rack-share',
   'rack-sleeve',
+  'rack-update',
+  'rack-warmup',
+  'rack-ways',
 ] as const;
 
 describe('every shadow root carries the mobile tap rule on buttons (RBAR-59)', () => {
