@@ -201,14 +201,3 @@ export function warmupView(
     rows[sel].kind === 'bar' ? null : deltaText(rowDelta(rows, sel), plateUnit);
   return { steps, selected: sel, next, addCaption };
 }
-
-/**
- * Read the persisted Working set Target (`rackbar.working`, canonical kg, ADR-0007/0009).
- * A missing, blank, non-numeric, non-finite or non-positive value reads as null (no
- * Working set yet), so a corrupt key can never reach the planner.
- */
-export function parseWorking(raw: string | null): number | null {
-  if (raw === null || raw.trim() === '') return null;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}

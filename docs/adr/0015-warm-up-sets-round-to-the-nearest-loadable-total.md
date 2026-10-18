@@ -264,3 +264,63 @@ Tests:
   `stationRampOracle`. That oracle enumerates every legal Side of a small Inventory by
   plain recursion and runs an unpruned DP over (Side, station) states. It never calls
   sideloads.ts or the planner.
+
+## 2026-10-17 -- one Target for By Weight and Warm up (RBAR-87)
+
+Caitlin, 2026-10-17: "If I'm on any of the other screens, like By Weight or By Plates,
+and I set some weight and then I go to Warm up, it would be awesome if Warm up used
+whatever weight I set in the other screens as the working target." Until now Warm up
+kept its own working weight: a second `<rack-entry variant="working">`, the
+`rackbar.working` key, and a rule that seeded it from the By Weight Target only on the
+first open. All three are gone. The Working set's Target is the Target.
+
+1. **One Target, kept across mode switches both ways.** The console holds one Target
+   (canonical kg) and one `<rack-entry>`. In By Weight the entry is headless under the
+   hero (RBAR-58); in Warm up the console flips it to `variant="working"`, the same
+   "Working weight" row as before; in By Plates it is hidden. Editing the working
+   weight in Warm up changes the Target By Weight shows, and the other way round.
+   Entering By Weight from Warm up decodes the Target. It no longer carries the
+   selected warm-up row, because that row is not the weight the lifter asked for. The
+   By Weight round-up choice and the loaded way start over on that decode. A keypad
+   left open across the switch stays open on the same Target.
+2. **By Plates carries into Warm up as it does into By Weight (ADR-0005).** Leaving By
+   Plates, the Side stays on the Bar and its Total becomes the Target. A bare Bar
+   means no Target. The one exception is a By Plates visit entered from Warm up that
+   changed no Plate. The Bar then still holds a warm-up row, not a load the lifter
+   built, so the Target is kept. Otherwise Warm up -> By Plates -> Warm up would
+   quietly turn a 140 kg Target into the 70 kg row. Any Plate tap, a Clear of a loaded
+   Bar, or an opened link ends the exception.
+3. **Persistence: `rackbar.target`.** The Target survives a reload under its own key.
+   It is console-owned, like the Target display state (ADR-0009). It is stored at full
+   precision (`String(kg)`), so a reload reads back the same number, and it is read
+   through `parseTarget` (`lib/recents.ts`, ADR-0007). A reload opens By Weight on the
+   stored Target, decoded. A non-positive Target (a typed 0) or an emptied field
+   removes the key. By Weight still shows its own reading of a typed 0, but Warm up
+   plans no Ramp from it and a reload reads it back as no Target. A Target typed finer
+   than the readout (52.5 lb) reloads as its readout (53 lb). The kg, and so the load,
+   is unchanged. An opened share link's Target is the lifter's Target, like its Recents
+   chip (ADR-0014). The link still writes no rig key.
+4. **Migrating `rackbar.working`, once.** On connect, a valid legacy value becomes the
+   Target only when no valid Target is stored, so an explicit Target always wins. The
+   legacy key is then removed either way: valid, cleared (`''`) or corrupt. The
+   migration cannot run twice.
+5. **No "You asked" chip in Warm up.** RBAR-58's chip stays By Weight's. Warm up's
+   working-weight row already shows the Target as typed.
+6. **Recents are unchanged (ADR-0009).** A keypad commit of the Target pushes it in
+   either mode, as the separate working-weight commit did. Warm-up rows, Next, Share
+   and the unit toggle in Warm up never push.
+7. **Share links are unchanged (RBAR-78, ADR-0014).** A Warm up share still opens in By
+   Weight on the selected row's load.
+8. **Fit (ADR-0013).** Nothing visible changed. The working-weight row keeps its
+   styling and its slot. In By Weight the headless entry now sits in the
+   column at that slot, out of flow (`position: absolute`), so it takes no flex slot
+   and no gap. It took no room before either, outside the column, so removing the
+   second entry frees no room. The fit check stores `rackbar.target` where it stored
+   `rackbar.working`.
+
+The Next button and its `warmupselect` event are untouched.
+
+Tests: in `elements/warmup.properties.test.ts`, "the Target is identical across mode
+switches and reloads" and "a By Plates load's Total becomes the Warm up working
+weight". In `elements/warmup.test.ts`, the one-time migration and the By Plates
+exception.

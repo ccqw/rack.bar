@@ -9,7 +9,6 @@ import {
   walkIndex,
   warmStatus,
   warmupView,
-  parseWorking,
 } from './warmup.ts';
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import { planEasyRamp } from './moves.ts';
@@ -289,18 +288,5 @@ describe('warmupView', () => {
     expect(v.steps[4].totalNum).toBe('309');
     expect(v.steps[4].totalUnit).toBe('lb');
     expect(warmupView(RAMP140, 1, 'lb', 'kg').addCaption).toBe('+25 kg');
-  });
-});
-
-describe('parseWorking (rackbar.working read validation, ADR-0007)', () => {
-  it('reads a positive finite kg weight', () => {
-    expect(parseWorking('140')).toBe(140);
-    expect(parseWorking('142.88')).toBe(142.88);
-  });
-
-  it('reads missing, blank, garbage, zero, negative and non-finite values as no Working set', () => {
-    for (const raw of [null, '', '  ', 'abc', '0', '-5', 'Infinity', 'NaN', '1e999']) {
-      expect(parseWorking(raw)).toBeNull();
-    }
   });
 });

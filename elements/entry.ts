@@ -87,6 +87,14 @@ function hiddenUp(el: Element): boolean {
   return false;
 }
 
+// The field's label for its variant (see `noun`), and the keypad sheet's name.
+function nounFor(variant: string | null): string {
+  return variant === 'working' ? 'Working weight' : 'Target';
+}
+function enterLabel(noun: string): string {
+  return `Enter ${noun === 'Target' ? 'Target' : 'working weight'}`;
+}
+
 class RackEntry extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private valueEl!: HTMLButtonElement;
@@ -102,15 +110,33 @@ class RackEntry extends HTMLElement {
   // big live value, its secondary unit, and the live "on the bar" load line (fed down by
   // the console, which owns decode).
   private sheet!: HTMLElement;
-  // What this field enters (RBAR-65 slice 2): the By Weight Target (the default), or --
-  // with variant="working" -- the Warm up mode's Working set Target, labelled "Working
-  // weight" in plain language (CONTEXT.md). One element, one keypad sheet, one keyboard
-  // path: the variant only changes the labels and lays the row out compactly.
-  // With the `headless` attribute (RBAR-58, By Weight's Target) the field row and its
-  // caption are not drawn at all: the console's hero Total is the visible editor -- its
-  // steppers call step(), a tap calls open() -- and this element contributes the draft,
-  // the keypad sheet and the keyboard path.
+  // How this field is labelled (RBAR-65 slice 2): "Target" (the default), or -- with
+  // variant="working" -- "Working weight", Warm up's plain-language name for the Working
+  // set's Target (CONTEXT.md). Since RBAR-87 there is one Target and one entry: the
+  // console flips the attribute with the mode, so the variant only changes the labels
+  // and lays the row out compactly, while the draft, the keypad sheet and the keyboard
+  // path stay this one element's. With the `headless` attribute (RBAR-58, By Weight)
+  // the field row and its caption are not drawn at all: the console's hero Total is the
+  // visible editor -- its steppers call step(), a tap calls open() -- and this element
+  // contributes the draft, the keypad sheet and the keyboard path.
   private noun = 'Target';
+
+  static observedAttributes = ['variant'];
+
+  // The variant can change while connected (RBAR-87: By Weight <-> Warm up): re-label
+  // the caption, the sheet and its keypad group, and the value button. Before connect,
+  // connectedCallback builds the labels from the attribute.
+  attributeChangedCallback(): void {
+    const noun = nounFor(this.getAttribute('variant'));
+    if (noun === this.noun) return;
+    this.noun = noun;
+    if (!this.valueEl) return;
+    this.root.querySelector('[data-caption]')!.textContent = noun;
+    const enter = enterLabel(noun);
+    this.sheet.setAttribute('aria-label', enter);
+    this.root.querySelector('[data-keypad]')!.setAttribute('aria-label', enter);
+    this.renderValue();
+  }
 
   /** Controls OUTSIDE this element that edit its value -- the console's hero steppers,
    * hero and "You asked" chip (RBAR-58). The keyboard path treats them as its own, so
@@ -283,8 +309,8 @@ class RackEntry extends HTMLElement {
   }
 
   connectedCallback(): void {
-    this.noun = this.getAttribute('variant') === 'working' ? 'Working weight' : 'Target';
-    const enter = `Enter ${this.noun === 'Target' ? 'Target' : 'working weight'}`;
+    this.noun = nounFor(this.getAttribute('variant'));
+    const enter = enterLabel(this.noun);
     const keys = KEYPAD_ROWS.flat()
       .map(
         (k) => `<button type="button" class="key" data-key="${k}"
@@ -480,8 +506,10 @@ class RackEntry extends HTMLElement {
         }
         :host([variant="working"]) .value .vu { font-size: 12px; }
         /* Headless (RBAR-58): no caption, no row, no section opener -- only the fixed
-           keypad sheet, which never takes part in the column's layout. */
-        :host([headless]) { margin: 0; border: 0; padding: 0; }
+           keypad sheet, which never takes part in the column's layout. Out of flow
+           (RBAR-87): the one entry sits in the console's column for Warm up's row, so
+           in By Weight it must not take a flex slot, or its gap, there either. */
+        :host([headless]) { position: absolute; margin: 0; border: 0; padding: 0; }
         :host([headless]) .caption, :host([headless]) .row { display: none; }
       </style>
       <!-- The Target section heading (RBAR-53): an h2 under the app's h1, styled by the

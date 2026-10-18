@@ -17,8 +17,20 @@ import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, EPS, other, fresh, resetPool, q, sr, unitBtn, modeBtn, totalText, sideOnScreen,
   stairs, nextBtn, workDraft, commitWorking, storedRecents, rigDraftCaseArb, nextRun,
+  rigArb, unitArb, tapAdd, type, step, entryDraft, workRoot, expectedFor,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
+
+// A reload: a fresh console on the same rig with storage kept, the app's push order
+// (Bar, Collar, then the set). The Primary unit comes back from its own key.
+function reload(rig: Rig): Console {
+  const again = document.createElement('rack-console') as Console;
+  document.body.append(again);
+  again.barKg = rig.barKg;
+  again.collarKg = rig.collarKg;
+  again.plateSet = rig.set;
+  return again;
+}
 
 beforeEach(resetPool);
 
@@ -196,25 +208,102 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
-  it('the working weight round-trips through rackbar.working across a reload (ADR-0007, ADR-0009)', async () => {
+  it('the Target is identical across mode switches and reloads (RBAR-87, ADR-0015)', async () => {
+    // One Target for By Weight and Warm up: typed in either mode, then any run of mode
+    // switches, reloads and stepper edits (in whichever mode is showing). After every
+    // step the one field reads the same weight, the stored key holds exactly its kg,
+    // and the screen is that Target's: By Weight's at-or-under Total (ADR-0003), or
+    // the Ramp's Working set (ADR-0015). A reload lands in By Weight.
+    type Mode = 'decode' | 'warmup';
+    type Act = { kind: 'mode'; to: Mode } | { kind: 'reload' } | { kind: 'step' };
+    const modeArb = fc.constantFrom<Mode>('decode', 'warmup');
+    const actArb: fc.Arbitrary<Act> = fc.oneof(
+      modeArb.map((to) => ({ kind: 'mode' as const, to })),
+      fc.constant({ kind: 'reload' as const }),
+      fc.constant({ kind: 'step' as const }),
+    );
     await fc.assert(
-      fc.asyncProperty(workCaseArb, async ([rig, u, draft]) => {
+      fc.asyncProperty(
+        workCaseArb,
+        modeArb,
+        fc.array(actArb, { minLength: 1, maxLength: 6 }),
+        async ([rig, u, draft], start, acts) => {
+          await nextRun();
+          let el = fresh(rig, u);
+          let mode: Mode = start;
+          if (start === 'warmup') {
+            modeBtn(el, 'warmup').click();
+            commitWorking(el, draft);
+          } else {
+            type(el, draft);
+          }
+          let want = draft;
+          const check = () => {
+            const kg = draftToKg(want, u)!;
+            expect(entryDraft(el)).toBe(want);
+            expect(localStorage.getItem('rackbar.target')).toBe(String(kg));
+            if (mode === 'decode') {
+              expect(totalText(el)).toBe(format(expectedFor(rig, u, want).totalKg, u));
+            } else {
+              expect(workDraft(el)).toBe(want);
+              expect(stairTotals(el).at(-1)).toBe(format(oracleTotals(rig, u, want).at(-1)!, u));
+            }
+          };
+          check();
+          for (const a of acts) {
+            if (a.kind === 'mode') {
+              modeBtn(el, a.to).click();
+              mode = a.to;
+            } else if (a.kind === 'reload') {
+              el.remove();
+              el = reload(rig);
+              mode = 'decode';
+            } else {
+              // An edit in either mode is an edit of the one Target.
+              if (mode === 'decode') step(el, 'inc');
+              else q<HTMLButtonElement>(workRoot(el), '[data-step="inc"]').click();
+              const next = entryDraft(el);
+              expect(Number(next)).toBeGreaterThan(Number(want));
+              want = next;
+            }
+            check();
+          }
+        },
+      ),
+      { seed: SEED, numRuns: 25 },
+    );
+  });
+
+  it("a By Plates load's Total becomes the Warm up working weight (RBAR-87, ADR-0015, ADR-0005)", async () => {
+    // Build any load in By Plates and switch to Warm up: its Total is the working
+    // weight (as read in the unit), the stored Target, and the Ramp's Working set; a
+    // bare Bar is no Target. By Weight then shows the same Target.
+    await fc.assert(
+      fc.asyncProperty(rigArb, unitArb, fc.array(fc.nat(), { maxLength: 12 }), async (rig, u, picks) => {
         await nextRun();
-        const el = warmOn(rig, u, draft);
-        const shown = workDraft(el);
-        const totals = stairTotals(el);
-        el.remove();
-        // A fresh console on the same rig, storage kept (a reload).
-        const again = document.createElement('rack-console') as Console;
-        document.body.append(again);
-        again.barKg = rig.barKg;
-        again.collarKg = rig.collarKg;
-        again.plateSet = rig.set;
-        modeBtn(again, 'warmup').click();
-        expect(workDraft(again)).toBe(shown);
-        expect(stairTotals(again)).toEqual(totals);
+        const el = fresh(rig, u);
+        modeBtn(el, 'encode').click();
+        for (const pick of picks) tapAdd(el, rig.inventory[pick % rig.inventory.length].kg);
+        const built = sideOnScreen(el);
+        const totalKg = rig.baselineKg + 2 * built.reduce((s, p) => s + p.kg, 0);
+        modeBtn(el, 'warmup').click();
+        if (built.length === 0) {
+          expect(workDraft(el)).toBe('');
+          expect(localStorage.getItem('rackbar.target')).toBeNull();
+          expect(sideOnScreen(el)).toEqual([]);
+          expect(nextBtn(el).disabled).toBe(true);
+          return;
+        }
+        const reading = String(shownIn(totalKg, u));
+        expect(workDraft(el)).toBe(reading);
+        expect(Number(localStorage.getItem('rackbar.target'))).toBeCloseTo(totalKg, 9);
+        const want = rampTotalsOracle(rig, totalKg, displayCeilingKg(totalKg, u), DEFAULT_RAMP);
+        expect(stairTotals(el).at(-1)).toBe(format(want.at(-1)!, u));
+        modeBtn(el, 'decode').click();
+        expect(entryDraft(el)).toBe(reading);
+        expect(totalText(el)).toBe(format(want.at(-1)!, u));
       }),
-      { seed: SEED, numRuns: 20 },
+      { seed: SEED, numRuns: 25 },
     );
   });
 

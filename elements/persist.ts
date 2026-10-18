@@ -20,6 +20,16 @@ export function readPersisted(key: string): string | null {
   }
 }
 
+/** Remove a persisted key, best-effort (RBAR-87: a cleared Target, a migrated legacy
+ * key). A failed removal is swallowed like a failed write. Never throws. */
+export function removePersisted(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* persistence is best-effort; the session keeps working without it. */
+  }
+}
+
 /** Write a persisted string, best-effort. A failed write (quota, private mode) is
  * swallowed -- the session keeps working without persistence. Never throws. */
 export function writePersisted(key: string, value: string): void {

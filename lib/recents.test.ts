@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_RECENTS, pushRecent, parseRecents, removeRecent, restoreRecent } from './recents.ts';
+import {
+  MAX_RECENTS,
+  pushRecent,
+  parseRecents,
+  parseTarget,
+  removeRecent,
+  restoreRecent,
+} from './recents.ts';
+import { lbToKg } from './units.ts';
 
 describe('pushRecent', () => {
   it('adds a Target to the front (most-recent-first)', () => {
@@ -148,5 +156,20 @@ describe('restoreRecent (RBAR-73 Undo)', () => {
     const full = [60, 50, 40, 30, 20, 10];
     expect(restoreRecent(full, 70, 0)).toEqual([70, 60, 50, 40, 30, 20]);
     expect(restoreRecent(full, 70, 0)).toHaveLength(MAX_RECENTS);
+  });
+});
+
+describe('parseTarget (rackbar.target and legacy rackbar.working read validation, RBAR-87, ADR-0007)', () => {
+  it('reads a positive finite kg weight back at full precision', () => {
+    expect(parseTarget('140')).toBe(140);
+    expect(parseTarget('142.88')).toBe(142.88);
+    // An lb Target is an irrational-looking kg: String() round-trips it exactly.
+    expect(parseTarget(String(lbToKg(309)))).toBe(lbToKg(309));
+  });
+
+  it('reads missing, blank, garbage, zero, negative and non-finite values as no Target', () => {
+    for (const raw of [null, '', '  ', 'abc', '0', '-5', 'Infinity', 'NaN', '1e999']) {
+      expect(parseTarget(raw)).toBeNull();
+    }
   });
 });

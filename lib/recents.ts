@@ -13,6 +13,19 @@ export function isRememberable(target: number): boolean {
   return Number.isFinite(target) && target > 0;
 }
 
+/**
+ * Read a persisted Target (canonical kg): the one Target By Weight and Warm up share
+ * (`rackbar.target`, RBAR-87), or the legacy Warm up `rackbar.working` value it migrates
+ * from. Stored at full precision (String(kg)), so a reload reads back the same number.
+ * Missing, blank, non-numeric, non-finite or non-positive reads as null (no Target), so a
+ * corrupt key can never reach the solver or the planner (ADR-0007).
+ */
+export function parseTarget(raw: string | null): number | null {
+  if (raw === null || raw.trim() === '') return null;
+  const n = Number(raw);
+  return isRememberable(n) ? n : null;
+}
+
 // Targets are kept to two decimals -- the precision the chip and every other readout
 // display (fmtKg). Normalizing at the single store boundary keeps the stored value, the
 // dedupe key, and the rendered label one and the same number, so a chip can never read
