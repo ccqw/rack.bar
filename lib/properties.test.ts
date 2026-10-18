@@ -2375,6 +2375,37 @@ describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-00
     );
   });
 
+  it('when the Plates on hand allow no Side in range, the question is one Plate: the heaviest the lifter has, by kg (RBAR-92, ADR-0016)', () => {
+    // At most two sizes on hand, one pair each, and up to 6 per side (3 Plates at
+    // least): no draw can fit, so every question is the fallback.
+    const fallbackArb = rigArb.chain((rig) =>
+      fc.record({
+        rig: fc.constant(rig),
+        keep: fc.uniqueArray(fc.nat({ max: rig.inventory.length - 1 }), { minLength: 1, maxLength: 2 }),
+        change: fc.boolean(),
+        seed: fc.integer(),
+        index: fc.nat({ max: 50 }),
+      }),
+    );
+    fc.assert(
+      fc.property(fallbackArb, ({ rig, keep, change, seed, index }) => {
+        const caps = rig.inventory.map((_, i) => (keep.includes(i) ? 1 : 0));
+        const qr = quizRig(rig, caps);
+        const settings: QuizSettings = { maxPlates: 6, change, collars: 'off', numbers: false };
+        const q = quizQuestion(seed, index, qr, settings)!;
+        const kept = keep.map((i) => rig.inventory[i]);
+        const small = smallestFullPlate(rig.set);
+        const full = kept.filter((p) => Number(plateFace(p)) >= small);
+        // Change Plates off: the heaviest full Plate on hand, if there is one.
+        const pool = !change && full.length > 0 ? full : kept;
+        const heaviest = Math.max(...pool.map((p) => p.kg));
+        expect(q.side.length).toBe(1);
+        expect(q.side[0].kg).toBe(heaviest);
+      }),
+      quizOpts,
+    );
+  });
+
   it('a question keeps to the gear: at most its Plates per side, and no change Plate when they are off, unless the lifter has only change Plates (RBAR-92)', () => {
     fc.assert(
       fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {

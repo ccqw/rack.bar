@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import './quiz.ts';
 import './app.ts';
 import { QUIZ_KEY, RIGHT_PAUSE_MS } from './quiz.ts';
+import { SETUP_LINK } from './rig.ts';
 import { parseQuizSaved } from '../lib/quiz.ts';
 import type { Question } from '../lib/quiz.ts';
 import type { Plate } from '../lib/plates.ts';
@@ -97,6 +98,39 @@ describe('<rack-quiz>', () => {
     expect(text(root, '[data-streak]')).toBe('1');
   });
 
+  it('Enter on a focused link or button is left to it: the back link and Show keep their own Enter', () => {
+    const { el, root } = mount();
+    typeOn(root, '1');
+    const enterOn = (target: EventTarget) => {
+      const e = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true, cancelable: true });
+      target.dispatchEvent(e);
+      return e;
+    };
+    // The back link navigates on its own Enter: not cancelled, nothing checked.
+    expect(enterOn(root.querySelector('.back')!).defaultPrevented).toBe(false);
+    expect(root.querySelector<HTMLElement>('[data-viz]')!.dataset.phase).toBe('ask');
+    // Show: its Enter is its click (the browser's), which shows the answer -- not a
+    // check of the typed draft.
+    const show = root.querySelector<HTMLButtonElement>('[data-show]')!;
+    expect(enterOn(show).defaultPrevented).toBe(false);
+    expect(root.querySelector<HTMLElement>('[data-viz]')!.dataset.phase).toBe('ask');
+    show.click();
+    expect(text(root, '[data-big]')).toBe(`${el.question!.totalShown}kg`);
+  });
+
+  it('Enter elsewhere is cancelled only when it checks something', () => {
+    const { root } = mount();
+    const enter = () => {
+      const e = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      document.body.dispatchEvent(e);
+      return e;
+    };
+    expect(enter().defaultPrevented).toBe(false); // nothing typed: no check
+    typeOn(root, '1');
+    expect(enter().defaultPrevented).toBe(true);
+    expect(root.querySelector<HTMLElement>('[data-viz]')!.dataset.phase).toBe('wrong');
+  });
+
   it('numbers on the discs are off by default, and shown on a wrong answer', () => {
     const { root } = mount();
     expect(sleeveOf(root).numerals).toBe(false);
@@ -129,7 +163,7 @@ describe('<rack-quiz>', () => {
     expect(el.question!.side.every((p) => p.color === 'iron')).toBe(true);
   });
 
-  it('says so when there are no Plates on hand', () => {
+  it('says so when there are no Plates on hand, with a door into Setup', () => {
     localStorage.setItem(
       'rackbar.platesOnHand',
       JSON.stringify({ comp: { 25: 0, 20: 0, 15: 0, 10: 0, 5: 0, 2.5: 0, 2: 0, 1.5: 0, 1: 0, 0.5: 0 } }),
@@ -137,6 +171,7 @@ describe('<rack-quiz>', () => {
     const { el, root } = mount();
     expect(el.question).toBeNull();
     expect(root.querySelector<HTMLElement>('[data-empty]')!.hidden).toBe(false);
+    expect(root.querySelector('[data-empty] a')!.getAttribute('href')).toBe(SETUP_LINK);
   });
 });
 
@@ -154,6 +189,7 @@ describe('the quiz gear', () => {
     expect(tile(root, 'change', 'true').getAttribute('aria-pressed')).toBe('true');
     expect(tile(root, 'numbers', 'false').getAttribute('aria-pressed')).toBe('true');
     expect(gearRoot(root).querySelector('[data-rig-name]')!.textContent).toBe('Competition, 20 kg bar');
+    expect(gearRoot(root).querySelector('.from a')!.getAttribute('href')).toBe(SETUP_LINK);
   });
 
   it('a setting change is saved, applies to the next question, and starts a new streak', () => {
@@ -204,6 +240,29 @@ describe('the way in and the page', () => {
     expect(link.getAttribute('href')).toBe('/game.html');
     expect(link.getAttribute('aria-label')).toBe('Loadout quiz');
     expect(link.nextElementSibling).toBe(root.querySelector('[data-setup-pill]'));
+    // A 44x44 tap target: the 30px box (28px padding box) plus an 8px layer each way,
+    // which stops 1px short of the pill across the row's 8px gap.
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toMatch(/\.quizlink::after\s*\{[^}]*inset:\s*-8px;/);
+    expect(css).toMatch(/\.hdr\s*\{[^}]*gap:\s*8px;/);
+  });
+
+  it("the quiz's Setup link opens the calculator with Setup open, once: the query is stripped", () => {
+    history.replaceState(null, '', '/?setup');
+    const app = document.createElement('rack-app');
+    document.body.append(app);
+    const root = app.shadowRoot!;
+    expect(root.querySelector('[data-setup-pill]')!.getAttribute('aria-expanded')).toBe('true');
+    expect(root.querySelector<HTMLElement>('rack-setup')!.hidden).toBe(false);
+    expect(location.search).toBe('');
+    expect(location.pathname).toBe('/');
+  });
+
+  it('a plain visit leaves Setup closed', () => {
+    history.replaceState(null, '', '/');
+    const app = document.createElement('rack-app');
+    document.body.append(app);
+    expect(app.shadowRoot!.querySelector('[data-setup-pill]')!.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('game.html is a build entry, loads the quiz and the offline worker, and is precached (ADR-0001, ADR-0018)', () => {

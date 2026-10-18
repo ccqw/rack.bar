@@ -6,6 +6,7 @@
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
+import { SETUP_LINK } from './rig.ts';
 import { DEFAULT_QUIZ_SETTINGS } from '../lib/quiz.ts';
 import type { CollarsMode, MaxPlates, QuizSettings } from '../lib/quiz.ts';
 
@@ -161,7 +162,7 @@ class RackQuizGear extends HTMLElement {
           <h2 id="gear-title">Loadout quiz</h2>
           <button type="button" class="x" data-close aria-label="Close">&times;</button>
         </div>
-        <p class="from">Plates and Bar from Setup: <b data-rig-name></b>. <a href="/">Change in rack.bar</a></p>
+        <p class="from">Plates and Bar from Setup: <b data-rig-name></b>. <a href="${SETUP_LINK}">Change in Setup</a></p>
         ${rows}
       </div>
     `;

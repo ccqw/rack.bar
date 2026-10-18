@@ -19,6 +19,18 @@ export const CUSTOM_BARS_KEY = 'rackbar.customBars';
 // Pairs of Plates on Hand (RBAR-72, ADR-0016): every set's limits in one key.
 export const PLATES_ON_HAND_KEY = 'rackbar.platesOnHand';
 
+/**
+ * The calculator with its Setup sheet open: the quiz's doors into Setup (RBAR-92).
+ * <rack-app> reads the `setup` query once on boot, opens the sheet, and strips it from
+ * the URL, so a reload or a share never re-opens it.
+ */
+export const SETUP_LINK = '/?setup';
+
+/** Whether the URL asks for Setup open (SETUP_LINK). */
+export function wantsSetup(search: string): boolean {
+  return new URLSearchParams(search).has('setup');
+}
+
 /** The stored plate set, or Competition (the default). */
 export function loadPlateSet(): PlateSetKey {
   const raw = readPersisted(PLATESET_KEY);

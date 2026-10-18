@@ -45,6 +45,7 @@ import {
   loadCustomBars,
   loadPlateSet,
   loadPlatesOnHand,
+  wantsSetup,
 } from './rig.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
@@ -158,7 +159,9 @@ class RackApp extends HTMLElement {
         /* The Loadout quiz door (RBAR-92): a graduation cap in the head icon-button
            style (the console's Share / fullscreen buttons: a 30px raised box, 9px
            radius), left of Setup. Not a stopwatch: that glyph is the rest timer's. The
-           drawn box keeps a 44px-tall tap target through an invisible layer. */
+           drawn box keeps a 44x44 tap target through an invisible layer that stops
+           1px short of the pill (the row's 8px gap): 8px out from the padding box,
+           inside the 1px border, so 28 + 16 = 44 each way. */
         .quizlink {
           position: relative; flex: none;
           width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
@@ -166,7 +169,7 @@ class RackApp extends HTMLElement {
           border: 1px solid var(--rack-border); border-radius: 9px;
           -webkit-tap-highlight-color: transparent;
         }
-        .quizlink::after { content: ""; position: absolute; inset: -8px -5px; }
+        .quizlink::after { content: ""; position: absolute; inset: -8px; }
         .quizlink:hover { color: var(--rack-text); border-color: var(--rack-border-hover); }
         .quizlink:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         .quizlink svg { display: block; }
@@ -289,6 +292,15 @@ class RackApp extends HTMLElement {
     // before applying, so a throw in the boot-time apply cannot also cost the listener.
     window.addEventListener('hashchange', this.onHashChange);
     if (link) this.applyLink(link);
+    // The quiz's door into Setup (SETUP_LINK, RBAR-92): open the sheet once and strip
+    // the query, so a reload lands on the calculator as usual.
+    if (wantsSetup(location.search)) {
+      const params = new URLSearchParams(location.search);
+      params.delete('setup');
+      const rest = params.toString();
+      history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+      this.openSetup();
+    }
   }
 
   // Open the Setup sheet, from the header pill or another door into it (RBAR-66).

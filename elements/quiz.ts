@@ -18,7 +18,7 @@ import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
 import { SHORT_SCREEN } from './fit.ts';
 import { readPersisted, writePersisted } from './persist.ts';
-import { loadRig } from './rig.ts';
+import { SETUP_LINK, loadRig } from './rig.ts';
 import { BACK_GLYPH, DEL_GLYPH, GEAR_GLYPH } from './quizglyphs.ts';
 import { DISC_INK, darkInk, plateLabel } from '../lib/sleevefit.ts';
 import { PLATE_SETS } from '../lib/platesets.ts';
@@ -180,13 +180,17 @@ class RackQuiz extends HTMLElement {
   }
 
   // Check the typed answer, or Show the Total (a Show is a miss: it ends the streak).
-  private check(show: boolean): void {
+  // Returns whether it acted (checked, showed, or moved on from a wrong answer).
+  private check(show: boolean): boolean {
     const q = this.q;
-    if (!q) return;
-    if (this.phase === 'wrong') return this.next();
-    if (this.phase !== 'ask') return;
+    if (!q) return false;
+    if (this.phase === 'wrong') {
+      this.next();
+      return true;
+    }
+    if (this.phase !== 'ask') return false;
     const answer = answerOf(this.draft);
-    if (!show && answer === null) return;
+    if (!show && answer === null) return false;
     this.ms = performance.now() - this.t0;
     const right = !show && answer !== null && isRight(q, answer);
     this.record = scoreAnswer(this.record, right);
@@ -195,13 +199,23 @@ class RackQuiz extends HTMLElement {
     this.wrongDraft = show ? '' : this.draft;
     this.update();
     if (right) this.advanceTimer = setTimeout(() => this.next(), RIGHT_PAUSE_MS);
+    return true;
   }
 
+  // The physical keyboard: digits, point and Backspace type; Enter checks. Enter on a
+  // focused link or button is that control's own (the back link navigates, Show shows,
+  // the gear opens), so it is left alone; and Enter is cancelled only when the check
+  // actually acted, never swallowed for nothing.
   private onKey = (e: KeyboardEvent): void => {
     if (!this.gear.hidden || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'Enter') {
+      const target = e.composedPath()[0];
+      if (target instanceof Element && target.closest('a, button')) return;
+      if (this.check(false)) e.preventDefault();
+      return;
+    }
     if (/^[0-9.]$/.test(e.key)) this.press(e.key);
     else if (e.key === 'Backspace') this.press('del');
-    else if (e.key === 'Enter') this.check(false);
     else return;
     e.preventDefault();
   };
@@ -396,7 +410,7 @@ class RackQuiz extends HTMLElement {
       <div class="viz" data-viz>
         <rack-sleeve></rack-sleeve>
         <span class="flash" aria-hidden="true"></span>
-        <p class="empty" data-empty hidden>No Plates on hand.<br><a href="/">Set them in Setup</a></p>
+        <p class="empty" data-empty hidden>No Plates on hand.<br><a href="${SETUP_LINK}">Set them in Setup</a></p>
       </div>
       <div class="ans">
         <div class="big" data-big></div>

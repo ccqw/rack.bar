@@ -171,6 +171,14 @@ export function faceSum(side: readonly Plate[]): number {
   return r2(side.reduce((s, p) => s + Number(plateFace(p)), 0));
 }
 
+/** The heaviest Plate (by kg) whose limit is not None, or null when there is none. The
+ * one-Plate fallback; it never relies on the Inventory's order. */
+export function heaviestOnHand(inventory: readonly InventoryEntry[]): InventoryEntry | null {
+  let best: InventoryEntry | null = null;
+  for (const p of inventory) if (p.maxPerSide !== 0 && (!best || p.kg > best.kg)) best = p;
+  return best;
+}
+
 // The tries a question makes for a Side its settings and the Plate limits allow, before
 // it falls back to one Plate.
 const TRIES = 400;
@@ -206,8 +214,7 @@ export function quizQuestion(
     if (loaded && loaded.length >= minN && loaded.length <= settings.maxPlates) side = loaded;
   }
   if (side === null) {
-    const one =
-      inventory.find((p) => p.maxPerSide !== 0) ?? rig.inventory.find((p) => p.maxPerSide !== 0);
+    const one = heaviestOnHand(inventory) ?? heaviestOnHand(rig.inventory);
     if (!one) return null;
     side = [one];
   }
