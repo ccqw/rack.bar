@@ -18,6 +18,7 @@ import {
   SEED, EPS, other, fresh, resetPool, q, sr, unitBtn, modeBtn, totalText, sideOnScreen,
   stairs, nextBtn, workDraft, commitWorking, storedRecents, rigDraftCaseArb, nextRun,
   rigArb, unitArb, tapAdd, type, step, entryDraft, workRoot, expectedFor, statusLabel,
+  captionText, facesOnScreen, followCaption,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
 
@@ -137,30 +138,8 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     // The caption is what the lifter does at the Bar. Press Next, read the add caption
     // beside "per side", apply it to the Side that was on screen, and the result must
     // be the Side Next loaded. The Next button itself reads just "Next" (RBAR-95).
-    const faces = (rig: Rig, el: HTMLElement) =>
-      sideOnScreen(el).map((d) => {
-        const p = rig.inventory.find((x) => Math.abs(x.kg - d.kg) < 1e-9)!;
-        return p.label ?? String(p.kg);
-      });
-    const apply = (side: string[], cap: string): string[] => {
-      const body = cap.replace(/ (kg|lb)$/, '');
-      const out = [...side];
-      let off: string[] = [];
-      let on: string[] = [];
-      const m = /^off (.+), on (.+)$/.exec(body);
-      if (m) {
-        off = m[1].split(' + ');
-        on = m[2].split(' + ');
-      } else {
-        for (const t of body.split(' ')) (t.startsWith('-') ? off : on).push(t.slice(1));
-      }
-      for (const f of off) {
-        // Only the outermost Plate can come off.
-        expect(out[out.length - 1]).toBe(f);
-        out.pop();
-      }
-      return [...out, ...on];
-    };
+    // followCaption (properties.drivers.ts, shared with By Weight's RBAR-83 property)
+    // takes Plates off only from the outside.
     await fc.assert(
       fc.asyncProperty(workCaseArb, async ([rig, u, draft]) => {
         await nextRun();
@@ -168,13 +147,13 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
         const n = stairs(el).length;
         for (let i = 0; i < n - 1; i++) {
           stairs(el)[i].click();
-          const before = faces(rig, el);
+          const before = facesOnScreen(rig, el);
           expect(nextBtn(el).textContent).toBe('Next');
           nextBtn(el).click();
-          const after = faces(rig, el);
-          const cap = q<HTMLElement>(sr(el), '[data-viz-add]');
-          if (cap.hidden) expect(after).toEqual(before);
-          else expect(apply(before, cap.textContent ?? '')).toEqual(after);
+          const after = facesOnScreen(rig, el);
+          const cap = captionText(el);
+          if (cap === null) expect(after).toEqual(before);
+          else expect(followCaption(before, cap)).toEqual(after);
         }
       }),
       { seed: SEED, numRuns: 30 },

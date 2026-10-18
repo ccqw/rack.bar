@@ -62,6 +62,8 @@ import { planEasyRamp } from '../lib/moves.ts';
 import type { Ramp, RampRow } from '../lib/plan.ts';
 import { deltaSpoken, rowDelta, warmStatus, warmupView } from '../lib/warmup.ts';
 import type { WarmupView } from '../lib/warmup.ts';
+import { NO_TRACK, movesCaption, trackLoad } from '../lib/byweight.ts';
+import type { LoadTrack } from '../lib/byweight.ts';
 
 type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
@@ -263,6 +265,8 @@ class RackConsole extends HTMLElement {
   // kept for By Weight, which shows its own reading of it, but plans no Ramp and is not
   // stored: it reads back as no Target.
   private target: number | null = null;
+  // By Weight's Plate moves caption (RBAR-83, lib/byweight.ts): the load it measures from.
+  private loadTrack: LoadTrack = NO_TRACK;
   // Warm up (RBAR-65 slice 2). `ramp` is the Target's plan on the current rig (null
   // without a positive Target); `warmIdx` is the selected row, whose Side is the shared
   // Side Load while Warm up is active.
@@ -487,18 +491,25 @@ class RackConsole extends HTMLElement {
         .vizhead {
           display: flex; align-items: center; justify-content: space-between;
           height: ${LABEL_PX}px;
+          /* The label and caption stop short of the icons, which overlap this row's
+             right end (RBAR-83): a caption never runs under them (see fitCaption). */
+          padding-right: ${2 * ICON_PX + 16}px;
         }
         /* The contextual label (RBAR-35, prototype L101): what the bar block shows
            right now -- "per side" once loaded, else the mode's empty-state prompt.
            The shared section-label recipe; uppercase comes from it, so the copy stays
            plain-cased in the DOM exactly like the prototype's vm. */
-        .vizlabel { ${SECTION_LABEL} }
+        .vizlabel { ${SECTION_LABEL} flex: none; }
+        .vizlabel[hidden] { display: none; }
         /* Warm up's add caption beside "per side" (RBAR-65 slice 2, mock option D):
            what the selected set adds, in accent mono, unit included ("+15 kg"). */
+        /* By Weight shows the Plate moves from the load before in the same slot and
+           style (RBAR-83). The caption never shows cut: see fitCaption. */
         .vizhl { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
         .vizadd {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 700;
           letter-spacing: .06em; color: var(--rack-accent); white-space: nowrap;
+          min-width: 0; overflow: hidden;
         }
         .vizadd[hidden] { display: none; }
         /* The head's icon buttons: Share then fullscreen (RBAR-61). One shared box rule
@@ -1663,8 +1674,18 @@ class RackConsole extends HTMLElement {
         ? warmupView(this.ramp.rows, this.warmIdx, unit, plateSetFor(this._plateSetKey).unit)
         : null;
     this.warmup.view = view;
-    this.vizAdd.hidden = view?.addCaption == null;
-    this.vizAdd.textContent = view?.addCaption ?? '';
+    // By Weight captions the Plate moves from the load before (RBAR-83) in the same slot.
+    this.loadTrack = trackLoad(
+      this.loadTrack,
+      this.mode === 'decode' ? this.side : null,
+      this.keypadOpen && this.mode === 'decode',
+    );
+    const add = view
+      ? view.addCaption
+      : movesCaption(this.loadTrack, this.side, plateSetFor(this._plateSetKey).unit);
+    this.vizAdd.hidden = add === null;
+    this.vizAdd.textContent = add ?? '';
+    this.fitCaption();
     this.entry.unit = unit;
     this.recentsRow.unit = unit;
     // The Recent rail highlights the chip matching the live Target (RBAR-37): fed in
@@ -1809,6 +1830,20 @@ class RackConsole extends HTMLElement {
         ),
       );
     }
+  }
+
+  // The caption beside "per side" is read literally (RBAR-83), so it never shows cut. One
+  // too long for its room first takes the label's place (it names the moves on one Side
+  // either way); one too long even then is not shown. Measured, so only a real layout
+  // can trip it: with no layout (happy-dom, a hidden console) both widths read 0.
+  private fitCaption(): void {
+    this.vizLabel.hidden = false;
+    const cut = () => this.vizAdd.scrollWidth > this.vizAdd.clientWidth;
+    if (this.vizAdd.hidden || !cut()) return;
+    this.vizLabel.hidden = true;
+    if (!cut()) return;
+    this.vizLabel.hidden = false;
+    this.vizAdd.hidden = true;
   }
 
   // Another way's surfaces (RBAR-66), shown only while the Total has more than one way:

@@ -33,6 +33,10 @@
 // reads PILL WRAPS n and adds a FAIL line; a quiz door with no box in the header reads
 // QUIZ HIDDEN (and fails); a label cut short by its ellipsis reads "pill cut n px"
 // (allowed -- the full text is kept wherever it fits).
+// Since RBAR-83 By Weight captions the Plate moves from the load before beside "per
+// side" (Warm up's slot): each state measures how far a shown caption is cut or runs
+// under the icons (CAPTION CLIPPED n) and whether the label beside it wraps (LABEL
+// WRAPS); either adds a FAIL line. The walk adds a stepper and a Recent after a load.
 // The quiz page (game.html) is walked too, as "quiz:" lines: a question, a right answer,
 // a wrong answer with its named mistake and breakdown, and the gear sheet open, on both
 // plate sets with Setup's collars off and on, at Plates per side up to 6. Each line has
@@ -129,7 +133,27 @@ async (shared) => {
       const pillCut = label.scrollWidth - label.clientWidth;
       const qr = head.querySelector('[data-quiz-link]')?.getBoundingClientRect();
       const quizHidden = !qr || qr.width < 1 || qr.left < hr.left || qr.right > hr.right;
+      // The add caption beside "per side" (Warm up; By Weight's Plate moves, RBAR-83):
+      // a shown caption is never cut and never runs under the icons, and the label
+      // beside it stays one line.
+      const cap = con.querySelector('[data-viz-add]');
+      const vizLabel = con.querySelector('[data-viz-label]');
+      const capClip = cap.hidden
+        ? 0
+        : Math.max(
+            0,
+            cap.scrollWidth - cap.clientWidth,
+            Math.ceil(cap.getBoundingClientRect().right - btns[0].getBoundingClientRect().left),
+          );
+      const labelRange = document.createRange();
+      labelRange.selectNodeContents(vizLabel);
+      const labelLines = new Set(
+        [...labelRange.getClientRects()].map((r) => Math.round(r.top)),
+      ).size;
       return {
+        capClip,
+        capShown: cap.hidden ? '' : cap.textContent,
+        labelWraps: labelLines > 1,
         headClip,
         pillLines,
         pillCut,
@@ -188,6 +212,14 @@ async (shared) => {
         await record('weight: recents, no Target');
         await chip(142);
         await record('weight: recents + loaded');
+        // The Plate moves caption (RBAR-83): a stepper's small change, then a Recent's
+        // big one (likely too long, so not shown), then back to 142 for the states below.
+        await inConsole(`con.querySelector('[data-hero-step="inc"]').click()`);
+        await record('weight: moves caption, stepper');
+        await chip(185);
+        await record('weight: moves caption, a Recent');
+        await chip(142);
+        await record('weight: moves caption, back');
         // Another way (RBAR-66): a bar tap puts "Another way 2/5" in the round-up row.
         const tapBar = () => inConsole(`con.querySelector('rack-sleeve').click()`);
         await tapBar();
@@ -413,8 +445,14 @@ async (shared) => {
         pillLines: Math.max(r.pillLines, prev?.pillLines ?? 0),
         pillCut: Math.max(r.pillCut, prev?.pillCut ?? 0),
         quizHidden: r.quizHidden || (prev?.quizHidden ?? false),
+        capClip: Math.max(r.capClip, prev?.capClip ?? 0),
+        capShown: r.capShown.length >= (prev?.capShown.length ?? 0) ? r.capShown : prev.capShown,
+        labelWraps: r.labelWraps || (prev?.labelWraps ?? false),
       });
     } else {
+      prev.capClip = Math.max(prev.capClip, r.capClip);
+      if (r.capShown.length > prev.capShown.length) prev.capShown = r.capShown;
+      if (r.labelWraps) prev.labelWraps = true;
       prev.ruOver = Math.max(prev.ruOver, r.ruOver);
       if (!r.iconsHit) prev.iconsHit = false;
       if (r.iconsMissing) prev.iconsMissing = true;
@@ -448,6 +486,9 @@ async (shared) => {
       `${r.pillLines > 1 ? ` PILL WRAPS ${r.pillLines}` : ''}` +
       `${r.quizHidden ? ' QUIZ HIDDEN' : ''}` +
       `${r.pillCut > 0 ? `, pill cut ${r.pillCut}px` : ''}` +
+      `${r.capClip > 0 ? ` CAPTION CLIPPED ${r.capClip}` : ''}` +
+      `${r.labelWraps ? ' LABEL WRAPS' : ''}` +
+      `${r.capShown ? `, caption "${r.capShown}"` : ''}` +
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
@@ -462,5 +503,11 @@ async (shared) => {
     .filter(([, r]) => !r.quiz && (r.pillLines !== 1 || r.quizHidden))
     .map(([k]) => k);
   if (header.length) lines.push(`FAIL: the header pill wraps or the quiz door hides at ${header.join('; ')}`);
+  // The bar block's caption is read literally, so it is never cut or covered, and the
+  // label beside it stays one line (RBAR-83).
+  const caption = [...worst.entries()]
+    .filter(([, r]) => !r.quiz && (r.capClip > 0 || r.labelWraps))
+    .map(([k]) => k);
+  if (caption.length) lines.push(`FAIL: the bar block's caption is cut or its label wraps at ${caption.join('; ')}`);
   return lines;
 }

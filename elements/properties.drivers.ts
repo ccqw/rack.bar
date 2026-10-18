@@ -305,3 +305,19 @@ export const storedRecents = (): number[] =>
  * It uses the real setImmediate (vitest.timers.ts), so it still yields under fake timers.
  */
 export const nextRun = nextMacrotask;
+
+// ---- The add caption beside "per side" (Warm up, RBAR-65; By Weight, RBAR-83) --------
+
+// The caption's text, or null while it is hidden.
+export function captionText(el: HTMLElement): string | null {
+  const cap = q<HTMLElement>(sr(el), '[data-viz-add]');
+  return cap.hidden ? null : (cap.textContent ?? '');
+}
+// The Side on screen as the caption names its Plates: each disc's stamped face on `rig`.
+export const facesOnScreen = (rig: Rig, el: HTMLElement): string[] =>
+  sideOnScreen(el).map((d) => {
+    const p = rig.inventory.find((x) => Math.abs(x.kg - d.kg) < EPS)!;
+    return p.label ?? String(p.kg);
+  });
+// Reading a caption literally is the oracle's (shared with the core's RBAR-83 property).
+export { followCaption } from '../lib/properties.oracle.ts';
