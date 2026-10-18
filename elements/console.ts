@@ -62,6 +62,8 @@ import { planEasyRamp } from '../lib/moves.ts';
 import type { Ramp, RampRow } from '../lib/plan.ts';
 import { deltaSpoken, rowDelta, warmStatus, warmupView } from '../lib/warmup.ts';
 import type { WarmupView } from '../lib/warmup.ts';
+import { NO_TRACK, movesCaption, trackLoad } from '../lib/byweight.ts';
+import type { LoadTrack } from '../lib/byweight.ts';
 
 type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
@@ -263,6 +265,15 @@ class RackConsole extends HTMLElement {
   // kept for By Weight, which shows its own reading of it, but plans no Ramp and is not
   // stored: it reads back as no Target.
   private target: number | null = null;
+  // By Weight's Plate moves caption (RBAR-83, lib/byweight.ts): the load it measures from.
+  private loadTrack: LoadTrack = NO_TRACK;
+  // True while applyLink lays a link's load down: its renders are not lifter moves, so
+  // each starts the track over and the link's own load is the next one's "before".
+  private linking = false;
+  // The caption's text (null = none) before fitCaption, and the observer that re-fits
+  // it when the bar block's width changes (rotation, a font that loads late).
+  private captionText: string | null = null;
+  private captionFit: ResizeObserver | null = null;
   // Warm up (RBAR-65 slice 2). `ramp` is the Target's plan on the current rig (null
   // without a positive Target); `warmIdx` is the selected row, whose Side is the shared
   // Side Load while Warm up is active.
@@ -395,6 +406,9 @@ class RackConsole extends HTMLElement {
   // The Target itself is unchanged: a rig change is not an edit (RBAR-87).
   private reconfigure(): void {
     if (!this.entry) return; // pre-connect; connectedCallback renders from the fields
+    // A Setup change is not a load the lifter chose, and Plates never cross sets
+    // (ADR-0010): By Weight's Plate moves caption starts over (RBAR-83).
+    this.loadTrack = NO_TRACK;
     // The entry's Bar setter re-seeds an untouched field that reads the old Bar. When
     // that field is the Target (shown by display(): a reload, a carry, a chip), it must
     // keep reading itself, not the new Bar: put the same text back.
@@ -487,18 +501,25 @@ class RackConsole extends HTMLElement {
         .vizhead {
           display: flex; align-items: center; justify-content: space-between;
           height: ${LABEL_PX}px;
+          /* The label and caption stop short of the icons, which overlap this row's
+             right end (RBAR-83): a caption never runs under them (see fitCaption). */
+          padding-right: ${2 * ICON_PX + 16}px;
         }
         /* The contextual label (RBAR-35, prototype L101): what the bar block shows
            right now -- "per side" once loaded, else the mode's empty-state prompt.
            The shared section-label recipe; uppercase comes from it, so the copy stays
            plain-cased in the DOM exactly like the prototype's vm. */
-        .vizlabel { ${SECTION_LABEL} }
+        .vizlabel { ${SECTION_LABEL} flex: none; }
+        .vizlabel[hidden] { display: none; }
         /* Warm up's add caption beside "per side" (RBAR-65 slice 2, mock option D):
            what the selected set adds, in accent mono, unit included ("+15 kg"). */
+        /* By Weight shows the Plate moves from the load before in the same slot and
+           style (RBAR-83). The caption never shows cut: see fitCaption. */
         .vizhl { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
         .vizadd {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 700;
           letter-spacing: .06em; color: var(--rack-accent); white-space: nowrap;
+          min-width: 0; overflow: hidden;
         }
         .vizadd[hidden] { display: none; }
         /* The head's icon buttons: Share then fullscreen (RBAR-61). One shared box rule
@@ -932,6 +953,13 @@ class RackConsole extends HTMLElement {
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
     this.barnote = this.root.querySelector('[data-barnote]')!;
     this.vizLabel = this.root.querySelector('[data-viz-label]')!;
+    // The caption is fitted to its room (RBAR-83), so re-fit it when the room changes
+    // (a rotation) and once the number font has loaded (it sets the caption's width).
+    this.captionFit?.disconnect();
+    this.captionFit =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this.fitCaption());
+    this.captionFit?.observe(this.root.querySelector('.vizhead')!);
+    void document.fonts?.ready.then(() => this.fitCaption());
     this.announcer = this.root.querySelector('[data-announce]')!;
     this.over = this.root.querySelector('[data-over]')!;
     this.another = this.root.querySelector('[data-another]')!;
@@ -1262,6 +1290,15 @@ class RackConsole extends HTMLElement {
    *  - By Weight without a Target, or By Plates: the linked Plates as the carried Side.
    */
   applyLink(link: LinkLoad): void {
+    this.linking = true; // no Plate moves caption for a link's load (RBAR-83)
+    try {
+      this.layLink(link);
+    } finally {
+      this.linking = false;
+    }
+  }
+
+  private layLink(link: LinkLoad): void {
     this.closeWays(); // a link pasted over an open ways sheet replaces its load
     this.unitPref = link.unit;
     // The entry seeds below read in the link's unit, so hand it over first (a later
@@ -1444,6 +1481,8 @@ class RackConsole extends HTMLElement {
 
   disconnectedCallback(): void {
     this.wake.hold(false);
+    this.captionFit?.disconnect();
+    this.captionFit = null;
   }
 
   // A new Target always lands on the at-or-under primary -- any prior over choice is
@@ -1663,8 +1702,17 @@ class RackConsole extends HTMLElement {
         ? warmupView(this.ramp.rows, this.warmIdx, unit, plateSetFor(this._plateSetKey).unit)
         : null;
     this.warmup.view = view;
-    this.vizAdd.hidden = view?.addCaption == null;
-    this.vizAdd.textContent = view?.addCaption ?? '';
+    // By Weight captions the Plate moves from the load before (RBAR-83) in the same slot.
+    this.loadTrack = trackLoad(
+      this.linking ? NO_TRACK : this.loadTrack,
+      this.mode === 'decode' ? this.side : null,
+      this.keypadOpen && this.mode === 'decode',
+    );
+    this.captionText = view
+      ? view.addCaption
+      : movesCaption(this.loadTrack, this.side, plateSetFor(this._plateSetKey).unit);
+    this.vizAdd.textContent = this.captionText ?? '';
+    this.fitCaption();
     this.entry.unit = unit;
     this.recentsRow.unit = unit;
     // The Recent rail highlights the chip matching the live Target (RBAR-37): fed in
@@ -1809,6 +1857,22 @@ class RackConsole extends HTMLElement {
         ),
       );
     }
+  }
+
+  // The caption beside "per side" is read literally (RBAR-83), so it never shows cut. One
+  // too long for its room first takes the label's place (it names the moves on one Side
+  // either way); one too long even then is not shown. Measured, so only a real layout
+  // can trip it: with no layout (happy-dom, a hidden console) both widths read 0.
+  // Re-run on every render and whenever the head row's size changes.
+  private fitCaption(): void {
+    this.vizLabel.hidden = false;
+    this.vizAdd.hidden = this.captionText === null;
+    const cut = () => this.vizAdd.scrollWidth > this.vizAdd.clientWidth;
+    if (this.vizAdd.hidden || !cut()) return;
+    this.vizLabel.hidden = true;
+    if (!cut()) return;
+    this.vizLabel.hidden = false;
+    this.vizAdd.hidden = true;
   }
 
   // Another way's surfaces (RBAR-66), shown only while the Total has more than one way:

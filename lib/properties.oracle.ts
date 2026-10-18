@@ -599,3 +599,29 @@ export function waysOracle(
   }
   return out;
 }
+
+/**
+ * Do what a Plate moves caption says to Side `side` (stamped faces, inside -> outside),
+ * literally: take its "off" Plates off one at a time from the outside, then put its "on"
+ * Plates on in order. "+15 +2.5 kg", "-2.5 kg" and "off 1, on 5 + 2.5 kg" all read
+ * (the Warm up and By Weight captions, ADR-0015 as amended, RBAR-83). Null when an "off"
+ * Plate is not the outermost one left -- a caption the lifter could not follow.
+ */
+export function followCaption(side: readonly string[], cap: string): string[] | null {
+  const body = cap.replace(/ (kg|lb)$/, '');
+  const out = [...side];
+  let off: string[] = [];
+  let on: string[] = [];
+  const m = /^off (.+), on (.+)$/.exec(body);
+  if (m) {
+    off = m[1].split(' + ');
+    on = m[2].split(' + ');
+  } else {
+    for (const t of body.split(' ')) (t.startsWith('-') ? off : on).push(t.slice(1));
+  }
+  for (const f of off) {
+    if (out[out.length - 1] !== f) return null;
+    out.pop();
+  }
+  return [...out, ...on];
+}

@@ -68,7 +68,9 @@ import {
   oracleGridKg,
   storedPairsOracle,
   waysOracle,
+  followCaption,
 } from './properties.oracle.ts';
+import { NO_TRACK, movesCaption, trackLoad } from './byweight.ts';
 import type { StationRule } from './properties.oracle.ts';
 import {
   planEasyRamp,
@@ -2556,6 +2558,69 @@ describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-00
         expect(d.length).toBeLessThanOrEqual(MAX_ANSWER_CHARS);
         expect(d.split('.').length).toBeLessThanOrEqual(2);
         if (d !== '') expect(Number.isFinite(answerOf(d))).toBe(true);
+      }),
+      opts,
+    );
+  });
+});
+
+describe("By Weight's Plate moves caption (RBAR-83, ADR-0015 as amended)", () => {
+  // A run of By Weight loads on one rig: each a Target's Decode answer on one of its
+  // ways (RBAR-66), the Sides the shell would render one after another.
+  const loadsArb = rigArb.chain((rig) =>
+    fc
+      .array(fc.tuple(targetArb(rig), fc.nat(MAX_WAYS - 1)), { minLength: 2, maxLength: 5 })
+      .map((picks) => ({
+        rig,
+        sides: picks.map(([t, w]) => {
+          const ways = waysFor(decode(t, rig.baselineKg, rig.inventory).primary.side, rig.inventory);
+          return ways[w % ways.length];
+        }),
+      })),
+  );
+  const faces = (side: readonly Plate[]) => side.map(plateFace);
+  const unitOf = (rig: Rig) => plateSetFor(rig.set).unit;
+
+  it('following the caption literally rebuilds the new Side from the previous one; it shows exactly when both have Plates and they differ (RBAR-83, ADR-0015 as amended)', () => {
+    fc.assert(
+      fc.property(loadsArb, ({ rig, sides }) => {
+        let t = trackLoad(NO_TRACK, sides[0], false);
+        expect(movesCaption(t, sides[0], unitOf(rig))).toBeNull(); // the first load: none
+        for (let i = 1; i < sides.length; i++) {
+          const [from, to] = [sides[i - 1], sides[i]];
+          t = trackLoad(t, to, false);
+          const cap = movesCaption(t, to, unitOf(rig));
+          const changed = faces(from).join() !== faces(to).join();
+          expect(cap !== null).toBe(from.length > 0 && to.length > 0 && changed);
+          if (cap !== null) expect(followCaption(faces(from), cap)).toEqual(faces(to));
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('while the Target is being edited the caption measures from the load before the edit, and a re-render of the same load keeps it (RBAR-83)', () => {
+    fc.assert(
+      fc.property(loadsArb, ({ rig, sides }) => {
+        const [start, ...typed] = sides;
+        let t = trackLoad(NO_TRACK, start, false);
+        for (const s of typed) t = trackLoad(t, s, true); // mid-entry loads
+        const last = typed[typed.length - 1];
+        const fromStart = (cap: string | null) => {
+          const changed = faces(start).join() !== faces(last).join();
+          expect(cap !== null).toBe(start.length > 0 && last.length > 0 && changed);
+          if (cap !== null) expect(followCaption(faces(start), cap)).toEqual(faces(last));
+        };
+        fromStart(movesCaption(t, last, unitOf(rig)));
+        t = trackLoad(t, last, false); // the keypad closes on the same load
+        fromStart(movesCaption(t, last, unitOf(rig)));
+        // The next load is measured from the one the edit settled on.
+        const next = [...last];
+        t = trackLoad(t, next, false);
+        expect(movesCaption(t, next, unitOf(rig))).toBeNull(); // same Plates: nothing to do
+        // Leaving By Weight forgets the track: no caption on the way back in.
+        t = trackLoad(trackLoad(t, null, false), last, false);
+        expect(movesCaption(t, last, unitOf(rig))).toBeNull();
       }),
       opts,
     );
