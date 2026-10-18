@@ -19,6 +19,7 @@ import {
   plateLabel,
   rowWidthAt,
   sleeveFit,
+  grownMaxScale,
   sleeveLayout,
 } from './sleevefit.ts';
 import type { SleevePart } from './sleevefit.ts';
@@ -66,6 +67,27 @@ describe('sleeveFit (the host fit <rack-sleeve> and the share picture share)', (
 
   it('an unmeasured height (0) leaves the cap at full zoom', () => {
     expect(sleeveFit([eleiko(25)], 360, 0).scale).toBe(MAX_SCALE);
+  });
+
+  // RBAR-99: the Home Screen app's bigger Bar.
+  it('a raised maxScale lets a tall host draw a bigger bumper, still height-fitted', () => {
+    const grown = grownMaxScale(349, 0.65);
+    expect(grown * BUMPER_MM).toBeCloseTo(0.65 * 349, 9);
+    // A 235px host holds a 227px bumper: the grown cap, not the handoff's 168px.
+    expect(sleeveFit([eleiko(25)], 349, 235, false, grown).scale).toBeCloseTo(grown, 9);
+    // A shorter host still lowers it by the bumper height.
+    expect(sleeveFit([eleiko(25)], 349, 200, false, grown).scale).toBeCloseTo(
+      (200 - SLEEVE_PAD_PX) / BUMPER_MM,
+      9,
+    );
+  });
+
+  it('grow 0, negative or not a number keeps the handoff zoom', () => {
+    for (const g of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(grownMaxScale(349, g)).toBe(MAX_SCALE);
+    }
+    // A narrow sleeve never goes below the handoff zoom either.
+    expect(grownMaxScale(100, 0.65)).toBe(MAX_SCALE);
   });
 });
 

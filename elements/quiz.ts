@@ -21,7 +21,13 @@ import { readPersisted, writePersisted } from './persist.ts';
 import { SETUP_LINK, loadRig } from './rig.ts';
 import { BACK_GLYPH, GEAR_GLYPH } from './quizglyphs.ts';
 import { DEL_ICON } from './delglyph.ts';
-import { DISC_INK, darkInk, plateLabel } from '../lib/sleevefit.ts';
+import {
+  DISC_INK,
+  SLEEVE_BLOCK_PX,
+  SLEEVE_PAD_PX,
+  darkInk,
+  plateLabel,
+} from '../lib/sleevefit.ts';
 import { PLATE_SETS } from '../lib/platesets.ts';
 import { barLabel, barsFor } from '../lib/custombars.ts';
 import { inventoryOnHand } from '../lib/platesonhand.ts';
@@ -252,6 +258,8 @@ class RackQuiz extends HTMLElement {
           padding: 0 20px 12px; gap: 10px;
           color: var(--rack-text); font-family: var(--rack-font);
           -webkit-font-smoothing: antialiased;
+          /* RBAR-99: the bar block's grown cap is a share of the column's width (cqw). */
+          container-type: inline-size;
         }
         /* One phone screen (ADR-0013): every block keeps its height but the bar block,
            which takes what is left (clamped). */
@@ -295,7 +303,12 @@ class RackQuiz extends HTMLElement {
         }
         /* The bar block: the one flexing block. The flash ring sits over it. */
         .viz {
-          flex: 1 1 auto; min-height: 104px; max-height: 204px;
+          flex: 1 1 auto; min-height: 104px;
+          /* RBAR-99 (ADR-0013 amended): in the Home Screen app the cap grows to the
+             sleeve's pad + a bumper of --rack-bar-grow x the column width, as the
+             console's; a browser tab (grow 0) keeps exactly 204px. */
+          max-height: max(${SLEEVE_BLOCK_PX}px,
+            calc(${SLEEVE_PAD_PX}px + var(--rack-bar-grow, 0) * 100cqw));
           display: flex; position: relative;
           /* The Home Screen app's spare height goes under it (RBAR-99, tokens.css). */
           margin-bottom: var(--rack-bar-air);

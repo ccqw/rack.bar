@@ -161,6 +161,10 @@
      (ADR-0013: spare height falls below the column); `auto` in the Home Screen app,
      below. */
   --rack-bar-air: 0px;
+  /* How big the Bar may draw (RBAR-99): a bumper may stand up to this share of the
+     sleeve's width, and the bar block's cap grows to hold it (never below the handoff's
+     204px block or 168px bumper). 0 in a browser tab: exactly the handoff's size. */
+  --rack-bar-grow: 0;
 
   /* Scrims (handoff "Setup sheet" / "Share card"). The share modal dims harder
      (.72) than a bottom sheet (.55). */
@@ -196,9 +200,10 @@
 }
 
 /* The Home Screen app (RBAR-99): no Safari toolbars, so the page owns the whole
-   screen and a tall phone has height to spare once the bar block reaches its cap.
-   The spare goes around the bar block, not into a strip under the controls. The
-   body's own standalone height is in index.html / game.html. */
+   screen and a tall phone has height to spare. The Bar draws bigger first (a bumper
+   up to 0.65 x the sleeve's width), and what is left goes under the bar block, not
+   into a strip under the controls. The body's own standalone height is in
+   index.html / game.html. */
 @media (display-mode: standalone) {
-  :root { --rack-bar-air: auto; }
+  :root { --rack-bar-air: auto; --rack-bar-grow: 0.65; }
 }

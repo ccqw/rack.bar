@@ -3,7 +3,7 @@ import './console.ts';
 import { COLLAPSE_MS, LONG_PRESS_MS, UNDO_MS } from './recents.ts';
 import { statusPill, onBarLine, belowBarNote, announceLine } from './console.ts';
 import { ELEIKO_KG } from '../lib/plates.ts';
-import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
+import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from './sleeve.ts';
 import { lbToKg } from '../lib/units.ts';
 
 type Console = HTMLElement & {
@@ -2535,7 +2535,7 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
     const viz = rule(css(), '.viz');
     expect(viz).toContain('flex: 1 1 0');
     expect(viz).toContain(`min-height: ${PAD + LABEL + GAP + SLEEVE_MIN_PX}px`);
-    expect(viz).toContain(`max-height: ${SLEEVE_BLOCK_PX}px`);
+    expect(viz).toContain(`max-height: max(${SLEEVE_BLOCK_PX}px,`);
     expect(viz).toContain(`gap: ${GAP}px`);
     expect(viz).toContain(`padding-top: ${PAD}px`);
     expect(rule(css(), '.vizhead')).toContain(`height: ${LABEL}px`);
@@ -2549,6 +2549,22 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
   // across modes and the controls sit on the bottom inset. Never the keypad or tiles.
   it('puts the Home Screen app\'s spare height under the bar block', () => {
     expect(rule(css(), '.viz')).toContain('margin-bottom: var(--rack-bar-air)');
+  });
+
+  // RBAR-99 (the owner's pick, variant A): in the Home Screen app the bar block's cap
+  // grows to hold a bumper of --rack-bar-grow x the column width (the label row + the
+  // sleeve's pad on top), the bumper <rack-sleeve>'s grownMaxScale allows. Grow is 0 in
+  // a browser tab, so max(204px, 34px) keeps the handoff's block there.
+  it('grows the bar block\'s cap with --rack-bar-grow, against the column\'s width', () => {
+    const viz = rule(css(), '.viz');
+    expect(viz).toMatch(
+      new RegExp(
+        `max-height: max\\(${SLEEVE_BLOCK_PX}px,\\s*calc\\(${PAD + LABEL + GAP + SLEEVE_PAD_PX}px ` +
+          `\\+ var\\(--rack-bar-grow, 0\\) \\* 100cqw\\)\\)`,
+      ),
+    );
+    // cqw resolves against the column: .stack is the query container.
+    expect(rule(css(), '.stack')).toContain('container-type: inline-size');
   });
 
   it('keeps every other block at its natural height (only the bar flexes)', () => {

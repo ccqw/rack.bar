@@ -19,7 +19,7 @@
 import { MINUS_ICON, PLUS_ICON } from './entry.ts';
 import './palette.ts';
 import './loaded.ts';
-import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
+import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from './sleeve.ts';
 import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
@@ -407,6 +407,8 @@ class RackConsole extends HTMLElement {
         .stack {
           display: flex; flex-direction: column; gap: 12px; align-items: stretch;
           flex: 1; min-height: 0;
+          /* RBAR-99: the bar block's grown cap is a share of the column's width (cqw). */
+          container-type: inline-size;
         }
         /* Only the bar flexes: every other block keeps its natural height. */
         .stack > :not(.viz) { flex: none; }
@@ -449,7 +451,12 @@ class RackConsole extends HTMLElement {
           display: flex; flex-direction: column; gap: ${VIZ_GAP_PX}px;
           flex: 1 1 0;
           min-height: ${VIZ_PAD_PX + LABEL_PX + VIZ_GAP_PX + SLEEVE_MIN_PX}px;
-          max-height: ${SLEEVE_BLOCK_PX}px;
+          /* RBAR-99 (ADR-0013 amended): in the Home Screen app (--rack-bar-grow > 0,
+             tokens.css) the cap grows to the label row + the sleeve's pad + a bumper of
+             grow x the column width, the same bumper <rack-sleeve>'s grownMaxScale allows.
+             Never below the handoff's block; a browser tab (grow 0) keeps exactly it. */
+          max-height: max(${SLEEVE_BLOCK_PX}px,
+            calc(${VIZ_PAD_PX + LABEL_PX + VIZ_GAP_PX + SLEEVE_PAD_PX}px + var(--rack-bar-grow, 0) * 100cqw));
           /* RBAR-99: in the Home Screen app the height left once the block is at its
              cap goes under it (auto margins take only what flexing leaves), never
              into the keypad or tiles. 0 in a browser tab (tokens.css). */

@@ -286,4 +286,14 @@ describe('<rack-quiz> Home Screen app height (RBAR-99)', () => {
     expect(at).toBeGreaterThanOrEqual(0);
     expect(css.slice(at, css.indexOf('}', at))).toContain('margin-bottom: var(--rack-bar-air)');
   });
+
+  it('grows the bar block\'s cap with --rack-bar-grow, against the column\'s width', () => {
+    const css = mount().root.querySelector('style')!.textContent!;
+    const at = css.indexOf('.viz {');
+    expect(css.slice(at, css.indexOf('}', at))).toMatch(
+      /max-height: max\(204px,\s*calc\(8px \+ var\(--rack-bar-grow, 0\) \* 100cqw\)\)/,
+    );
+    const host = css.indexOf(':host {');
+    expect(css.slice(host, css.indexOf('}', host))).toContain('container-type: inline-size');
+  });
 });

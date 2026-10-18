@@ -196,4 +196,17 @@ describe('Home Screen app height (RBAR-99)', () => {
       tokens.indexOf('--rack-bar-air: 0px'),
     );
   });
+
+  // The owner's pick (variant A): the Bar draws bigger in the Home Screen app only. A
+  // browser tab keeps grow 0, so the handoff's 204px block and 168px bumper (ADR-0013).
+  it('tokens.css: the bigger Bar (--rack-bar-grow) is standalone-only', () => {
+    const sa = standalone(tokens);
+    const base = without(tokens, sa);
+    expect(base).toMatch(/--rack-bar-grow:\s*0;/);
+    expect(base).not.toMatch(/--rack-bar-grow:\s*0\.\d/);
+    expect(sa.join('\n')).toMatch(/:root\s*\{[^}]*--rack-bar-grow:\s*0\.65;/);
+    expect(tokens.indexOf('--rack-bar-grow: 0.65')).toBeGreaterThan(
+      tokens.indexOf('--rack-bar-grow: 0;'),
+    );
+  });
 });

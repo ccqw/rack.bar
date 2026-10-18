@@ -139,3 +139,30 @@ per "spare height falls below the column", the rest became the strip.
 
 A real check needs the iPhone Home Screen app: Chromium can't confirm what iOS gives
 `100dvh` and the insets in standalone.
+
+### The Bar draws bigger in the Home Screen app (RBAR-99, the owner's pick)
+
+On the phone, the first cut left the Bar at the handoff's 168px bumper with a big gap
+under it (164px in By Weight at 112 kg, 80px By Plates, 53px Warm up). The owner
+compared three variants (bigger; same size centred; bigger and centred) and picked the
+bigger Bar, in the Home Screen app only. This amends "a tall host never zooms past the
+handoff's 168px bumper" and "it does not go into a bigger Bar" for standalone.
+
+- **The rule.** A bumper may stand up to `--rack-bar-grow` x the sleeve's width. The
+  token is `0` in a browser tab and `0.65` in standalone (tokens.css). The zoom cap is
+  `grownMaxScale(hostW, grow)` in lib/sleevefit.ts: `max(MAX_SCALE, grow x hostW /
+  450 mm)`, passed to `sleeveFit` as its `maxScale`. The height fit (a bumper stands
+  `SLEEVE_PAD_PX` under the host) and the width fit (a heavy load zooms out to fit the
+  sleeve) still apply under it, so a loaded sleeve draws exactly as wide as before.
+- **The bar block's cap grows to match**:
+  `max(204px, 5 + 15 + 6 + 8 px + grow x 100cqw)` (the label row, the sleeve's pad, the
+  bumper), with the column (`.stack`) as the size container. The quiz's bar block,
+  which has no label row, uses `max(204px, 8px + grow x 100cqw)`. With grow 0 both
+  reduce to exactly 204px, so a browser tab is unchanged at every viewport.
+- **What is left still goes under the bar block** (`--rack-bar-air`). No centring: the
+  Bar's top stays where the browser tab puts it in every mode.
+
+Measured at 393x852 standalone (By Weight 112 kg / By Plates / Warm up Working set):
+bar block 261 / 261 / 257px, bumper 227 / 227 / 223px (was 168), gap under it 107 / 23
+/ 0px, strip 0, over 0; the bar never moves between modes. The quiz's bar block is
+237px. The four Safari viewports' fit-check lines are identical to main's.
