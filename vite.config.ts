@@ -4,10 +4,8 @@ import { defineConfig, configDefaults } from 'vitest/config';
 import { offline } from './scripts/offline.ts';
 
 // rack.bar is a static multi-page app (ADR-0001): each page is its own
-// hand-authored document. v1 ships a single entry (the calculator); the deferred
-// game mode (ROADMAP) becomes a second entry here, sharing lib/ and elements/.
-// Listing entries from the start makes adding the game page additive, not a
-// restructure.
+// hand-authored document, sharing lib/ and elements/. Two entries: the calculator
+// and the Loadout quiz (RBAR-92). The service worker precaches both (ADR-0018).
 const root = import.meta.dirname;
 // Vitest's default test-file pattern, and the folders whose tests run without a DOM.
 export const TEST_FILES = configDefaults.include[0]!;
@@ -29,7 +27,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(root, 'index.html'),
-        // game: resolve(root, 'game.html'),  // future — see ROADMAP.md
+        game: resolve(root, 'game.html'),
       },
     },
   },

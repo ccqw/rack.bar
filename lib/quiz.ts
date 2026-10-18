@@ -305,12 +305,23 @@ export function diagnose(q: Question, answer: number): string {
 }
 
 /**
- * The breakdown's arithmetic after the Plate chips: "= 37.5 x 2 + 20 kg bar + 2 x 2.5 kg
- * collars = 100 kg". `barName` is the Bar as Setup names it ("20 kg", "45 lb").
+ * The breakdown's arithmetic after the Plate chips, as the terms the line wraps
+ * between: ["= 37.5", "x 2", "+ 20 kg bar", "+ 2 x 2.5 kg collars", "= 100 kg"].
+ * `barName` is the Bar as Setup names it ("20 kg", "45 lb").
  */
+export function breakdownTerms(q: Question, barName: string): string[] {
+  return [
+    `= ${q.sideShown}`,
+    'x 2',
+    `+ ${barName} bar`,
+    ...(q.collarKg > 0 ? [`+ 2 x ${r2(q.collarKg)} kg collars`] : []),
+    `= ${q.totalShown} ${q.unit}`,
+  ];
+}
+
+/** The breakdown as one line: "= 37.5 x 2 + 20 kg bar + 2 x 2.5 kg collars = 100 kg". */
 export function breakdownText(q: Question, barName: string): string {
-  const collars = q.collarKg > 0 ? ` + 2 x ${r2(q.collarKg)} kg collars` : '';
-  return `= ${q.sideShown} x 2 + ${barName} bar${collars} = ${q.totalShown} ${q.unit}`;
+  return breakdownTerms(q, barName).join(' ');
 }
 
 // ----- the keypad -----

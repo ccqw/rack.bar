@@ -31,8 +31,21 @@ import { persistedPrimaryUnit } from './console.ts';
 import type { LinkLoad } from './console.ts';
 import './setup.ts';
 import { SLIDERS_GLYPH } from './sliders.ts';
+import { GRAD_CAP_GLYPH } from './quizglyphs.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
-import { readPersisted, writePersisted } from './persist.ts';
+import { writePersisted } from './persist.ts';
+import {
+  BAR_KEY,
+  COLLAR_KEY,
+  CUSTOM_BARS_KEY,
+  PLATESET_KEY,
+  PLATES_ON_HAND_KEY,
+  loadBar,
+  loadCollar,
+  loadCustomBars,
+  loadPlateSet,
+  loadPlatesOnHand,
+} from './rig.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
@@ -43,7 +56,6 @@ import {
   barLabel,
   barsFor,
   isValidStamp,
-  parseCustomBars,
   removeCustomBar,
   restoreCustomBar,
   serializeCustomBars,
@@ -53,13 +65,7 @@ import type { BarStamp } from '../lib/custombars.ts';
 import { format, isUnit } from '../lib/units.ts';
 import { parseLink } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
-import {
-  ALL_PLATES,
-  clearSet,
-  parsePlatesOnHand,
-  serializePlatesOnHand,
-  setPairs,
-} from '../lib/platesonhand.ts';
+import { ALL_PLATES, clearSet, serializePlatesOnHand, setPairs } from '../lib/platesonhand.ts';
 import type { PlatesOnHand } from '../lib/platesonhand.ts';
 
 type Console = HTMLElement & {
@@ -79,15 +85,10 @@ type Setup = HTMLElement & {
   close(): void;
 };
 
-// One persisted config key per concern (ADR-0007), read/written through the shared
-// best-effort helpers (persist.ts). Recents persists shell-side too but console-owned,
-// under its own key (ADR-0009); the unit preference is console-owned too (ADR-0010).
-const STORAGE_KEY = 'rackbar.barKg';
-const COLLAR_STORAGE_KEY = 'rackbar.collarKg';
-const PLATESET_STORAGE_KEY = 'rackbar.plateSet';
-const CUSTOM_BARS_STORAGE_KEY = 'rackbar.customBars';
-// Pairs of Plates on Hand (RBAR-72, ADR-0016): every set's limits in one key.
-const PLATES_ON_HAND_STORAGE_KEY = 'rackbar.platesOnHand';
+// One persisted config key per concern (ADR-0007), read through elements/rig.ts (which
+// the Loadout quiz page shares) and written through the best-effort helpers
+// (persist.ts). Recents persists shell-side too but console-owned, under its own key
+// (ADR-0009); the unit preference is console-owned too (ADR-0010).
 
 // A stamp from an event payload, or null: the sheet is trusted to send one, but the
 // list only ever takes a valid stamp (the ADR-0007 validate-at-the-boundary rule).
@@ -122,11 +123,11 @@ class RackApp extends HTMLElement {
     // so a reload returns to the lifter's own rig. The persisted rig still loads and seeds
     // as usual; the link then overrides it for this view (applyLink), writing nothing.
     const link = this.takeLink();
-    this.plateSetKey = this.loadPlateSet();
-    this.customBars = parseCustomBars(readPersisted(CUSTOM_BARS_STORAGE_KEY));
-    this.barKg = this.loadBar();
-    this.collarKg = this.loadCollar();
-    this.platesOnHand = parsePlatesOnHand(readPersisted(PLATES_ON_HAND_STORAGE_KEY));
+    this.plateSetKey = loadPlateSet();
+    this.customBars = loadCustomBars();
+    this.barKg = loadBar(this.plateSetKey, this.customBars);
+    this.collarKg = loadCollar();
+    this.platesOnHand = loadPlatesOnHand();
     // Children are defined before this runs (imports at top + rack-app's own define is
     // last), so assigning innerHTML upgrades <rack-console>/<rack-setup> synchronously
     // and their connectedCallbacks finish here -- which is why the seeding below (after
@@ -152,6 +153,23 @@ class RackApp extends HTMLElement {
           letter-spacing: -.025em; color: var(--rack-fg); margin: 0;
         }
         .wordmark .dot { color: var(--rack-accent); }
+        /* The right side of the header: the Loadout quiz door, then the Setup pill. */
+        .hdr { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        /* The Loadout quiz door (RBAR-92): a graduation cap in the head icon-button
+           style (the console's Share / fullscreen buttons: a 30px raised box, 9px
+           radius), left of Setup. Not a stopwatch: that glyph is the rest timer's. The
+           drawn box keeps a 44px-tall tap target through an invisible layer. */
+        .quizlink {
+          position: relative; flex: none;
+          width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+          color: var(--rack-text-secondary); background: var(--rack-raised);
+          border: 1px solid var(--rack-border); border-radius: 9px;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .quizlink::after { content: ""; position: absolute; inset: -8px -5px; }
+        .quizlink:hover { color: var(--rack-text); border-color: var(--rack-border-hover); }
+        .quizlink:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        .quizlink svg { display: block; }
         /* The Setup pill: the rig's current Bar, tappable to open the sheet. A raised
            fill over secondary ink (prototype L82), one line: Bar + middot + set. */
         .pill {
@@ -191,6 +209,12 @@ class RackApp extends HTMLElement {
       </style>
       <header>
         <h1 class="wordmark">rack<span class="dot">.</span>bar</h1>
+        <div class="hdr">
+        <a class="quizlink" data-quiz-link href="/game.html" aria-label="Loadout quiz">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor"
+               stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"
+               aria-hidden="true">${GRAD_CAP_GLYPH}</svg>
+        </a>
         <button type="button" class="pill" data-setup-pill
                 aria-haspopup="dialog" aria-expanded="false">
           <svg class="sliders" data-pill-icon width="13" height="13" viewBox="0 0 16 16"
@@ -202,6 +226,7 @@ class RackApp extends HTMLElement {
                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
           </svg>
         </button>
+        </div>
       </header>
       <main><rack-console></rack-console></main>
       <rack-setup></rack-setup>
@@ -373,7 +398,7 @@ class RackApp extends HTMLElement {
   private setPlatesOnHand(next: PlatesOnHand): void {
     if (next === this.platesOnHand) return;
     this.platesOnHand = next;
-    writePersisted(PLATES_ON_HAND_STORAGE_KEY, serializePlatesOnHand(next));
+    writePersisted(PLATES_ON_HAND_KEY, serializePlatesOnHand(next));
     this.console.platesOnHand = next;
     this.setup.platesOnHand = next;
   }
@@ -381,7 +406,7 @@ class RackApp extends HTMLElement {
   // Persist the custom list and feed it to the sheet (which re-renders its Bar row).
   private setCustomBars(list: readonly BarStamp[]): void {
     this.customBars = list;
-    writePersisted(CUSTOM_BARS_STORAGE_KEY, serializeCustomBars(list));
+    writePersisted(CUSTOM_BARS_KEY, serializeCustomBars(list));
     this.setup.customBars = list;
   }
 
@@ -395,7 +420,7 @@ class RackApp extends HTMLElement {
     // A Bar only exists within its set (ADR-0010). After a share link put another set on
     // screen (ADR-0014), picking a Bar adopts that set too, or the next boot would reject
     // the saved Bar against the old saved set and silently fall back to its default.
-    if (this.loadPlateSet() !== this.plateSetKey) this.savePlateSet(this.plateSetKey);
+    if (loadPlateSet() !== this.plateSetKey) this.savePlateSet(this.plateSetKey);
     this.saveBar(kg);
     this.console.barKg = kg;
     this.setup.barKg = kg;
@@ -444,45 +469,20 @@ class RackApp extends HTMLElement {
     this.pillLabel.textContent = `${name} bar \u00B7 ${set.shortLabel}`;
   }
 
-  // Read the persisted plate set, validated against the offered keys (ADR-0007 pattern):
-  // a missing, blocked, or off-menu value falls back to Competition (the default).
-  private loadPlateSet(): PlateSetKey {
-    const raw = readPersisted(PLATESET_STORAGE_KEY);
-    return raw !== null && isOfferedPlateSet(raw) ? raw : 'comp';
-  }
-
-  // Read the persisted Bar, validated against the ACTIVE set's Bars. A missing,
-  // non-numeric, off-menu, or storage-blocked value falls back to that set's default Bar,
-  // so a corrupt or legacy key can never load a Bar no tile matches.
-  private loadBar(): number {
-    const set = plateSetFor(this.plateSetKey);
-    const raw = readPersisted(STORAGE_KEY);
-    if (raw === null) return set.defaultBarKg; // absent or storage blocked: the default.
-    const n = Number(raw);
-    return this.offeredBars().includes(n) ? n : set.defaultBarKg;
-  }
-
-  // Persist the Bar, best-effort (writePersisted swallows a failed write).
+  // Persist the Bar, best-effort (writePersisted swallows a failed write). The stored
+  // rig is read back through elements/rig.ts, which validates each key (ADR-0007).
   private saveBar(kg: number): void {
-    writePersisted(STORAGE_KEY, String(kg));
-  }
-
-  // Read the persisted Collar, validated against the offered set exactly like the Bar.
-  private loadCollar(): number {
-    const raw = readPersisted(COLLAR_STORAGE_KEY);
-    if (raw === null) return DEFAULT_COLLAR_KG; // absent or storage blocked: None.
-    const n = Number(raw);
-    return isOfferedCollar(n) ? n : DEFAULT_COLLAR_KG;
+    writePersisted(BAR_KEY, String(kg));
   }
 
   // Persist the Collar, best-effort -- same swallow-on-failure contract as the Bar.
   private saveCollar(kg: number): void {
-    writePersisted(COLLAR_STORAGE_KEY, String(kg));
+    writePersisted(COLLAR_KEY, String(kg));
   }
 
   // Persist the plate set, best-effort.
   private savePlateSet(key: PlateSetKey): void {
-    writePersisted(PLATESET_STORAGE_KEY, key);
+    writePersisted(PLATESET_KEY, key);
   }
 }
 
