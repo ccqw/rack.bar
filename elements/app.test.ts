@@ -440,6 +440,29 @@ describe('<rack-app> header fidelity (RBAR-45)', () => {
     );
     expect(rule(root, '.pill[aria-expanded="true"] .chev')).toContain('rotate(180deg)');
   });
+
+  // RBAR-103: with the quiz door in the header the pill wrapped to two lines at 320px.
+  // happy-dom cannot lay out, so the measured check is scripts/fit-check.js (PILL
+  // WRAPS); this locks the declarations that keep it one line.
+  it('keeps the pill on one line: it may shrink, and its label ellipsizes, never wraps', () => {
+    const { root } = mountApp();
+    expect(rule(root, '.pill {')).toContain('min-width: 0');
+    const label = rule(root, '.pill [data-pill-label] {');
+    expect(label).toContain('min-width: 0');
+    expect(label).toContain('white-space: nowrap');
+    expect(label).toContain('overflow: hidden');
+    expect(label).toContain('text-overflow: ellipsis');
+    expect(rule(root, '.pill .chev {')).toContain('flex: none');
+  });
+
+  it('tightens the header row and pill on narrow phones; the sliders glyph goes below 360px', () => {
+    const { root } = mountApp();
+    const css = root.querySelector('style')!.textContent!;
+    expect(css).toMatch(
+      /@media \(max-width: 389px\) \{\s*header \{ gap: 8px; \}\s*\.pill \{ gap: 5px; padding-left: 10px; padding-right: 10px; \}/,
+    );
+    expect(css).toMatch(/@media \(max-width: 359px\) \{\s*\.pill \.sliders \{ display: none; \}/);
+  });
 });
 
 describe('rack-app layout', () => {

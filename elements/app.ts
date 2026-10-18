@@ -180,12 +180,33 @@ class RackApp extends HTMLElement {
           font-family: var(--rack-font-num); font-size: 11px; font-weight: 600;
           letter-spacing: .04em; color: var(--rack-text-secondary);
           background: var(--rack-raised); border: 1px solid var(--rack-border);
-          border-radius: 999px; padding: 8px 14px; min-height: 36px; cursor: pointer;
+          border-radius: 999px; padding: 8px 14px; min-height: 36px; min-width: 0;
+          cursor: pointer;
         }
         .pill:hover { color: var(--rack-fg); }
         .pill:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* One line at every width (RBAR-103): the pill may shrink (its min-width: 0) and
+           its label ellipsizes rather than wrapping, so the header row never grows a
+           second line. The glyphs never shrink. */
+        .pill [data-pill-label] {
+          min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         .pill .sliders { display: block; flex: none; }
-        .pill .chev { display: block; }
+        .pill .chev { display: block; flex: none; }
+        /* The narrow tiers (RBAR-103): since the quiz door joined the header (RBAR-92)
+           the handoff's spacing leaves the pill too little room on a narrow phone. Up
+           to 389px the row and the pill tighten their gaps and side padding (the pill
+           keeps its 36px height and tap target), which keeps "45 lb bar - Training"
+           whole at 375px; up to 359px the sliders glyph also goes (the chevron still
+           marks it tappable), which keeps "20 kg bar - Comp" whole at 320px. A longer
+           label than the room ellipsizes. */
+        @media (max-width: 389px) {
+          header { gap: 8px; }
+          .pill { gap: 5px; padding-left: 10px; padding-right: 10px; }
+        }
+        @media (max-width: 359px) {
+          .pill .sliders { display: none; }
+        }
         /* The rotate eases only for lifters who have not asked motion off; the
            end states themselves are instant either way (BUTTON_FX convention). */
         @media (prefers-reduced-motion: no-preference) {
