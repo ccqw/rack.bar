@@ -255,3 +255,18 @@ URL, the field and Recents), and the recipient's own card reads the same Total a
 caption as the sender's. A second property shares from By Weight and Warm up under
 random Plates on Hand limits and checks the link exists and opens to the same Plates,
 Total and Collars.
+
+## Amendment 2026-10-17: an opened link sets the lifter's Target (RBAR-87)
+
+RBAR-87 gives the console one stored Target, `rackbar.target`, shared by By Weight and
+Warm up (ADR-0015 as amended). Opening a link now writes that key. "The link applies
+transiently" above still holds for the rig: the linked set, Bar, Collar and unit write
+no `rackbar.*` key. The load half is different. A By Weight link's Target becomes the
+lifter's stored Target, as its Recents chip already does, so a reload opens on it. That
+reload is on the lifter's own rig. A drifted link (the Plates win, no live decode) stores
+its Plates' Total, the bare-Bar Total included. A By Plates link stores nothing on
+opening. Its load is a built load, so leaving By Plates makes its Total the Target, even
+when it matches the Side the visit began with.
+
+Whether opening a friend's link should replace the saved working weight is open with
+Caitlin. This records the behaviour as built.

@@ -2,7 +2,7 @@
 // element on its own, and the console wiring -- the third mode segment, the working-
 // weight field and its keypad, the shared Side Load, the status pill, Recents and
 // persistence. The rule-wide invariants are in warmup.properties.test.ts.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import './console.ts';
 import './warmup.ts';
 import { planRamp, DEFAULT_RAMP } from '../lib/plan.ts';
@@ -420,13 +420,92 @@ describe('<rack-console> the pre-RBAR-87 rackbar.working key migrates once (ADR-
     expect(workDraft(el)).toBe('20');
   });
 
-  it('runs once: a later Target edit is not undone by a reload', () => {
+  it('runs once: a cleared Target stays cleared across a reload', () => {
+    // Clearing removes rackbar.target, so a legacy key left behind would migrate again.
     localStorage.setItem('rackbar.working', '120');
     let el = mountConsole();
-    type(el, '90');
+    expect(localStorage.getItem('rackbar.working')).toBeNull();
+    type(el, '');
     el.remove();
     el = mountConsole();
-    expect(entryDraft(el)).toBe('90');
-    expect(localStorage.getItem('rackbar.target')).toBe('90');
+    expect(localStorage.getItem('rackbar.target')).toBeNull();
+    modeBtn(el, 'warmup').click();
+    expect(workDraft(el)).toBe('');
+  });
+
+  it('a stored Target that is not a plain decimal the app writes is no Target (ADR-0007)', () => {
+    for (const raw of ['0x8C', '1e300', '1001']) {
+      localStorage.clear();
+      localStorage.setItem('rackbar.target', raw);
+      const el = mountConsole();
+      expect(entryDraft(el)).toBe('20'); // the untouched Bar seed: no Target
+      expect(sideOnScreen(el)).toEqual([]);
+      modeBtn(el, 'warmup').click();
+      expect(workDraft(el)).toBe('');
+      el.remove();
+    }
+  });
+
+  it('a failed write removes the stored Target instead of leaving a stale one (ADR-0009)', () => {
+    localStorage.setItem('rackbar.target', '100');
+    const el = mountConsole();
+    const real = localStorage.setItem.bind(localStorage);
+    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
+      if (k === 'rackbar.target') throw new DOMException('full', 'QuotaExceededError');
+      real(k, v);
+    });
+    try {
+      // A stepper nudge, so no Clear removes the key first: 100 -> 101.
+      q<HTMLButtonElement>(sr(el), '[data-hero-step="inc"]').click();
+      expect(totalText(el)).toBe('101 kg'); // the session keeps working
+    } finally {
+      spy.mockRestore();
+    }
+    expect(localStorage.getItem('rackbar.target')).toBeNull();
+  });
+});
+
+describe('<rack-console> leaving By Plates keeps the Target unless a load was built there (RBAR-87)', () => {
+  it('a set switch while in By Plates is not a built load: the Target and its key stay', () => {
+    const el = mountConsole();
+    type(el, '140');
+    modeBtn(el, 'encode').click();
+    el.plateSet = 'training'; // the rig empties the Bar; the lifter tapped nothing
+    modeBtn(el, 'warmup').click();
+    expect(workDraft(el)).toBe('140');
+    expect(localStorage.getItem('rackbar.target')).toBe('140');
+    modeBtn(el, 'encode').click();
+    el.plateSet = 'comp';
+    modeBtn(el, 'decode').click();
+    expect(entryDraft(el)).toBe('140');
+    expect(totalText(el)).toBe('140 kg'); // decoded again on the new set
+  });
+
+  it('a peek at By Plates from By Weight does not rewrite 141.3 as the 141 load', () => {
+    const el = mountConsole();
+    type(el, '141.3');
+    modeBtn(el, 'encode').click();
+    modeBtn(el, 'warmup').click();
+    expect(workDraft(el)).toBe('141.3');
+    expect(localStorage.getItem('rackbar.target')).toBe('141.3');
+    modeBtn(el, 'decode').click();
+    modeBtn(el, 'encode').click();
+    modeBtn(el, 'decode').click();
+    expect(entryDraft(el)).toBe('141.3');
+    expect(localStorage.getItem('rackbar.target')).toBe('141.3');
+  });
+
+  it('an opened By Plates link is a built load, even when it matches the Side the visit began with (ADR-0014)', () => {
+    const el = mountConsole() as Console & {
+      applyLink(l: { mode: 'encode'; side: readonly unknown[]; unit: 'kg' }): void;
+    };
+    modeBtn(el, 'warmup').click();
+    commitWorking(el, '140');
+    stairs(el)[1].click(); // the 70 kg row: 25 per Side
+    modeBtn(el, 'encode').click();
+    el.applyLink({ mode: 'encode', side: [ELEIKO_KG.find((p) => p.kg === 25)!], unit: 'kg' });
+    modeBtn(el, 'warmup').click();
+    expect(workDraft(el)).toBe('70');
+    expect(localStorage.getItem('rackbar.target')).toBe('70');
   });
 });

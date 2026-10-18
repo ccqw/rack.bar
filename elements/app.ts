@@ -122,7 +122,8 @@ class RackApp extends HTMLElement {
   connectedCallback(): void {
     // A share link in the URL (RBAR-50, ADR-0014) is read FIRST and the fragment cleared,
     // so a reload returns to the lifter's own rig. The persisted rig still loads and seeds
-    // as usual; the link then overrides it for this view (applyLink), writing nothing.
+    // as usual; the link then overrides it for this view (applyLink), writing no rig key
+    // (its Target and Recents chip are the lifter's, RBAR-87 -- see applyLink).
     const link = this.takeLink();
     this.plateSetKey = loadPlateSet();
     this.customBars = loadCustomBars();
@@ -352,7 +353,9 @@ class RackApp extends HTMLElement {
 
   // Apply an opened share link (RBAR-50, ADR-0014): the rig half here, the load half in
   // the console. Transient -- the set, Bar and Collar override the persisted rig for this
-  // view and NO save runs (a later Setup tap persists that one key, as today). Pushed in
+  // view and no rig key is saved (a later Setup tap persists that one key, as today).
+  // The load half is the lifter's own state: the console stores the link's Target
+  // (rackbar.target, RBAR-87) and adds it to Recents (ADR-0014 as amended). Pushed in
   // adoptPlateSet's order (Bar before set) so a re-solve never sees a stale Bar, then
   // the console shows the linked Plates (plates win over a re-solve).
   private applyLink(link: LinkState): void {

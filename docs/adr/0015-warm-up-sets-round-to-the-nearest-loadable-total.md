@@ -284,26 +284,47 @@ first open. All three are gone. The Working set's Target is the Target.
    By Weight round-up choice and the loaded way start over on that decode. A keypad
    left open across the switch stays open on the same Target.
 2. **By Plates carries into Warm up as it does into By Weight (ADR-0005).** Leaving By
-   Plates, the Side stays on the Bar and its Total becomes the Target. A bare Bar
-   means no Target. The one exception is a By Plates visit entered from Warm up that
-   changed no Plate. The Bar then still holds a warm-up row, not a load the lifter
-   built, so the Target is kept. Otherwise Warm up -> By Plates -> Warm up would
-   quietly turn a 140 kg Target into the 70 kg row. Any Plate tap, a Clear of a loaded
-   Bar, or an opened link ends the exception.
+   Plates with a load built there, the Side stays on the Bar and its Total becomes the
+   Target. A bare Bar means no Target. A visit that left the Side exactly as it found
+   it built nothing, whatever mode it came from, so the Target is kept. Otherwise
+   Warm up -> By Plates -> Warm up would quietly turn a 140 kg Target into the 70 kg
+   row, and a By Weight peek would rewrite 141.3 as the 141 load. Back in By Weight
+   after such a visit:
+   - from By Weight, By Weight's own load stays on the Bar (the ADR-0005 carry, a
+     chosen round-up included, with no live decode until the lifter acts), and the
+     Target is still the typed one;
+   - from Warm up, the Target is decoded.
+
+   A set switch in Setup while in By Plates empties the Bar. That is a rig reset, not
+   a built load: the visit is re-based on the empty Bar, the Target is kept, and By
+   Weight decodes it on the new set. An opened By Plates link counts as built, even
+   when its Plates match the Side the visit began with.
+
+   Whether a round-up chosen in By Weight should become Warm up's working weight is
+   open with Caitlin. As built, it does not, by either path.
 3. **Persistence: `rackbar.target`.** The Target survives a reload under its own key.
    It is console-owned, like the Target display state (ADR-0009). It is stored at full
    precision (`String(kg)`), so a reload reads back the same number, and it is read
-   through `parseTarget` (`lib/recents.ts`, ADR-0007). A reload opens By Weight on the
-   stored Target, decoded. A non-positive Target (a typed 0) or an emptied field
-   removes the key. By Weight still shows its own reading of a typed 0, but Warm up
-   plans no Ramp from it and a reload reads it back as no Target. A Target typed finer
-   than the readout (52.5 lb) reloads as its readout (53 lb). The kg, and so the load,
-   is unchanged. An opened share link's Target is the lifter's Target, like its Recents
-   chip (ADR-0014). The link still writes no rig key.
+   through `parseTarget` (`lib/recents.ts`, ADR-0007). `parseTarget` accepts only a
+   plain decimal (no sign, exponent or hex) up to `MAX_TARGET_KG`, the share link's
+   1000 kg cap. A reload opens By Weight on the stored Target, decoded.
+   - A non-positive Target (a typed 0), an emptied field, or a Target that
+     `parseTarget` would not read back removes the key. By Weight still shows its own
+     reading of a typed 0, but Warm up plans no Ramp from it, and a reload reads it
+     back as no Target.
+   - A failed write also removes the key, so a stale Target cannot come back on
+     reload.
+   - A Target typed finer than the readout (52.5 lb) reloads as its readout (53 lb).
+     The kg, and so the load, is unchanged.
+   - An opened share link's Target is the lifter's Target, like its Recents chip
+     (ADR-0014 as amended). The link still writes no rig key.
 4. **Migrating `rackbar.working`, once.** On connect, a valid legacy value becomes the
    Target only when no valid Target is stored, so an explicit Target always wins. The
    legacy key is then removed either way: valid, cleared (`''`) or corrupt. The
-   migration cannot run twice.
+   migration runs once only if that removal succeeds. Storage that reads but cannot
+   remove would offer the legacy value again on a later reload with no Target stored.
+   That is accepted under best-effort persistence (ADR-0009): in practice storage
+   fails as a whole.
 5. **No "You asked" chip in Warm up.** RBAR-58's chip stays By Weight's. Warm up's
    working-weight row already shows the Target as typed.
 6. **Recents are unchanged (ADR-0009).** A keypad commit of the Target pushes it in
@@ -317,10 +338,16 @@ first open. All three are gone. The Working set's Target is the Target.
    and no gap. It took no room before either, outside the column, so removing the
    second entry frees no room. The fit check stores `rackbar.target` where it stored
    `rackbar.working`.
+9. **One source.** Everything that means the Target reads the one Target: the share
+   link's `t`, the Recents highlight, the status pill and the unit toggle. None of them
+   re-derives it from the decode (`total - delta`). A live decode with no Target is a
+   broken invariant and throws.
 
 The Next button and its `warmupselect` event are untouched.
 
 Tests: in `elements/warmup.properties.test.ts`, "the Target is identical across mode
 switches and reloads" and "a By Plates load's Total becomes the Warm up working
-weight". In `elements/warmup.test.ts`, the one-time migration and the By Plates
-exception.
+weight". In `elements/warmup.test.ts`: the one-time migration; the By Plates rule (a
+set switch, a By Weight peek, an opened link); `parseTarget` on stored hex, exponent
+and over-cap values; and a failed write. `lib/recents.test.ts` covers `parseTarget`
+itself.

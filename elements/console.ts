@@ -267,10 +267,13 @@ class RackConsole extends HTMLElement {
   // Side Load while Warm up is active.
   private ramp: Ramp | null = null;
   private warmIdx = 0;
-  // True while By Plates still holds exactly the Side it was entered with from Warm up
-  // (a warm-up row, not a load the lifter built): leaving it then keeps the Target
-  // instead of adopting that row's Total (RBAR-87). Any Plate edit or link clears it.
-  private platesFromWarmup = false;
+  // The By Plates visit (RBAR-87): the Side it was entered with, and whether going back
+  // to By Weight unchanged should keep By Weight's own load on the Bar (entered from By
+  // Weight) rather than decode the Target (entered from Warm up, or after a rig reset).
+  // Leaving By Plates with the Side still `side` keeps the Target: nothing was built. A
+  // set switch re-bases it (a rig reset is not a built load); an opened By Plates link
+  // clears it (null), so its load counts as built.
+  private platesEntry: { side: readonly Plate[]; keepCarry: boolean } | null = null;
 
   /**
    * The Bar the solver loads up from (RBAR-15). Setting it threads the new Bar into the
@@ -321,6 +324,10 @@ class RackConsole extends HTMLElement {
     if (this.mode === 'encode') {
       this.decoded = null;
       this.showingOver = false;
+      // A rig reset is not a built load (RBAR-87): re-base the visit on the emptied Bar,
+      // so leaving By Plates without a Plate tap keeps the Target. Its Plates are gone,
+      // so going back to By Weight decodes the Target instead of carrying a bare Bar.
+      this.platesEntry = { side: this.side, keepCarry: false };
     }
     this.reconfigure();
   }
@@ -1123,34 +1130,47 @@ class RackConsole extends HTMLElement {
   }
 
   // Read the stored Target (TARGET_KEY, validated by parseTarget, ADR-0007), migrating
-  // the pre-RBAR-87 Warm up working weight once: a valid LEGACY_WORKING_KEY value
-  // becomes the Target only when no valid Target is stored (an explicit Target always
-  // wins), and the legacy key is removed either way, so the migration never runs twice.
+  // the pre-RBAR-87 Warm up working weight: a valid LEGACY_WORKING_KEY value becomes the
+  // Target only when no valid Target is stored (an explicit Target always wins), and the
+  // legacy key is removed either way. The caller's solveTo stores the migrated Target
+  // (setTarget stays the only writer). The migration runs once only if that removal
+  // succeeds: storage that reads but cannot remove would offer the legacy value again on
+  // a later reload with no Target stored (best-effort, ADR-0009).
   private loadTarget(): number | null {
     const stored = parseTarget(readPersisted(TARGET_KEY));
     const legacyRaw = readPersisted(LEGACY_WORKING_KEY);
     if (legacyRaw === null) return stored;
     removePersisted(LEGACY_WORKING_KEY);
     const legacy = parseTarget(legacyRaw);
-    if (stored !== null || legacy === null) return stored;
-    writePersisted(TARGET_KEY, String(legacy));
-    return legacy;
+    return stored !== null || legacy === null ? stored : legacy;
   }
 
-  // Set the one Target (RBAR-87) and persist it best-effort (ADR-0009): a positive
-  // finite Target is stored at full precision, so a reload reads back the same number;
-  // anything else (an emptied field, a typed 0) removes the key, which reads back as no
-  // Target. The only writer of `target` and of TARGET_KEY.
+  // Set the one Target (RBAR-87) and persist it best-effort (ADR-0009). A Target that
+  // parseTarget reads back as itself (a positive plain decimal up to MAX_TARGET_KG) is
+  // stored at full precision, so a reload reads back the same number. Anything else (an
+  // emptied field, a typed 0, a Target past the cap) removes the key, which reads back as
+  // no Target -- and so does a failed write, so a stale Target can never come back on
+  // reload. The only writer of `target` and of TARGET_KEY.
   private setTarget(target: number | null): void {
     this.target = target;
-    if (target !== null && isRememberable(target)) writePersisted(TARGET_KEY, String(target));
-    else removePersisted(TARGET_KEY);
+    const raw = target === null ? null : String(target);
+    if (raw !== null && parseTarget(raw) === target && writePersisted(TARGET_KEY, raw)) return;
+    removePersisted(TARGET_KEY);
   }
 
-  // A By Plates edit (RBAR-87): the new Side, and By Plates no longer holds an untouched
-  // warm-up row once it differs (a refused add or a Clear of a bare Bar changes nothing).
+  // The Target of the live decode (RBAR-87): the one Target, which solveTo sets together
+  // with `decoded`, so a live decode always has one. A null here is a broken invariant:
+  // throw, rather than quietly skip a re-solve or read a different number.
+  private liveTarget(): number {
+    if (this.target === null) {
+      throw new Error('rack-console: a live decode with no Target (RBAR-87 invariant)');
+    }
+    return this.target;
+  }
+
+  // A By Plates edit: the new Side, then render. Whether it built a load is judged on
+  // leaving By Plates, against the Side it was entered with (setMode, RBAR-87).
   private editSide(next: readonly Plate[]): void {
-    if (!sameSide(next, this.side)) this.platesFromWarmup = false;
     this.side = next;
     this.render();
   }
@@ -1194,13 +1214,12 @@ class RackConsole extends HTMLElement {
       this.render();
       return;
     }
-    // A live decode always has its Target (solveTo sets both); the guard only narrows.
-    if (this.mode !== 'decode' || !this.decoded || this.target === null) {
+    if (this.mode !== 'decode' || !this.decoded) {
       this.render();
       return;
     }
     const { primary, over } = this.decoded;
-    const target = this.target;
+    const target = this.liveTarget();
     // The way on the Bar (RBAR-66) is kept when the toggle leaves the Total as it was.
     const loaded = this.side;
     if (!this.showingOver && shownIn(primary.total, was) === shownIn(target, was)) {
@@ -1248,9 +1267,9 @@ class RackConsole extends HTMLElement {
     this.decoded = null;
     this.showingOver = false;
     this.side = link.side;
-    // A linked By Plates load is a built load, not a warm-up row: leaving By Plates
-    // makes its Total the Target, like any load built there (RBAR-87).
-    this.platesFromWarmup = false;
+    // A linked By Plates load is a built load, even when it matches the Side the visit
+    // began with: leaving By Plates makes its Total the Target (RBAR-87).
+    this.platesEntry = null;
     if (link.mode === 'encode') {
       this.render();
       return;
@@ -1381,9 +1400,8 @@ class RackConsole extends HTMLElement {
       const reading = String(shownIn(row.total, load.unit));
       return linkUrl({ ...load, mode: 'decode', targetKg: row.total, reading });
     }
-    const d = this.decoded;
-    if (!d) return linkUrl({ ...load, mode: 'decode' });
-    const targetKg = d.primary.total - d.primary.delta;
+    if (!this.decoded) return linkUrl({ ...load, mode: 'decode' });
+    const targetKg = this.liveTarget();
     // A mid-entry draft ("142.") normalises to its number; a reading that still does not
     // fit (not expected) falls back to the Target alone, which opens to its readout.
     const n = Number(this.entry.reading);
@@ -1507,27 +1525,43 @@ class RackConsole extends HTMLElement {
   // start over), entering Warm up plans its Ramp. Leaving By Plates is the ADR-0005
   // carry: the load built there stays on the Bar and its Total becomes the Target (none
   // on a bare Bar), shown silently in the field so the steppers move from the real
-  // weight -- except when By Plates still holds the untouched warm-up row it was entered
-  // with from Warm up, which is not a load the lifter built: the Target is then kept.
+  // weight. A By Plates visit that left the Side as it found it built nothing, whatever
+  // mode it came from: the Target is kept (a By Weight peek does not rewrite 141.3 as
+  // the 141 load, nor a Warm up peek 140 as the 70 kg row). Back in By Weight, such a
+  // visit from By Weight keeps By Weight's own load on the Bar (the ADR-0005 carry,
+  // round-up included, with no live decode until the lifter acts); one from Warm up, or
+  // after a set switch emptied the Bar, decodes the Target.
   // Entering By Plates hands editing to the taps on the shared Side (ADR-0005).
   private setMode(mode: Mode): void {
     if (mode === this.mode) return;
     const from = this.mode;
+    const visit = this.platesEntry;
     this.mode = mode;
     this.decoded = null;
     this.showingOver = false;
-    const carried = from === 'encode' && !this.platesFromWarmup;
-    if (carried) this.carryTarget();
+    // Whether By Weight keeps the Side on the Bar as a carry rather than decoding.
+    let keepSide = false;
+    if (from === 'encode') {
+      if (visit !== null && sameSide(this.side, visit.side)) {
+        keepSide = visit.keepCarry;
+      } else {
+        this.carryTarget();
+        keepSide = true;
+      }
+      this.platesEntry = null;
+    }
+    // With no Target the field is empty (the muted Bar anchor), as Warm up and the bare
+    // carry always showed it -- not the entry's untouched Bar seed, which a fresh By
+    // Weight starts on.
+    if (mode !== 'encode' && this.target === null && this.entry.reading !== '') {
+      this.entry.display(null);
+    }
     if (mode === 'decode') {
-      // The carry keeps the built Side with no live decode until the lifter acts.
-      if (!carried) this.solveTo(this.target);
+      if (!keepSide) this.solveTo(this.target);
     } else if (mode === 'warmup') {
-      // With no Target the row shows an empty field (the muted Bar anchor), as Warm up
-      // always has -- not the entry's untouched Bar seed, which By Weight starts on.
-      if (this.target === null && this.entry.reading !== '') this.entry.display(null);
       this.planWarmup();
     } else {
-      this.platesFromWarmup = from === 'warmup';
+      this.platesEntry = { side: this.side, keepCarry: from === 'decode' };
     }
     this.render();
   }
@@ -1628,7 +1662,7 @@ class RackConsole extends HTMLElement {
     // recomputes its own emptiness-hidden, which would otherwise undo the Encode hide.
     this.recentsRow.target =
       this.mode === 'decode' && this.decoded
-        ? this.decoded.primary.total - this.decoded.primary.delta
+        ? this.liveTarget()
         : null;
     // Value and suffix split (RBAR-39): only the value rolls; the suffix just tracks
     // the active unit. Together they still read "142 kg" (format's shape).
@@ -1680,7 +1714,7 @@ class RackConsole extends HTMLElement {
     if (this.mode === 'decode' && this.decoded) {
       const { primary, over } = this.decoded;
       const shown = this.showingOver && over ? over : primary;
-      const targetKg = primary.total - primary.delta;
+      const targetKg = this.liveTarget();
       // "At capacity" is the CORE's own signal (ADR-0012): the capped solver omits
       // `over` exactly when no physical round-up exists, so short-with-no-over means
       // the miss cannot be closed. A per-side room check (atSleeveCapacity) would

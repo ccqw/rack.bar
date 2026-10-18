@@ -35,7 +35,8 @@ history) and on a chip re-apply (which moves that Target back to the front).
 Recents is the third `rackbar.*` key (`rackbar.recents`, after `rackbar.barKg`
 and `rackbar.collarKg`). The RBAR-16 audit flagged the duplicated best-effort
 load/save boilerplate to extract once a third key landed. It lands here:
-`elements/persist.ts` exposes `readPersisted` / `writePersisted` -- the single
+`elements/persist.ts` exposes `readPersisted` / `writePersisted` (and, since RBAR-87,
+`removePersisted`; `writePersisted` reports a failed write) -- the single
 place that touches `localStorage` and the single place the best-effort contract
 (swallow a blocked/quota/private-mode failure, never throw into the caller) is
 expressed. `<rack-app>` (Bar, Collar) and `<rack-console>` (recents) both use it;

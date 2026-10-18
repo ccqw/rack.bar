@@ -8,6 +8,7 @@ import {
   restoreRecent,
 } from './recents.ts';
 import { lbToKg } from './units.ts';
+import { MAX_TARGET_KG } from './link.ts';
 
 describe('pushRecent', () => {
   it('adds a Target to the front (most-recent-first)', () => {
@@ -171,5 +172,14 @@ describe('parseTarget (rackbar.target and legacy rackbar.working read validation
     for (const raw of [null, '', '  ', 'abc', '0', '-5', 'Infinity', 'NaN', '1e999']) {
       expect(parseTarget(raw)).toBeNull();
     }
+  });
+
+  it('reads only a plain decimal the app could have written, within the Target cap', () => {
+    // Number() would take these (0x8C is 140); the field would then show "1e+300".
+    for (const raw of ['0x8C', '1e300', '1e2', '+140', '140.', '.5', '1_000', '1000.01']) {
+      expect(parseTarget(raw)).toBeNull();
+    }
+    expect(parseTarget(String(MAX_TARGET_KG))).toBe(MAX_TARGET_KG);
+    expect(parseTarget(' 140 ')).toBe(140);
   });
 });
