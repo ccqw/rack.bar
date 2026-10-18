@@ -112,6 +112,16 @@ export function walkIndex(i: number, key: string, n: number): number | null {
   }
 }
 
+/**
+ * Where Next goes from row `i` of `n`: the following row, or null on the last row (the
+ * Working set) and on an empty Ramp. The one Next rule: the console's Next button
+ * (warmupView) and the fullscreen Next zone (warmupfullscreen.ts, RBAR-85) both read
+ * it, so they cannot land on different rows.
+ */
+export function nextIndex(i: number, n: number): number | null {
+  return i >= 0 && i < n - 1 ? i + 1 : null;
+}
+
 /** The Warm up status pill: its kind (styling) and plain-language copy. */
 export interface WarmStatus {
   readonly kind: 'bare' | 'exact' | 'pct';
@@ -196,7 +206,7 @@ export function warmupView(
     label: stepLabel(row, i, n, unit, deltaSpoken(rowDelta(rows, i), plateUnit)),
     working: row.kind === 'working',
   }));
-  const next = { disabled: sel >= n - 1 };
+  const next = { disabled: nextIndex(sel, n) === null };
   const addCaption =
     rows[sel].kind === 'bar' ? null : deltaText(rowDelta(rows, sel), plateUnit);
   return { steps, selected: sel, next, addCaption };
