@@ -439,7 +439,8 @@ class RackConsole extends HTMLElement {
            stay readable) and a cap (the handoff's SLEEVE_BLOCK_PX, label row included), and
            the sleeve fills it under the label row; the sleeve fits its discs to that
            height. A short phone gets a shorter Bar picture; a tall one gets the full
-           handoff block, never more -- spare height falls below the column. */
+           handoff block, never more -- in a browser tab spare height falls below the
+           column (the Home Screen app puts it under this block, RBAR-99). */
         /* RBAR-75 (ADR-0013 amended): the label row is in flow inside the 204px block
            and the icons overlap the sleeve (.icons below), so the cap is the handoff's
            block itself and the floor is the label row + gap + SLEEVE_MIN_PX. */
@@ -450,7 +451,7 @@ class RackConsole extends HTMLElement {
           min-height: ${VIZ_PAD_PX + LABEL_PX + VIZ_GAP_PX + SLEEVE_MIN_PX}px;
           max-height: ${SLEEVE_BLOCK_PX}px;
           /* RBAR-99: in the Home Screen app the height left once the block is at its
-             cap goes around it (auto margins take only what flexing leaves), never
+             cap goes under it (auto margins take only what flexing leaves), never
              into the keypad or tiles. 0 in a browser tab (tokens.css). */
           margin-bottom: var(--rack-bar-air);
         }

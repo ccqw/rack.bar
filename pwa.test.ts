@@ -180,6 +180,8 @@ describe('Home Screen app height (RBAR-99)', () => {
       const base = without(html, sa);
       expect(base).toMatch(/body\s*\{[^}]*[^-]height:\s*100svh/);
       expect(base).not.toMatch(/100dvh/);
+      // Equal specificity: the standalone rule only wins if it comes after the base one.
+      expect(html.indexOf('100dvh')).toBeGreaterThan(html.indexOf('100svh'));
       // Still padded by the insets, so the controls clear the home indicator.
       expect(html).toMatch(/env\(safe-area-inset-bottom\)/);
     });
@@ -189,5 +191,9 @@ describe('Home Screen app height (RBAR-99)', () => {
     const sa = standalone(tokens);
     expect(without(tokens, sa)).toMatch(/--rack-bar-air:\s*0px;/);
     expect(sa.join('\n')).toMatch(/:root\s*\{[^}]*--rack-bar-air:\s*auto;/);
+    // Equal specificity: the standalone value only wins if it comes after the default.
+    expect(tokens.indexOf('--rack-bar-air: auto')).toBeGreaterThan(
+      tokens.indexOf('--rack-bar-air: 0px'),
+    );
   });
 });

@@ -156,8 +156,8 @@
   --rack-radius-tile: 11px;      /* a selector tile */
   --rack-radius-sheet: 24px;     /* a bottom sheet's top corners */
 
-  /* Layout. The air around the bar block (RBAR-99): the margin above and below the
-     column's one flexing block, once that block is at its cap. 0 in a browser tab
+  /* Layout. The air under the bar block (RBAR-99): the margin below the column's one
+     flexing block, which takes only the height left once that block is at its cap. 0 in a browser tab
      (ADR-0013: spare height falls below the column); `auto` in the Home Screen app,
      below. */
   --rack-bar-air: 0px;

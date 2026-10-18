@@ -297,7 +297,7 @@ class RackQuiz extends HTMLElement {
         .viz {
           flex: 1 1 auto; min-height: 104px; max-height: 204px;
           display: flex; position: relative;
-          /* The Home Screen app's spare height goes around it (RBAR-99, tokens.css). */
+          /* The Home Screen app's spare height goes under it (RBAR-99, tokens.css). */
           margin-bottom: var(--rack-bar-air);
         }
         .viz rack-sleeve { flex: 1 1 0; min-height: 0; min-width: 0; }
