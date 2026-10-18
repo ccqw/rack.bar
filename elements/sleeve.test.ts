@@ -473,6 +473,34 @@ describe('<rack-sleeve>', () => {
       expect(scaleOf(sized(390, SLEEVE_BLOCK_PX, side(25)))).toBe(168 / 450);
     });
 
+    // RBAR-99: an embedder that opts in (the console, in the Home Screen app) lets a tall
+    // host draw a bumper up to --rack-sleeve-grow x the host's width.
+    it('zooms past the handoff cap when --rack-sleeve-grow is set (RBAR-99)', () => {
+      const el = mountSleeve();
+      el.style.setProperty('--rack-sleeve-grow', '0.65');
+      Object.defineProperty(el, 'clientWidth', { value: 349, configurable: true });
+      Object.defineProperty(el, 'clientHeight', { value: 300, configurable: true });
+      el.sideLoad = side(25);
+      expect(scaleOf(el)).toBeCloseTo((0.65 * 349) / 450, 9);
+      // Still height-fitted: a short host lowers it as before.
+      const short = mountSleeve();
+      short.style.setProperty('--rack-sleeve-grow', '0.65');
+      Object.defineProperty(short, 'clientWidth', { value: 349, configurable: true });
+      Object.defineProperty(short, 'clientHeight', { value: 150, configurable: true });
+      short.sideLoad = side(25);
+      expect(scaleOf(short)).toBeCloseTo((150 - SLEEVE_PAD_PX) / 450, 9);
+    });
+
+    it('keeps the handoff cap when --rack-sleeve-grow is unset or 0 (RBAR-99)', () => {
+      expect(scaleOf(sized(349, 300, side(25)))).toBe(168 / 450);
+      const zero = mountSleeve();
+      zero.style.setProperty('--rack-sleeve-grow', '0');
+      Object.defineProperty(zero, 'clientWidth', { value: 349, configurable: true });
+      Object.defineProperty(zero, 'clientHeight', { value: 300, configurable: true });
+      zero.sideLoad = side(25);
+      expect(scaleOf(zero)).toBe(168 / 450);
+    });
+
     it('ignores height before layout (an unmeasured host keeps full zoom)', () => {
       expect(scaleOf(sized(390, 0, side(25)))).toBe(168 / 450);
     });

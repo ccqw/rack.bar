@@ -154,15 +154,22 @@ handoff's 168px bumper" and "it does not go into a bigger Bar" for standalone.
   450 mm)`, passed to `sleeveFit` as its `maxScale`. The height fit (a bumper stands
   `SLEEVE_PAD_PX` under the host) and the width fit (a heavy load zooms out to fit the
   sleeve) still apply under it, so a loaded sleeve draws exactly as wide as before.
-- **The bar block's cap grows to match**:
-  `max(204px, 5 + 15 + 6 + 8 px + grow x 100cqw)` (the label row, the sleeve's pad, the
-  bumper), with the column (`.stack`) as the size container. The quiz's bar block,
-  which has no label row, uses `max(204px, 8px + grow x 100cqw)`. With grow 0 both
-  reduce to exactly 204px, so a browser tab is unchanged at every viewport.
-- **What is left still goes under the bar block** (`--rack-bar-air`). No centring: the
-  Bar's top stays where the browser tab puts it in every mode.
+- **The sleeve's cap grows to match**: `max(178px, 8px + grow x 100cqw)` (the sleeve's
+  pad + the bumper; 178px is the handoff's block less the label row), with the bar
+  block (`.viz`) as the size container. In standalone the bar block itself has no cap
+  (`--rack-bar-block-max: none`), so it takes the spare height and the sleeve draws the
+  bigger Bar at its top. With grow 0 and the block's 204px fallback, a browser tab is
+  unchanged at every viewport.
+- **Only the bar block is a query container.** An inline-size container re-anchors
+  `position: fixed` descendants, and the column holds fixed sheets (the Warm up
+  keypad); the bar block holds only the label row, the icons and the sleeve.
+- **Opt-in per sleeve.** `<rack-sleeve>` reads `--rack-sleeve-grow`, which only the
+  console sets (from `--rack-bar-grow`). The quiz and the fullscreen card keep the
+  handoff zoom.
+- **What is left goes under the Bar.** No centring: the Bar's top stays where the
+  browser tab puts it in every mode.
 
 Measured at 393x852 standalone (By Weight 112 kg / By Plates / Warm up Working set):
-bar block 261 / 261 / 257px, bumper 227 / 227 / 223px (was 168), gap under it 107 / 23
-/ 0px, strip 0, over 0; the bar never moves between modes. The quiz's bar block is
-237px. The four Safari viewports' fit-check lines are identical to main's.
+sleeve 235 / 235 / 231px (the drawn block 261 / 261 / 257px), bumper 227 / 227 / 223px
+(was 168), leftover under the Bar 107 / 23 / 0px, strip 0, over 0; the Bar never moves
+between modes. The four Safari viewports' fit-check lines are identical to main's.

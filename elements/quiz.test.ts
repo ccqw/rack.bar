@@ -287,13 +287,13 @@ describe('<rack-quiz> Home Screen app height (RBAR-99)', () => {
     expect(css.slice(at, css.indexOf('}', at))).toContain('margin-bottom: var(--rack-bar-air)');
   });
 
-  it('grows the bar block\'s cap with --rack-bar-grow, against the column\'s width', () => {
+  // The bigger Bar is the calculator's (the owner's pick, variant A): the quiz keeps the
+  // handoff's 204px block and never opts its sleeve into the grow.
+  it('keeps the handoff block and the handoff zoom (no grow)', () => {
     const css = mount().root.querySelector('style')!.textContent!;
     const at = css.indexOf('.viz {');
-    expect(css.slice(at, css.indexOf('}', at))).toMatch(
-      /max-height: max\(204px,\s*calc\(8px \+ var\(--rack-bar-grow, 0\) \* 100cqw\)\)/,
-    );
-    const host = css.indexOf(':host {');
-    expect(css.slice(host, css.indexOf('}', host))).toContain('container-type: inline-size');
+    expect(css.slice(at, css.indexOf('}', at))).toContain('max-height: 204px');
+    expect(css).not.toContain('--rack-sleeve-grow');
+    expect(css).not.toContain('container-type');
   });
 });

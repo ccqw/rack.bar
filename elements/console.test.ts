@@ -2535,7 +2535,7 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
     const viz = rule(css(), '.viz');
     expect(viz).toContain('flex: 1 1 0');
     expect(viz).toContain(`min-height: ${PAD + LABEL + GAP + SLEEVE_MIN_PX}px`);
-    expect(viz).toContain(`max-height: max(${SLEEVE_BLOCK_PX}px,`);
+    expect(viz).toContain(`max-height: var(--rack-bar-block-max, ${SLEEVE_BLOCK_PX}px)`);
     expect(viz).toContain(`gap: ${GAP}px`);
     expect(viz).toContain(`padding-top: ${PAD}px`);
     expect(rule(css(), '.vizhead')).toContain(`height: ${LABEL}px`);
@@ -2544,27 +2544,39 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
     expect(sleeve).toContain('min-height: 0');
   });
 
-  // RBAR-99: the Home Screen app's spare height (tokens.css sets --rack-bar-air to auto
-  // in standalone) goes under the capped bar block, so the bar and toggle stay put
-  // across modes and the controls sit on the bottom inset. Never the keypad or tiles.
-  it('puts the Home Screen app\'s spare height under the bar block', () => {
-    expect(rule(css(), '.viz')).toContain('margin-bottom: var(--rack-bar-air)');
+  // RBAR-99: in the Home Screen app (tokens.css sets --rack-bar-block-max to none) the
+  // bar block takes the spare height and its sleeve draws at the top of it, so the bar
+  // and toggle stay put across modes and the controls sit on the bottom inset. Never
+  // the keypad or tiles: they keep flex: none.
+  it('lets the bar block take the Home Screen app\'s spare height', () => {
+    expect(rule(css(), '.viz')).toContain(
+      `max-height: var(--rack-bar-block-max, ${SLEEVE_BLOCK_PX}px)`,
+    );
+    expect(rule(css(), '.stack > :not(.viz)')).toContain('flex: none');
   });
 
-  // RBAR-99 (the owner's pick, variant A): in the Home Screen app the bar block's cap
-  // grows to hold a bumper of --rack-bar-grow x the column width (the label row + the
-  // sleeve's pad on top), the bumper <rack-sleeve>'s grownMaxScale allows. Grow is 0 in
-  // a browser tab, so max(204px, 34px) keeps the handoff's block there.
-  it('grows the bar block\'s cap with --rack-bar-grow, against the column\'s width', () => {
-    const viz = rule(css(), '.viz');
-    expect(viz).toMatch(
+  // RBAR-99 (the owner's pick, variant A): in the Home Screen app the sleeve's cap grows
+  // to hold a bumper of --rack-bar-grow x its width (its pad on top), the bumper
+  // <rack-sleeve>'s grownMaxScale allows; grow is 0 in a browser tab, so max(178px, 8px)
+  // keeps the handoff's sleeve there. The sleeve opts in through --rack-sleeve-grow.
+  it('grows the sleeve\'s cap with --rack-bar-grow, against the bar block\'s width', () => {
+    const sleeve = rule(css(), '.viz rack-sleeve');
+    expect(sleeve).toMatch(
       new RegExp(
-        `max-height: max\\(${SLEEVE_BLOCK_PX}px,\\s*calc\\(${PAD + LABEL + GAP + SLEEVE_PAD_PX}px ` +
+        `max-height: max\\(${SLEEVE_BLOCK_PX - PAD - LABEL - GAP}px,\\s*calc\\(${SLEEVE_PAD_PX}px ` +
           `\\+ var\\(--rack-bar-grow, 0\\) \\* 100cqw\\)\\)`,
       ),
     );
-    // cqw resolves against the column: .stack is the query container.
-    expect(rule(css(), '.stack')).toContain('container-type: inline-size');
+    expect(sleeve).toContain('--rack-sleeve-grow: var(--rack-bar-grow, 0)');
+    // cqw resolves against the bar block, the only query container in the column.
+    expect(rule(css(), '.viz')).toContain('container-type: inline-size');
+  });
+
+  // An inline-size container re-anchors position: fixed descendants (the Warm up keypad
+  // sheet lives in .stack): only the bar block, which holds nothing fixed, may be one.
+  it('makes no query container of the column or the host (fixed sheets stay on the screen)', () => {
+    expect(rule(css(), ':host')).not.toContain('container-type');
+    expect(rule(css(), '.stack')).not.toContain('container-type');
   });
 
   it('keeps every other block at its natural height (only the bar flexes)', () => {

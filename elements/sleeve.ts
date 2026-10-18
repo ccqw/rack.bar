@@ -306,11 +306,12 @@ class RackSleeve extends HTMLElement {
       hostWidth,
       this.clientHeight,
       this.collarsOn,
-      // RBAR-99: in the Home Screen app (--rack-bar-grow, tokens.css) a tall host may
-      // zoom past the handoff's 168px bumper, up to a share of the host's width.
+      // RBAR-99: where the embedder opts in (--rack-sleeve-grow: the console maps the
+      // Home Screen app's --rack-bar-grow onto its sleeve) a tall host may zoom past the
+      // handoff's 168px bumper, up to a share of the host's width. Unset: NaN, no grow.
       grownMaxScale(
         hostWidth,
-        parseFloat(getComputedStyle(this).getPropertyValue('--rack-bar-grow')),
+        parseFloat(getComputedStyle(this).getPropertyValue('--rack-sleeve-grow')),
       ),
     );
     // Set each property only when it changed -- a new Side Load re-fits at the same

@@ -1977,6 +1977,18 @@ describe('Bigger Bar in the Home Screen app (RBAR-99, ADR-0013 as amended)', () 
     );
   });
 
+  it('grow 0 draws exactly the handoff Bar: a browser tab is unchanged (ADR-0013, RBAR-99)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, fitArb, ({ rig, t }, f) => {
+        const { side } = decode(t, rig.baselineKg, rig.inventory).primary;
+        expect(sleeveFit(side, f.w, f.h, f.collars, grownMaxScale(f.w, 0))).toEqual(
+          sleeveFit(side, f.w, f.h, f.collars),
+        );
+      }),
+      opts,
+    );
+  });
+
   it('the grown cap is never below the handoff zoom, and grow 0 is exactly it (ADR-0013, RBAR-99)', () => {
     fc.assert(
       fc.property(

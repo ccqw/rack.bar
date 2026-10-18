@@ -208,5 +208,8 @@ describe('Home Screen app height (RBAR-99)', () => {
     expect(tokens.indexOf('--rack-bar-grow: 0.65')).toBeGreaterThan(
       tokens.indexOf('--rack-bar-grow: 0;'),
     );
+    // The uncapped bar block too: unset in a tab (the console's 204px fallback).
+    expect(sa.join('\n')).toMatch(/:root\s*\{[^}]*--rack-bar-block-max:\s*none;/);
+    expect(base).not.toMatch(/--rack-bar-block-max:/);
   });
 });
