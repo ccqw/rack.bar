@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import './console.ts';
 import { COLLAPSE_MS, LONG_PRESS_MS, UNDO_MS } from './recents.ts';
 import { statusPill, onBarLine, belowBarNote, announceLine } from './console.ts';
@@ -17,6 +17,9 @@ function mountConsole(): Console {
   document.body.append(el);
   return el;
 }
+// Each test mounts its own console; remove it afterwards (RBAR-90). Left in place, all
+// ~220 stayed connected to the end of the file (the suite ran out of a 512 MB heap).
+afterEach(() => document.body.replaceChildren());
 
 // The raw Target draft, anchor included (entryValue hides the muted anchor; this test
 // needs to read it to prove it follows the Bar). Read off the keypad sheet's live number:
@@ -2342,21 +2345,22 @@ describe('<rack-console> the Training 20 kg Bar (RBAR-63)', () => {
     expect(misses).toEqual([]);
   });
 
-  // ~600 Targets typed through the real console: about 0.8 s locally but ~4.5 s on CI
-  // (Node 22), right at the 5 s default timeout, so it gets explicit headroom.
-  it('never reads over in either unit for any whole-number Target (ADR-0003)', () => {
+  // The exhaustive whole-number sweep (every rig, both units) lives in the core:
+  // lib/properties.test.ts "never reads over for any whole-number Target..." (RBAR-90).
+  // These spot checks pin the console's wiring of it on the tightest Targets for this
+  // rig: the least Total past each sits just 0.01 kg / 0.02 kg / 1 lb above the
+  // reading, so any slip in the display window would read over here first.
+  it.each([
+    ['kg', '147', '144.74 kg'],
+    ['kg', '54', '51.75 kg'],
+    ['lb', '48', '44 lb'],
+  ] as const)('never reads over: %s Target %s loads %s, short (ADR-0003)', (u, t, shown) => {
     const el = mountIron20();
-    const overs: string[] = [];
-    for (const u of ['kg', 'lb'] as const) {
-      unitBtn(el, u).click();
-      const [lo, hi] = u === 'kg' ? [20, 200] : [45, 440];
-      for (let t = lo; t <= hi; t++) {
-        type(el, String(t));
-        if (statusKind(el) === 'over') overs.push(`${t} ${u} -> ${total(el)}`);
-      }
-    }
-    expect(overs).toEqual([]);
-  }, 30_000);
+    unitBtn(el, u).click();
+    type(el, t);
+    expect(total(el)).toBe(shown);
+    expect(statusKind(el)).toBe('short');
+  });
 });
 
 describe('<rack-console> typing back a displayed Total (RBAR-60)', () => {

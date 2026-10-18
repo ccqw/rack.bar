@@ -15,7 +15,7 @@ import type { Unit } from '../lib/units.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import {
   SEED, EPS, type Console, resetPool, q, sr, entryRoot, unitBtn, type, modeBtn, sideOnScreen,
-  stairs, nextBtn, commitWorking, statusLabel,
+  stairs, nextBtn, commitWorking, statusLabel, nextRun,
 } from './properties.drivers.ts';
 import './app.ts';
 
@@ -111,9 +111,10 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
     );
   };
 
-  it('limits set through Setup re-solve the standing Target at once, honour every cap, call the Bar at capacity only when the Sleeve is full, and survive a reload with the same load (ADR-0016, ADR-0003, ADR-0012, ADR-0007)', () => {
-    fc.assert(
-      fc.property(caseArb, ({ set, ops, t }) => {
+  it('limits set through Setup re-solve the standing Target at once, honour every cap, call the Bar at capacity only when the Sleeve is full, and survive a reload with the same load (ADR-0016, ADR-0003, ADR-0012, ADR-0007)', async () => {
+    await fc.assert(
+      fc.asyncProperty(caseArb, async ({ set, ops, t }) => {
+        await nextRun();
         localStorage.clear();
         const app = mountApp();
         openSetup(app);
@@ -161,11 +162,12 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
       }),
       APP_RUNS(16),
     );
-    // Several full app mounts per run: well under 5 s locally, but given the link
-    // properties' room so a loaded CI runner cannot time it out.
+    // The one DOM property that keeps extra room (RBAR-90): two app mounts and up to 18
+    // Setup taps -- each a capped re-solve and a re-render -- per run put it near 2 s in
+    // a loaded local run, and CI runners are ~2.5x slower than that.
   }, 30_000);
 
-  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" (name, Next and spoken label) exactly when it drifts past the band off the bare Bar, and the Working set reads short exactly when it is (ADR-0016 as amended, ADR-0015, ADR-0003)', () => {
+  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" (name, Next and spoken label) exactly when it drifts past the band off the bare Bar, and the Working set reads short exactly when it is (ADR-0016 as amended, ADR-0015, ADR-0003)', async () => {
     // The band as ADR-0015 states it: a Warm-up set further than 5% of the Working Total
     // from its percentage has drifted (RBAR-72 slice 3) -- unless it is the bare Bar,
     // which cannot be lighter. In kg or lb: the working weight is typed in the display
@@ -180,8 +182,9 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
         t,
         ops: PLATE_SETS[set].inventory.flatMap((p, i): Op[] => (p.kg < 3 ? [{ op: 'set', i, pairs: 0 }] : [])),
       }));
-    fc.assert(
-      fc.property(fc.oneof(caseArb, noChangeArb), fc.constantFrom<Unit>('kg', 'lb'), ({ set, ops, t }, u) => {
+    await fc.assert(
+      fc.asyncProperty(fc.oneof(caseArb, noChangeArb), fc.constantFrom<Unit>('kg', 'lb'), async ({ set, ops, t }, u) => {
+        await nextRun();
         localStorage.clear();
         const app = mountApp();
         openSetup(app);
@@ -233,9 +236,10 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
     );
   }, 30_000);
 
-  it('a limit on one Plate set never changes a load on the other (ADR-0016)', () => {
-    fc.assert(
-      fc.property(caseArb, ({ set, ops, t }) => {
+  it('a limit on one Plate set never changes a load on the other (ADR-0016)', async () => {
+    await fc.assert(
+      fc.asyncProperty(caseArb, async ({ set, ops, t }) => {
+        await nextRun();
         localStorage.clear();
         const other: PlateSetKey = set === 'comp' ? 'training' : 'comp';
         const app = mountApp();
@@ -252,15 +256,16 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
       }),
       APP_RUNS(6),
     );
-  }, 30_000);
+  });
 
-  it('By Plates never blocks a tap on a none or limited size; only the sleeve refuses (ADR-0016, ADR-0005, ADR-0012)', () => {
-    fc.assert(
-      fc.property(
+  it('By Plates never blocks a tap on a none or limited size; only the sleeve refuses (ADR-0016, ADR-0005, ADR-0012)', async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.constantFrom(...PLATE_SET_KEYS),
         fc.nat(),
         fc.constantFrom(0, 1),
-        (set, i, pairs) => {
+        async (set, i, pairs) => {
+          await nextRun();
           localStorage.clear();
           const p = PLATE_SETS[set].inventory[i % PLATE_SETS[set].inventory.length];
           localStorage.setItem('rackbar.plateSet', set);
@@ -280,5 +285,5 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
       ),
       APP_RUNS(8),
     );
-  }, 30_000);
+  });
 });
