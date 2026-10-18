@@ -64,6 +64,7 @@ import type { WarmupView } from '../lib/warmup.ts';
 type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
   interactive: boolean;
+  collars: boolean;
 };
 type Entry = HTMLElement & {
   display(value: number | null, reading?: string): void;
@@ -1532,6 +1533,9 @@ class RackConsole extends HTMLElement {
     const unit = this.activeUnit();
     this.sleeve.sideLoad = this.side;
     this.sleeve.interactive = this.mode === 'encode';
+    // The sleeve draws a Collar on the outer disc when Setup's collars are on (RBAR-96);
+    // a bare-Bar Ramp row carries none, the same as the cards.
+    this.sleeve.collars = this.loadCollarKg() > 0;
     this.renderWays();
     // The bar block's contextual label (RBAR-35, prototype L924): "per side" whenever
     // anything is loaded (either mode -- the shared Side Load is the fact it names),

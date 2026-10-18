@@ -17,23 +17,29 @@ export const TARGET_BUMPER_PX = 168;
 /** px per mm at full zoom: a normal load renders here; only a huge one zooms out. */
 export const MAX_SCALE = TARGET_BUMPER_PX / BUMPER_MM;
 
-// Bar chrome (handoff section 3): the fixed-px furniture framing the discs -- a sleeve
-// shaft + inner collar on the loaded end, an end collar + cap on the far end. It does not
-// scale with the Plates, so the fit reserves its width. Heights are the handoff's.
+// Bar chrome (handoff section 3, end redrawn by RBAR-96): the fixed-px furniture framing
+// the discs -- a sleeve shaft + inner collar on the loaded end, then a bare sleeve stub to a
+// plain rounded end past the outer disc. No end collar and no cap: nothing after the plates
+// looks like a stopper. It does not scale with the Plates, so the fit reserves its width.
 export const SHAFT_PX = 52;
 export const SHAFT_H_PX = 9;
 export const COLLAR_INNER_PX = 11;
 export const COLLAR_INNER_H_PX = 34;
-export const COLLAR_END_PX = 8;
-export const COLLAR_END_H_PX = 20;
-export const CAP_PX = 13;
-export const CAP_H_PX = 11;
-/** The chrome's total width: shaft + both collars + cap. */
-export const CHROME_PX = SHAFT_PX + COLLAR_INNER_PX + COLLAR_END_PX + CAP_PX;
+/** The bare sleeve stub past the outer disc (prototype `.bare`): 30 x 11, a rounded end. */
+export const BARE_END_PX = 30;
+export const BARE_END_H_PX = 11;
+/** The chrome's total width: shaft + inner collar + the bare end. */
+export const CHROME_PX = SHAFT_PX + COLLAR_INNER_PX + BARE_END_PX;
 /** Between adjacent discs (the first sits flush to the inner collar). */
 export const DISC_GAP_PX = 1.5;
-/** Between the last disc (or the empty box) and the end collar. */
-export const END_GAP_PX = 3;
+// The Collar clamped on the outer disc when Setup's collars are on (RBAR-96, prototype
+// `.ccol2`, "look 2 flat"): 20px wide, 1px off the outer disc, 92 mm tall on the disc
+// scale, with an 8x8 flat latch standing 8px above it, 5px in from its inner edge.
+export const COLLAR_PX = 20;
+export const COLLAR_GAP_PX = 1;
+export const COLLAR_MM = 92;
+export const LATCH_PX = 8;
+export const LATCH_LEFT_PX = 5;
 /** The floor under each disc's width, so a thin change Plate keeps a visible sliver. */
 export const MIN_DISC_PX = 9;
 /** The bare-Bar box: 34px wide, 120px tall at full zoom (prototype L104), 5px inset. */
@@ -145,18 +151,32 @@ export function darkInk(color: Plate['color']): boolean {
  * The sleeve's fit for a host of `hostW` x `hostH` px (ADR-0004, ADR-0013): the zoom cap
  * is MAX_SCALE, lowered so a bumper stands SLEEVE_PAD_PX shorter than the host (an
  * unmeasured height, 0, leaves it at MAX_SCALE); the discs get the width left after the
- * chrome, the end gap and the gaps between discs. `<rack-sleeve>` and the share picture
- * both fit through this.
+ * chrome, the drawn Collar (if any) and the gaps between discs. `<rack-sleeve>` and the
+ * share picture both fit through this.
  */
-export function sleeveFit(plates: readonly Plate[], hostW: number, hostH: number): RowFit {
+export function sleeveFit(
+  plates: readonly Plate[],
+  hostW: number,
+  hostH: number,
+  collars = false,
+): RowFit {
   const cap =
     hostH > 0 ? Math.min(MAX_SCALE, Math.max(0, hostH - SLEEVE_PAD_PX) / BUMPER_MM) : MAX_SCALE;
   const discGaps = DISC_GAP_PX * Math.max(0, plates.length - 1);
-  return fitRow(plates, hostW - CHROME_PX - END_GAP_PX - discGaps, cap);
+  const collar = collarDrawn(plates, collars) ? COLLAR_GAP_PX + COLLAR_PX : 0;
+  return fitRow(plates, hostW - CHROME_PX - collar - discGaps, cap);
+}
+
+/**
+ * Whether the sleeve draws a Collar (RBAR-96): only when Setup's collars are on AND the
+ * Bar has Plates. A bare Bar never gets one -- there is no outer disc to clamp.
+ */
+export function collarDrawn(plates: readonly Plate[], collars: boolean): boolean {
+  return collars && plates.length > 0;
 }
 
 /** The pieces of one sleeve, in their left-to-right order. */
-export type SleevePartKind = 'shaft' | 'collar-inner' | 'disc' | 'empty' | 'collar-end' | 'cap';
+export type SleevePartKind = 'shaft' | 'collar-inner' | 'disc' | 'empty' | 'collar' | 'bare-end';
 
 /** One piece of the sleeve, in host px. Discs carry their Plate and numeral. */
 export interface SleevePart {
@@ -174,23 +194,26 @@ export interface SleevePart {
 /**
  * Where `<rack-sleeve>` puts each piece in a `hostW` x `hostH` host (RBAR-70): the same
  * flex row the element's CSS lays out -- shaft, inner collar, the discs heaviest-first
- * (or the dashed empty box on a bare Bar), end collar, cap -- centred on both axes, at
- * the `sleeveFit` scale. The share picture draws from this; the element keeps its CSS,
- * and both read the same constants.
+ * (or the dashed empty box on a bare Bar), the Collar when `collarDrawn`, the bare end --
+ * centred on both axes, at the `sleeveFit` scale. The share picture draws from this; the
+ * element keeps its CSS, and both read the same constants. The Collar's latch is not a
+ * part: it rides on the Collar (LATCH_* above), standing above its box.
  */
 export function sleeveLayout(
   plates: readonly Plate[],
   hostW: number,
   hostH: number,
+  collars = false,
 ): readonly SleevePart[] {
-  const { scale, shrink } = sleeveFit(plates, hostW, hostH);
+  const { scale, shrink } = sleeveFit(plates, hostW, hostH, collars);
+  const collar = collarDrawn(plates, collars);
   const discW = (p: Plate) => Math.max(p.widthMm * scale, MIN_DISC_PX) * shrink;
   const discH = (p: Plate) => p.diameterMm * scale * shrink;
   const rowW =
     plates.length > 0
       ? plates.reduce((w, p) => w + discW(p), 0) + DISC_GAP_PX * (plates.length - 1)
       : EMPTY_INSET_PX + EMPTY_W_PX;
-  const contentW = SHAFT_PX + COLLAR_INNER_PX + rowW + END_GAP_PX + COLLAR_END_PX + CAP_PX;
+  const contentW = CHROME_PX + rowW + (collar ? COLLAR_GAP_PX + COLLAR_PX : 0);
   const cy = hostH / 2;
   let x = (hostW - contentW) / 2;
   const parts: SleevePart[] = [];
@@ -213,8 +236,10 @@ export function sleeveLayout(
       piece('disc', w, h, { plate: p, numeral });
     });
   }
-  x += END_GAP_PX;
-  piece('collar-end', COLLAR_END_PX, COLLAR_END_H_PX);
-  piece('cap', CAP_PX, CAP_H_PX);
+  if (collar) {
+    x += COLLAR_GAP_PX;
+    piece('collar', COLLAR_PX, COLLAR_MM * scale * shrink);
+  }
+  piece('bare-end', BARE_END_PX, BARE_END_H_PX);
   return parts;
 }

@@ -1,9 +1,11 @@
 // <rack-sleeve> -- one loaded Side of the Bar, drawn side-on as a centered barbell
 // (handoff section 3 "Bar visualizer"): a sleeve shaft running toward the bar's center,
-// an inner collar, the loaded discs heaviest-first from the inside out, then an end
-// collar and end cap -- a complete sleeve, not a one-sided strip. The chrome is fixed
-// grey furniture (--rack-sleeve-*); only the discs carry weight. A bare Bar shows a
-// dashed empty box with a + where the discs would load, still framed by the chrome.
+// an inner collar, the loaded discs heaviest-first from the inside out, then a bare
+// sleeve stub to a plain rounded end (RBAR-96) -- a complete sleeve, not a one-sided
+// strip. The chrome is fixed grey furniture (--rack-sleeve-*); only the discs carry
+// weight. When Setup's collars are on (`collars`) and the Bar has Plates, a flat Collar
+// clamps the outer disc; a bare Bar never gets one. A bare Bar shows a dashed empty box
+// with a + where the discs would load, still framed by the chrome.
 // Each disc is sized from its Plate's REAL dimensions (ADR-0004): height tracks the
 // plate's diameter, width its thickness, so the four 450 mm competition bumpers read
 // as equal-height and differ only in fatness, while the 5 kg and change plates nest
@@ -22,21 +24,24 @@ import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
 import {
-  CAP_H_PX,
-  CAP_PX,
-  COLLAR_END_H_PX,
-  COLLAR_END_PX,
+  BARE_END_H_PX,
+  BARE_END_PX,
+  COLLAR_GAP_PX,
   COLLAR_INNER_H_PX,
   COLLAR_INNER_PX,
+  COLLAR_MM,
+  COLLAR_PX,
   DISC_GAP_PX,
   DISC_INK,
   EMPTY_INSET_PX,
   EMPTY_MM,
   EMPTY_W_PX,
-  END_GAP_PX,
+  LATCH_LEFT_PX,
+  LATCH_PX,
   MAX_SCALE,
   MIN_DISC_PX,
   SHAFT_H_PX,
+  collarDrawn,
   SHAFT_PX,
   SLEEVE_BLOCK_PX,
   numeralFits,
@@ -62,6 +67,7 @@ class RackSleeve extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
   private plates: readonly Plate[] = [];
   private removable = false;
+  private collarsOn = false;
   private resize?: ResizeObserver;
   private lastScale = NaN;
   private lastShrink = NaN;
@@ -82,6 +88,17 @@ class RackSleeve extends HTMLElement {
   }
   get interactive(): boolean {
     return this.removable;
+  }
+
+  /** Whether Setup's collars are on (RBAR-96): a Collar is drawn on the outer disc when
+   * they are and the Bar has Plates. Setting a new value re-renders. */
+  set collars(on: boolean) {
+    if (on === this.collarsOn) return;
+    this.collarsOn = on;
+    this.render();
+  }
+  get collars(): boolean {
+    return this.collarsOn;
   }
 
   connectedCallback(): void {
@@ -125,10 +142,14 @@ class RackSleeve extends HTMLElement {
       })
       .join('');
     // The loaded middle: discs heaviest-first, or a dashed empty box on a bare Bar. Either
-    // way the chrome (shaft + collars + cap) frames it, so a bare Bar still reads as a
-    // barbell, not a stub (handoff section 3).
+    // way the chrome (shaft + inner collar + bare end) frames it, so a bare Bar still
+    // reads as a barbell (handoff section 3). The Collar, when drawn, clamps the outer
+    // disc (RBAR-96); it is decoration -- the Total already counts it.
     const middle =
       this.plates.length === 0 ? '<span class="empty" aria-hidden="true">+</span>' : discs;
+    const collar = collarDrawn(this.plates, this.collarsOn)
+      ? '<span class="collar collar-on" aria-hidden="true"></span>'
+      : '';
     this.root.innerHTML = `
       <style>
         ${BOX_SIZING}${BUTTON_FX}
@@ -136,22 +157,34 @@ class RackSleeve extends HTMLElement {
           display: flex; align-items: center; justify-content: center;
           min-height: ${SLEEVE_BLOCK_PX}px;
         }
-        /* The sleeve chrome (handoff section 3): a centered shaft running toward the bar's
-           center, an inner collar, then (after the discs) an end collar + cap. Fixed-px grey
-           furniture; the pieces touch so the shaft + collar read as one continuous bar. */
+        /* The sleeve chrome (handoff section 3; end redrawn by RBAR-96): a centered shaft
+           running toward the bar's center, an inner collar, then (after the discs) a bare
+           sleeve stub to a plain rounded end. Fixed-px grey furniture; the pieces touch so
+           the shaft + collar read as one continuous bar. */
         .shaft {
           flex: none; width: ${SHAFT_PX}px; height: ${SHAFT_H_PX}px;
           border-radius: 4px 0 0 4px; background: var(--rack-sleeve-shaft);
         }
         .collar { flex: none; background: var(--rack-sleeve-collar); }
         .collar-inner { width: ${COLLAR_INNER_PX}px; height: ${COLLAR_INNER_H_PX}px; border-radius: 3px; }
-        .collar-end {
-          width: ${COLLAR_END_PX}px; height: ${COLLAR_END_H_PX}px; border-radius: 2px;
-          margin-left: ${END_GAP_PX}px; background: var(--rack-sleeve-end);
+        .bare-end {
+          flex: none; width: ${BARE_END_PX}px; height: ${BARE_END_H_PX}px;
+          border-radius: 0 5px 5px 0; background: var(--rack-sleeve-shaft);
         }
-        .cap {
-          flex: none; width: ${CAP_PX}px; height: ${CAP_H_PX}px;
-          border-radius: 1px 5px 5px 1px; background: var(--rack-sleeve-shaft);
+        /* The Collar on the outer disc (RBAR-96, "look 2 flat"): a solid collar-grey
+           block with one 1px edge, 92 mm tall on the disc scale (so it shrinks with the
+           discs), and a flat red latch standing on top. No gradient, no number. */
+        .collar-on {
+          position: relative;
+          width: ${COLLAR_PX}px; margin-left: ${COLLAR_GAP_PX}px; border-radius: 3px;
+          height: calc(var(--rack-mm-scale, ${FALLBACK_SCALE}) * ${COLLAR_MM}px * var(--rack-fit-shrink, 1));
+          border: 1px solid var(--rack-sleeve-end);
+        }
+        .collar-on::after {
+          content: ""; position: absolute;
+          top: -${LATCH_PX}px; left: ${LATCH_LEFT_PX}px;
+          width: ${LATCH_PX}px; height: ${LATCH_PX}px;
+          border-radius: 2px 2px 0 0; background: var(--rack-plate-red);
         }
         /* A bare Bar: a dashed outline box with a + where the discs would load. Its
            120px height (prototype L104) rides the same --rack-mm-scale as the discs --
@@ -217,8 +250,7 @@ class RackSleeve extends HTMLElement {
         button.disc:focus-visible { outline: 2px solid var(--rack-accent); }
       </style>
       <span class="shaft" aria-hidden="true"></span>
-      <span class="collar collar-inner" aria-hidden="true"></span>${middle}<span class="collar collar-end" aria-hidden="true"></span>
-      <span class="cap" aria-hidden="true"></span>
+      <span class="collar collar-inner" aria-hidden="true"></span>${middle}${collar}<span class="bare-end" aria-hidden="true"></span>
     `;
     if (this.removable) {
       this.root.querySelectorAll<HTMLElement>('.disc').forEach((disc, i) => {
@@ -250,8 +282,14 @@ class RackSleeve extends HTMLElement {
       return;
     }
     // The height-bounded zoom cap and the width fit are lib/sleevefit's sleeveFit, the
-    // same fit the share picture draws with (RBAR-70).
-    const { scale, shrink } = sleeveFit(this.plates, hostWidth, this.clientHeight);
+    // same fit the share picture draws with (RBAR-70). A drawn Collar takes its width
+    // from the discs (RBAR-96).
+    const { scale, shrink } = sleeveFit(
+      this.plates,
+      hostWidth,
+      this.clientHeight,
+      this.collarsOn,
+    );
     // Set each property only when it changed -- a new Side Load re-fits at the same
     // width without churning the host's inline style. (Layout can't feed back into a
     // resize loop regardless: the host width is parent-bounded, and its height is either

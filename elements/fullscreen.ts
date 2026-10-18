@@ -28,7 +28,11 @@ import { FULLSCREEN as FS } from '../lib/fullscreenframe.ts';
 // A tracking value in the handoff's CSS spelling: -0.025 -> "-.025em".
 const em = (n: number): string => `${String(n).replace(/^(-?)0\./, '$1.')}em`;
 
-type Sleeve = HTMLElement & { sideLoad: readonly Plate[]; interactive: boolean };
+type Sleeve = HTMLElement & {
+  sideLoad: readonly Plate[];
+  interactive: boolean;
+  collars: boolean;
+};
 
 class RackFullscreen extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -225,6 +229,7 @@ class RackFullscreen extends HTMLElement {
     this.secondaryEl.textContent = format(total, other);
     this.captionEl.textContent = `${configText(barKg, collarKg, set.label)} - per side`;
     this.sleeve.interactive = false;
+    this.sleeve.collars = collarKg > 0;
     this.sleeve.sideLoad = side;
   }
 }

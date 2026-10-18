@@ -11,6 +11,7 @@ function side(...kgs: number[]): Plate[] {
 type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
   interactive: boolean;
+  collars: boolean;
 };
 
 function mountSleeve(): Sleeve {
@@ -58,13 +59,15 @@ describe('<rack-sleeve>', () => {
       return el.shadowRoot!.querySelector(sel) !== null;
     }
 
-    it('frames the loaded discs with a sleeve shaft, inner collar, end collar, and end cap', () => {
+    it('frames the loaded discs with a sleeve shaft, inner collar, and a bare end (RBAR-96)', () => {
       const el = mountSleeve();
       el.sideLoad = side(25, 15);
       expect(has(el, '.shaft')).toBe(true);
       expect(has(el, '.collar-inner')).toBe(true);
-      expect(has(el, '.collar-end')).toBe(true);
-      expect(has(el, '.cap')).toBe(true);
+      expect(has(el, '.bare-end')).toBe(true);
+      // No end collar and no cap: nothing after the plates looks like a stopper.
+      expect(has(el, '.collar-end')).toBe(false);
+      expect(has(el, '.cap')).toBe(false);
     });
 
     it('keeps the full chrome on a bare Bar (the empty state is still a barbell)', () => {
@@ -72,14 +75,50 @@ describe('<rack-sleeve>', () => {
       el.sideLoad = [];
       expect(has(el, '.shaft')).toBe(true);
       expect(has(el, '.collar-inner')).toBe(true);
-      expect(has(el, '.collar-end')).toBe(true);
-      expect(has(el, '.cap')).toBe(true);
+      expect(has(el, '.bare-end')).toBe(true);
+    });
+
+    it('draws the bare end as a 30 x 11 shaft-grey stub with a plain rounded end', () => {
+      const el = mountSleeve();
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const body = css.match(/\.bare-end \{([^}]*)\}/)![1]!;
+      expect(body).toMatch(/width: 30px/);
+      expect(body).toMatch(/height: 11px/);
+      expect(body).toMatch(/border-radius: 0 5px 5px 0/);
+      expect(body).toMatch(/background: var\(--rack-sleeve-shaft\)/);
+    });
+
+    it('draws the Collar flat: solid collar fill, a 1px end-token edge, a flat red latch, no number', () => {
+      const el = mountSleeve();
+      el.collars = true;
+      el.sideLoad = side(20, 15, 2.5);
+      const collar = el.shadowRoot!.querySelector('.collar-on')!;
+      expect(collar.textContent).toBe('');
+      expect(collar.getAttribute('aria-hidden')).toBe('true');
+      // the Collar sits after the outer disc, then the bare end
+      expect(collar.previousElementSibling!.classList.contains('disc')).toBe(true);
+      expect(collar.nextElementSibling!.classList.contains('bare-end')).toBe(true);
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const body = css.match(/\.collar-on \{([^}]*)\}/)![1]!;
+      expect(body).toMatch(/width: 20px/);
+      expect(body).toMatch(/margin-left: 1px/);
+      expect(body).toMatch(/border-radius: 3px/);
+      expect(body).toMatch(/border: 1px solid var\(--rack-sleeve-end\)/);
+      expect(body).toMatch(/\* 92px/);
+      expect(body).not.toMatch(/gradient/);
+      const latch = css.match(/\.collar-on::after \{([^}]*)\}/)![1]!;
+      expect(latch).toMatch(/top: -8px/);
+      expect(latch).toMatch(/left: 5px/);
+      expect(latch).toMatch(/width: 8px; height: 8px/);
+      expect(latch).toMatch(/border-radius: 2px 2px 0 0/);
+      expect(latch).toMatch(/background: var\(--rack-plate-red\)/);
+      expect(css.match(/\.collar \{([^}]*)\}/)![1]).toMatch(/background: var\(--rack-sleeve-collar\)/);
     });
 
     it('renders the chrome decoratively (the discs carry the accessible names)', () => {
       const el = mountSleeve();
       el.sideLoad = side(25);
-      for (const sel of ['.shaft', '.collar-inner', '.collar-end', '.cap']) {
+      for (const sel of ['.shaft', '.collar-inner', '.bare-end']) {
         expect(el.shadowRoot!.querySelector(sel)!.getAttribute('aria-hidden')).toBe('true');
       }
     });

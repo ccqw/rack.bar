@@ -22,6 +22,7 @@ const LOADED: LoadSummary = {
 interface Recorded {
   texts: string[];
   fills: unknown[];
+  strokes: unknown[];
   order: string[];
   stops: string[];
   calls: string[];
@@ -47,6 +48,7 @@ function fakeContext(rec: Recorded): CanvasRenderingContext2D {
       set(_t, prop: string, value) {
         state[prop] = value;
         if (prop === 'fillStyle') rec.fills.push(value);
+        if (prop === 'strokeStyle') rec.strokes.push(value);
         return true;
       },
     },
@@ -55,7 +57,7 @@ function fakeContext(rec: Recorded): CanvasRenderingContext2D {
 }
 
 function stubCanvas(opts: { blob?: Blob | null; context?: boolean } = {}): Recorded {
-  const rec: Recorded = { texts: [], fills: [], order: [], stops: [], calls: [] };
+  const rec: Recorded = { texts: [], fills: [], strokes: [], order: [], stops: [], calls: [] };
   const blob = opts.blob === undefined ? new Blob(['png'], { type: 'image/png' }) : opts.blob;
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (
     this: HTMLCanvasElement,
@@ -160,6 +162,29 @@ describe('shareImageFile (the loadout picture, RBAR-70)', () => {
     expect(rec.stops.slice(0, 2)).toEqual(['#16181c', '#0a0b0d']); // the dark wash first
     expect(rec.stops).toContain('#25a45a');
     expect(rec.fills).toContain('#8b9199');
+  });
+
+  it('clamps the flat Collar on the outer disc only when collars are on and the Bar has Plates (RBAR-96)', async () => {
+    const root = document.documentElement.style;
+    root.setProperty('--rack-sleeve-end', '#5c636b'); // the Collar's 1px edge
+    root.setProperty('--rack-plate-red', '#d23a3a'); // its latch
+    const edges = (rec: Recorded) => rec.strokes.filter((c) => c === '#5c636b').length;
+
+    const on = stubCanvas();
+    await shareImageFile({ ...LOADED, collarKg: 2.5 }, 'Competition');
+    expect(edges(on)).toBe(1);
+    expect(on.fills).toContain('#d23a3a'); // discs fill by gradient, so a flat red is the latch
+    vi.restoreAllMocks();
+
+    const off = stubCanvas();
+    await shareImageFile(LOADED, 'Competition');
+    expect(edges(off)).toBe(0);
+    expect(off.fills).not.toContain('#d23a3a');
+    vi.restoreAllMocks();
+
+    const bare = stubCanvas();
+    await shareImageFile({ side: [], barKg: 20, collarKg: 2.5, unit: 'kg' }, 'Competition');
+    expect(edges(bare)).toBe(0);
   });
 
   it('returns null, never rejects, without a 2D context', async () => {
