@@ -32,6 +32,19 @@ export function parseTarget(raw: string | null): number | null {
   return isRememberable(n) && n <= MAX_TARGET_KG ? n : null;
 }
 
+/**
+ * The Target a reload restores (RBAR-87, ADR-0007): the stored `rackbar.target` value
+ * when it is valid, else a valid legacy `rackbar.working` value (the one-time
+ * migration), else null -- exactly as if neither key existed. Both raw values go through
+ * parseTarget, the same check: a plain decimal, positive, finite and at most
+ * MAX_TARGET_KG. So a corrupt, negative, zero or out-of-range value in EITHER key falls
+ * back to no Target and never reaches the solver or the planner. An explicit valid
+ * Target always wins over the legacy one.
+ */
+export function restoreTarget(storedRaw: string | null, legacyRaw: string | null): number | null {
+  return parseTarget(storedRaw) ?? parseTarget(legacyRaw);
+}
+
 // Targets are kept to two decimals -- the precision the chip and every other readout
 // display (fmtKg). Normalizing at the single store boundary keeps the stored value, the
 // dedupe key, and the rendered label one and the same number, so a chip can never read

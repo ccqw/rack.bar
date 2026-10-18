@@ -35,6 +35,7 @@ import { readPersisted, removePersisted, writePersisted } from './persist.ts';
 import {
   parseRecents,
   parseTarget,
+  restoreTarget,
   pushRecent,
   removeRecent,
   restoreRecent,
@@ -1129,20 +1130,19 @@ class RackConsole extends HTMLElement {
     this.render(); // initial state: Decode, on the stored Target or a bare rig
   }
 
-  // Read the stored Target (TARGET_KEY, validated by parseTarget, ADR-0007), migrating
-  // the pre-RBAR-87 Warm up working weight: a valid LEGACY_WORKING_KEY value becomes the
-  // Target only when no valid Target is stored (an explicit Target always wins), and the
-  // legacy key is removed either way. The caller's solveTo stores the migrated Target
+  // Read the stored Target, migrating the pre-RBAR-87 Warm up working weight. The choice
+  // is the pure restoreTarget (lib/recents.ts, ADR-0007): both keys pass the same
+  // parseTarget range check (a positive plain decimal up to MAX_TARGET_KG), so a corrupt
+  // or out-of-range value in either reads as no Target, like a missing key. A valid
+  // LEGACY_WORKING_KEY value becomes the Target only when no valid Target is stored (an
+  // explicit Target always wins), and the legacy key is removed either way. The caller's solveTo stores the migrated Target
   // (setTarget stays the only writer). The migration runs once only if that removal
   // succeeds: storage that reads but cannot remove would offer the legacy value again on
   // a later reload with no Target stored (best-effort, ADR-0009).
   private loadTarget(): number | null {
-    const stored = parseTarget(readPersisted(TARGET_KEY));
     const legacyRaw = readPersisted(LEGACY_WORKING_KEY);
-    if (legacyRaw === null) return stored;
-    removePersisted(LEGACY_WORKING_KEY);
-    const legacy = parseTarget(legacyRaw);
-    return stored !== null || legacy === null ? stored : legacy;
+    if (legacyRaw !== null) removePersisted(LEGACY_WORKING_KEY);
+    return restoreTarget(readPersisted(TARGET_KEY), legacyRaw);
   }
 
   // Set the one Target (RBAR-87) and persist it best-effort (ADR-0009). A Target that

@@ -425,8 +425,8 @@ describe('<rack-console> the pre-RBAR-87 rackbar.working key migrates once (ADR-
     expect(workDraft(el)).toBe('100');
   });
 
-  it('drops a cleared or corrupt value without inventing a Target', () => {
-    for (const raw of ['', 'garbage', '0', '-5']) {
+  it('drops a cleared, corrupt or out-of-range value without inventing a Target', () => {
+    for (const raw of ['', 'garbage', '0', '-5', '1e9', '1000000000', 'NaN', '140abc', '1000.5']) {
       localStorage.clear();
       localStorage.setItem('rackbar.working', raw);
       const el = mountConsole();
@@ -463,8 +463,8 @@ describe('<rack-console> the pre-RBAR-87 rackbar.working key migrates once (ADR-
     expect(workDraft(el)).toBe('');
   });
 
-  it('a stored Target that is not a plain decimal the app writes is no Target (ADR-0007)', () => {
-    for (const raw of ['0x8C', '1e300', '1001']) {
+  it('a stored Target that is not a plain decimal the app writes, or out of range, is no Target (ADR-0007)', () => {
+    for (const raw of ['0x8C', '1e300', '1001', '-5', '0', '1e9', '1000000000', 'NaN', '140abc']) {
       localStorage.clear();
       localStorage.setItem('rackbar.target', raw);
       const el = mountConsole();
@@ -472,6 +472,27 @@ describe('<rack-console> the pre-RBAR-87 rackbar.working key migrates once (ADR-
       expect(sideOnScreen(el)).toEqual([]);
       modeBtn(el, 'warmup').click();
       expect(workDraft(el)).toBe('');
+      expect(stairs(el)).toHaveLength(0);
+      el.remove();
+    }
+  });
+
+  it('a corrupt stored Target lets a valid legacy value migrate, and a corrupt pair is no Target (RBAR-87, ADR-0007)', () => {
+    for (const raw of ['-5', '0', '1e9', 'NaN', '140abc']) {
+      localStorage.clear();
+      localStorage.setItem('rackbar.target', raw);
+      localStorage.setItem('rackbar.working', '120');
+      let el = mountConsole();
+      expect(localStorage.getItem('rackbar.target')).toBe('120');
+      el.remove();
+      localStorage.clear();
+      localStorage.setItem('rackbar.target', raw);
+      localStorage.setItem('rackbar.working', raw);
+      el = mountConsole();
+      expect(localStorage.getItem('rackbar.working')).toBeNull();
+      modeBtn(el, 'warmup').click();
+      expect(workDraft(el)).toBe('');
+      expect(stairs(el)).toHaveLength(0);
       el.remove();
     }
   });

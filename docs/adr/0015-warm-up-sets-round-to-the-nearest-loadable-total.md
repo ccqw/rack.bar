@@ -320,6 +320,9 @@ first open. All three are gone. The Working set's Target is the Target.
      (ADR-0014 as amended). The link still writes no rig key.
 4. **Migrating `rackbar.working`, once.** On connect, a valid legacy value becomes the
    Target only when no valid Target is stored, so an explicit Target always wins. The
+   choice is the pure `restoreTarget` (`lib/recents.ts`): both keys go through the same
+   `parseTarget` check (a positive plain decimal up to `MAX_TARGET_KG`), so a corrupt or
+   out-of-range value in either (-5, 0, 1e9, "140abc") reads as no Target. The
    legacy key is then removed either way: valid, cleared (`''`) or corrupt. The
    migration runs once only if that removal succeeds. Storage that reads but cannot
    remove would offer the legacy value again on a later reload with no Target stored.

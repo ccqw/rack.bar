@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import {
   MAX_RECENTS,
   pushRecent,
   parseRecents,
   parseTarget,
+  restoreTarget,
   removeRecent,
   restoreRecent,
 } from './recents.ts';
@@ -181,5 +183,48 @@ describe('parseTarget (rackbar.target and legacy rackbar.working read validation
     }
     expect(parseTarget(String(MAX_TARGET_KG))).toBe(MAX_TARGET_KG);
     expect(parseTarget(' 140 ')).toBe(140);
+  });
+});
+
+describe('restoreTarget (the reload Target and the rackbar.working migration share one range check, RBAR-87, ADR-0007)', () => {
+  // Garbage, out-of-range and non-positive values the keypad could never have written.
+  const corrupt = ['-5', '0', '1e9', '1000000000', 'NaN', '140abc', '', 'Infinity', '1000.5', '0x8C'];
+
+  it('reads a valid stored Target, and a valid legacy value only when none is stored', () => {
+    expect(restoreTarget('100', null)).toBe(100);
+    expect(restoreTarget(null, '120')).toBe(120);
+    expect(restoreTarget('100', '120')).toBe(100);
+    expect(restoreTarget(null, null)).toBeNull();
+  });
+
+  it('a corrupt or out-of-range legacy value falls back to no Target, as a missing key does', () => {
+    for (const raw of corrupt) expect(restoreTarget(null, raw), raw).toBeNull();
+  });
+
+  it('a corrupt or out-of-range stored Target falls back to no Target, or to a valid legacy value', () => {
+    for (const raw of corrupt) {
+      expect(restoreTarget(raw, null), raw).toBeNull();
+      expect(restoreTarget(raw, '120'), raw).toBe(120);
+    }
+  });
+
+  it('never returns anything but null or a positive finite kg within the cap (property)', () => {
+    const rawArb = fc.oneof(
+      fc.string(),
+      fc.double().map(String),
+      fc.integer({ min: -2000, max: 2_000_000 }).map(String),
+      fc.constantFrom(null, ...corrupt),
+    );
+    fc.assert(
+      fc.property(rawArb, rawArb, (stored, legacy) => {
+        const t = restoreTarget(stored, legacy);
+        if (t !== null) {
+          expect(Number.isFinite(t)).toBe(true);
+          expect(t).toBeGreaterThan(0);
+          expect(t).toBeLessThanOrEqual(MAX_TARGET_KG);
+        }
+      }),
+      { seed: 87, numRuns: 500 },
+    );
   });
 });
