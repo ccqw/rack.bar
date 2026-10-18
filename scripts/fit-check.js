@@ -29,6 +29,10 @@
 // widest stair name runs past its column (STAIR NAME CLIPPED n).
 // Since RBAR-92 the main header carries the Loadout quiz door left of the Setup pill;
 // each state measures how far the header row's items run past it (HEADER CLIPPED n).
+// Since RBAR-103 each state also counts the Setup pill label's line boxes: more than one
+// reads PILL WRAPS n and adds a FAIL line; a quiz door with no box in the header reads
+// QUIZ HIDDEN (and fails); a label cut short by its ellipsis reads "pill cut n px"
+// (allowed -- the full text is kept wherever it fits).
 // The quiz page (game.html) is walked too, as "quiz:" lines: a question, a right answer,
 // a wrong answer with its named mistake and breakdown, and the gear sheet open, on both
 // plate sets with Setup's collars off and on, at Plates per side up to 6. Each line has
@@ -115,8 +119,21 @@ async (shared) => {
         const r = k.getBoundingClientRect();
         return Math.max(m, Math.ceil(hr.left + 22 - r.left), Math.ceil(r.right - (hr.right - 22)));
       }, 0);
+      // The Setup pill (RBAR-103): its label's line boxes (one = it stays on one
+      // line), how far its ellipsis cuts it, and whether the quiz door still shows
+      // inside the header row.
+      const label = head.querySelector('[data-pill-label]');
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      const pillLines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      const pillCut = label.scrollWidth - label.clientWidth;
+      const qr = head.querySelector('[data-quiz-link]')?.getBoundingClientRect();
+      const quizHidden = !qr || qr.width < 1 || qr.left < hr.left || qr.right > hr.right;
       return {
         headClip,
+        pillLines,
+        pillCut,
+        quizHidden,
         ruOver,
         lineClip,
         nameClip,
@@ -393,6 +410,9 @@ async (shared) => {
         lineClip: Math.max(r.lineClip, prev?.lineClip ?? 0),
         nameClip: Math.max(r.nameClip, prev?.nameClip ?? 0),
         headClip: Math.max(r.headClip, prev?.headClip ?? 0),
+        pillLines: Math.max(r.pillLines, prev?.pillLines ?? 0),
+        pillCut: Math.max(r.pillCut, prev?.pillCut ?? 0),
+        quizHidden: r.quizHidden || (prev?.quizHidden ?? false),
       });
     } else {
       prev.ruOver = Math.max(prev.ruOver, r.ruOver);
@@ -402,6 +422,9 @@ async (shared) => {
       prev.lineClip = Math.max(prev.lineClip, r.lineClip);
       prev.nameClip = Math.max(prev.nameClip, r.nameClip);
       prev.headClip = Math.max(prev.headClip, r.headClip);
+      prev.pillLines = Math.max(prev.pillLines, r.pillLines);
+      prev.pillCut = Math.max(prev.pillCut, r.pillCut);
+      if (r.quizHidden) prev.quizHidden = true;
     }
   }
   // The calculator lines first, then the quiz lines (a stable sort keeps each in order).
@@ -422,6 +445,9 @@ async (shared) => {
       `${r.lineClip > 0 ? ` LINE CLIPPED ${r.lineClip}` : ''}` +
       `${r.nameClip > 0 ? ` STAIR NAME CLIPPED ${r.nameClip}` : ''}` +
       `${r.headClip > 0 ? ` HEADER CLIPPED ${r.headClip}` : ''}` +
+      `${r.pillLines > 1 ? ` PILL WRAPS ${r.pillLines}` : ''}` +
+      `${r.quizHidden ? ' QUIZ HIDDEN' : ''}` +
+      `${r.pillCut > 0 ? `, pill cut ${r.pillCut}px` : ''}` +
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
@@ -431,5 +457,10 @@ async (shared) => {
   // row open included (RBAR-72, ADR-0013): any inner scroll fails the run.
   const scrolling = [...worst.entries()].filter(([, r]) => r.sheetScroll > 0).map(([k]) => k);
   if (scrolling.length) lines.push(`FAIL: a sheet scrolls inside at ${scrolling.join('; ')}`);
+  // The header's Setup pill stays one line and the quiz door stays in view (RBAR-103).
+  const header = [...worst.entries()]
+    .filter(([, r]) => !r.quiz && (r.pillLines !== 1 || r.quizHidden))
+    .map(([k]) => k);
+  if (header.length) lines.push(`FAIL: the header pill wraps or the quiz door hides at ${header.join('; ')}`);
   return lines;
 }
