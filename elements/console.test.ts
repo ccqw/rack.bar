@@ -256,7 +256,7 @@ describe('<rack-console> (bar visualizer contextual label, RBAR-35)', () => {
     expect(vizLabel(el).textContent).toBe('Tap a plate to load');
   });
 
-  it('shares one head row with Share and fullscreen, label first, above the sleeve', () => {
+  it('shares one head row with the stopwatch, Share and fullscreen, label first, above the sleeve', () => {
     const el = mountConsole();
     const viz = el.shadowRoot!.querySelector('.viz')!;
     const head = viz.querySelector('.vizhead')!;
@@ -268,7 +268,9 @@ describe('<rack-console> (bar visualizer contextual label, RBAR-35)', () => {
     const left = head.querySelector('.vizhl')!;
     expect([...head.children]).toEqual([left, icons]);
     expect([...left.children]).toEqual([vizLabel(el), el.shadowRoot!.querySelector('[data-viz-add]')]);
+    // The Rest timer's stopwatch leads the row (RBAR-94, per the picked prototype).
     expect([...icons.children]).toEqual([
+      el.shadowRoot!.querySelector('[data-rest]'),
       el.shadowRoot!.querySelector('[data-share]'),
       el.shadowRoot!.querySelector('[data-fullscreen]'),
     ]);

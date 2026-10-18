@@ -138,6 +138,11 @@ export function plateLabel(plate: Plate): string {
 export const SLEEVE_BLOCK_PX = 204;
 export const SLEEVE_MIN_PX = 84;
 export const SLEEVE_PAD_PX = 8;
+// The floor while the Rest dock is up (RBAR-94, ADR-0019): the dock's height comes out
+// of the bar block, and in Warm up and By Plates on a 548px-tall phone that takes the
+// sleeve below SLEEVE_MIN_PX. It may shrink to this instead, so Next and the palette
+// stay clear of the dock; the floor is back the moment the dock goes.
+export const SLEEVE_DOCKED_MIN_PX = 40;
 
 /**
  * The disc numeral's ink and engrave (handoff section 3): dark ink with a light lip on

@@ -109,3 +109,10 @@ at 375x548. By Plates and Warm up are unchanged (By Plates 162px / 107px). Every
 still has `over 0`. At 320 wide, the status line closes up its gap and pill pads so the
 longest miss ("You asked 1000 kg" beside "630 KG SHORT") stays inside the column.
 fit-check now reports any overrun as LINE CLIPPED.
+
+## Amendment: the Rest dock takes Bar pixels (RBAR-94)
+
+While the Rest timer's dock shows, `<rack-app>` reserves its height (60px, 54px on a short
+screen) and the bar block flexes into what is left, with a lower floor
+(`SLEEVE_DOCKED_MIN_PX`, 40px) for as long as the dock is up. See ADR-0019 for the
+measurements and the trade-off.

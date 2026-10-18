@@ -25,6 +25,8 @@ import './share.ts';
 import './fullscreen.ts';
 import './warmup.ts';
 import { ScreenWake } from './wakelock.ts';
+import { STOPWATCH_GLYPH } from './restglyphs.ts';
+import { SLEEVE_DOCKED_MIN_PX } from '../lib/sleevefit.ts';
 import { wayName } from './ways.ts';
 import { LONG_PRESS_MS } from './recents.ts';
 import { decodeWithin } from '../lib/decode.ts';
@@ -451,6 +453,12 @@ class RackConsole extends HTMLElement {
           max-height: ${SLEEVE_BLOCK_PX}px;
         }
         .viz rack-sleeve { flex: 1 1 0; min-height: 0; }
+        /* RBAR-94 (ADR-0019): while the Rest dock shows (<rack-app> sets resting), the
+           app reserves its height and the bar block may flex below its usual floor, so
+           Next and the palette stay clear of the dock. */
+        :host([resting]) .viz {
+          min-height: ${VIZ_PAD_PX + LABEL_PX + VIZ_GAP_PX + SLEEVE_DOCKED_MIN_PX}px;
+        }
         /* Another way (RBAR-66): with more than one way to make the Total, the bar is a
            button that steps to the next one. No hint text; a press darkens the block
            (prototype H .sleeve.tappable:active). No callout or selection on a hold --
@@ -506,6 +514,8 @@ class RackConsole extends HTMLElement {
         /* Fill, radius and hover ring per prototype L98 (RBAR-74). */
         .iconbtn:hover { color: var(--rack-text); border-color: var(--rack-border-hover); }
         .iconbtn:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* The stopwatch is live (accent) while a Rest shows (RBAR-94). */
+        :host([resting]) [data-rest] { color: var(--rack-accent); border-color: var(--rack-accent); }
         .readout { text-align: center; }
         /* The readout head (prototype L131): the Total section label at the left edge,
            the kg|lb unit toggle at the right -- space-between, not a centered cluster. */
@@ -802,6 +812,10 @@ class RackConsole extends HTMLElement {
               ><span class="vizadd" data-viz-add hidden></span
             ></span>
             <div class="icons">
+              <!-- The Rest timer (RBAR-94, ADR-0019): <rack-app> owns it and hears the
+                   tap as a resttimer event. -->
+              <button type="button" class="iconbtn" data-rest aria-label="Rest timer"
+                >${STOPWATCH_GLYPH}</button>
               <button type="button" class="iconbtn" data-share aria-label="Share">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <path d="M8 10V2M8 2L5 5M8 2l3 3M3 9v3a2 2 0 002 2h6a2 2 0 002-2V9"
@@ -1080,6 +1094,12 @@ class RackConsole extends HTMLElement {
     });
     // The Share control opens the loading card (RBAR-19, ADR-0011); see openShare.
     this.root.querySelector('[data-share]')!.addEventListener('click', () => this.openShare());
+    // The stopwatch (RBAR-94): the Rest timer lives in <rack-app>; just say so, from the
+    // button itself so the timer screen can hand focus back to it on close.
+    const restBtn = this.root.querySelector<HTMLButtonElement>('[data-rest]')!;
+    restBtn.addEventListener('click', () =>
+      restBtn.dispatchEvent(new CustomEvent('resttimer', { bubbles: true, composed: true })),
+    );
     // The fullscreen control blows the loaded Bar up to the immersive card (RBAR-18).
     this.root
       .querySelector('[data-fullscreen]')!

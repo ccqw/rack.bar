@@ -34,6 +34,11 @@
 // plate sets with Setup's collars off and on, at Plates per side up to 6. Each line has
 // the bar block's height, how far the breakdown line runs past the column (MATH CLIPPED
 // n) and how far the gear sheet would scroll inside (SHEET SCROLLS n).
+// Since RBAR-94 the head row holds three icons (the stopwatch, Share, fullscreen), and the walk adds the Rest
+// dock states (ADR-0019): with the dock up, the app reserves its height and the bar
+// block flexes, so each dock state checks every visible block of the column ends above
+// the dock (DOCK COVERS <block>), and the timer screen states check the screen fits
+// without clipping, its ring inside its cell (SCREEN CLIPS n).
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -67,9 +72,10 @@ async (shared) => {
       const d = document.documentElement;
       const con = document.querySelector('rack-app').shadowRoot.querySelector('rack-console')
         .shadowRoot;
-      // Exactly Share + fullscreen: an empty match must not pass the hit-test vacuously.
+      // Exactly the stopwatch + Share + fullscreen (RBAR-94): an empty match must not pass
+      // the hit-test vacuously.
       const btns = [...con.querySelectorAll('.icons .iconbtn')];
-      const iconsMissing = btns.length !== 2;
+      const iconsMissing = btns.length !== 3;
       const iconsHit = btns.every((b) => {
         const r = b.getBoundingClientRect();
         const x = r.left + r.width / 2;
@@ -115,8 +121,47 @@ async (shared) => {
         const r = k.getBoundingClientRect();
         return Math.max(m, Math.ceil(hr.left + 22 - r.left), Math.ceil(r.right - (hr.right - 22)));
       }, 0);
+      // The Rest dock (RBAR-94, ADR-0019): when it is up, the whole column is protected --
+      // every visible block of the console's .stack (the bar block, the readout, the
+      // round-up row, the Recents rail, the On the bar row, the palette, Warm up's stairs
+      // and Next) must end above the dock's top (a pixel of slack). And when the timer
+      // screen is open, how far it would clip: its content past its box, its controls
+      // past the viewport, or the ring spilling out of its cell over the top bar or the
+      // presets (.mid flexes, the ring is a fixed size).
+      const rest = document.querySelector('rack-app').shadowRoot.querySelector('rack-rest')
+        .shadowRoot;
+      const dockEl = rest.querySelector('rack-rest-dock');
+      const covers = [];
+      if (!dockEl.hidden) {
+        const top = dockEl.getBoundingClientRect().top;
+        for (const e of con.querySelector('.stack').children) {
+          if (e.getClientRects().length === 0) continue;
+          const r = e.getBoundingClientRect();
+          if (r.height > 0 && r.bottom > top + 1) {
+            covers.push(e.tagName.toLowerCase() + (e.className ? '.' + e.className.split(' ')[0] : ''));
+          }
+        }
+      }
+      const scrHost = rest.querySelector('rack-rest-screen');
+      let scrClip = 0;
+      if (!scrHost.hidden) {
+        const q = (sel) => scrHost.shadowRoot.querySelector(sel).getBoundingClientRect();
+        const scr = scrHost.shadowRoot.querySelector('[data-scr]');
+        const ring = q('.rg');
+        scrClip = Math.max(
+          0,
+          scr.scrollHeight - scr.clientHeight,
+          Math.ceil(q('.ctl').bottom - window.innerHeight),
+          Math.ceil(q('.tb').bottom - ring.top),
+          Math.ceil(ring.bottom - q('.seg').top),
+        );
+      }
       return {
         headClip,
+        dock: !dockEl.hidden,
+        covers,
+        screen: !scrHost.hidden,
+        scrClip,
         ruOver,
         lineClip,
         nameClip,
@@ -142,16 +187,29 @@ async (shared) => {
     await page.setViewportSize({ width: w, height: h });
     for (const plateSet of ['comp', 'training']) {
       for (const unit of ['kg', 'lb']) {
-        const reset = async (recents) => {
+        // `rest` (RBAR-94): 'run' or 'done' stores a Rest, so the page boots with the dock up.
+        const reset = async (recents, rest) => {
           await page.goto(ORIGIN + '/');
           await page.evaluate(
-            ([set, u, r]) => {
+            ([set, u, r, rs]) => {
               localStorage.clear();
               localStorage.setItem('rackbar.plateSet', set);
               localStorage.setItem('rackbar.unit', u);
               if (r) localStorage.setItem('rackbar.recents', JSON.stringify(r));
+              const now = Date.now();
+              if (rs === 'run') {
+                localStorage.setItem(
+                  'rackbar.rest',
+                  JSON.stringify({ phase: 'run', last: 120, dur: 120, endAt: now + 600000 }),
+                );
+              } else if (rs === 'done') {
+                localStorage.setItem(
+                  'rackbar.rest',
+                  JSON.stringify({ phase: 'done', last: 120, dur: 120, endAt: now - 12000 }),
+                );
+              }
             },
-            [plateSet, unit, recents],
+            [plateSet, unit, recents, rest ?? null],
           );
           await page.reload();
           await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
@@ -240,6 +298,72 @@ async (shared) => {
         await record('warmup: drifted row (limits)');
         await stair(2);
         await record('warmup: Next to a drifted row (limits)');
+
+        // The Rest dock (RBAR-94, ADR-0019): a running Rest's dock over By Weight (loaded,
+        // and the round-up + Another way row), By Plates loaded, and Warm up (the bare-Bar
+        // row, the Working set, and the drifted row under Plate limits); then a finished
+        // dock (yellow, overtime) and the timer screen, running and in overtime.
+        await reset(RECENTS, 'run');
+        await chip(142);
+        await record('dock: weight loaded');
+        await chip(100.3);
+        await tapBar();
+        await record('dock: weight round-up + another way');
+        await inConsole(`con.querySelector('[data-mode="encode"]').click()`);
+        await inConsole(
+          `const k=[...con.querySelector('rack-palette').shadowRoot.querySelectorAll('.key')];` +
+            `for (const i of [0,0,1,2,3,4,k.length-1]) k[Math.min(i,k.length-1)].click()`,
+        );
+        await record('dock: plates loaded');
+        await reset(null, 'run');
+        await page.evaluate(() => localStorage.setItem('rackbar.working', '140'));
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
+        await record('dock: warmup Bar row');
+        await stair(4);
+        await record('dock: warmup Working set');
+        await page.evaluate(() => {
+          localStorage.setItem('rackbar.working', '60');
+          localStorage.setItem(
+            'rackbar.platesOnHand',
+            JSON.stringify({
+              comp: { 2.5: 0, 2: 0, 1.5: 0, 1: 0, 0.5: 0 },
+              training: { 10: 0, 5: 0, 2.5: 0 },
+            }),
+          );
+        });
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
+        await stair(3);
+        await record('dock: warmup drifted row (limits)');
+        await reset(null, 'done');
+        await page.evaluate(() => localStorage.setItem('rackbar.working', '140'));
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
+        await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
+        await stair(3);
+        await record('dock overtime: warmup 90% row');
+        // The screen slides up and the settings card rises: measure once they have landed.
+        const settled = () => page.waitForTimeout(400);
+        await inConsole(`con.querySelector('[data-rest]').click()`);
+        await settled();
+        await record('timer screen: overtime');
+        await reset(null, 'run');
+        await inConsole(`con.querySelector('[data-rest]').click()`);
+        await settled();
+        await record('timer screen: running');
+        await page.evaluate(() =>
+          document
+            .querySelector('rack-app')
+            .shadowRoot.querySelector('rack-rest')
+            .shadowRoot.querySelector('rack-rest-screen')
+            .shadowRoot.querySelector('[data-settings]')
+            .click(),
+        );
+        await settled();
+        await record('timer screen: settings');
 
         // The Setup sheet (RBAR-76, ADR-0017): bare, with the "+" entry open, and with
         // the three custom Bars the cap allows (one selected).
@@ -393,6 +517,8 @@ async (shared) => {
         lineClip: Math.max(r.lineClip, prev?.lineClip ?? 0),
         nameClip: Math.max(r.nameClip, prev?.nameClip ?? 0),
         headClip: Math.max(r.headClip, prev?.headClip ?? 0),
+        covers: [...new Set([...r.covers, ...(prev?.covers ?? [])])],
+        scrClip: Math.max(r.scrClip, prev?.scrClip ?? 0),
       });
     } else {
       prev.ruOver = Math.max(prev.ruOver, r.ruOver);
@@ -402,6 +528,8 @@ async (shared) => {
       prev.lineClip = Math.max(prev.lineClip, r.lineClip);
       prev.nameClip = Math.max(prev.nameClip, r.nameClip);
       prev.headClip = Math.max(prev.headClip, r.headClip);
+      prev.covers = [...new Set([...prev.covers, ...r.covers])];
+      prev.scrClip = Math.max(prev.scrClip, r.scrClip);
     }
   }
   // The calculator lines first, then the quiz lines (a stable sort keeps each in order).
@@ -422,6 +550,8 @@ async (shared) => {
       `${r.lineClip > 0 ? ` LINE CLIPPED ${r.lineClip}` : ''}` +
       `${r.nameClip > 0 ? ` STAIR NAME CLIPPED ${r.nameClip}` : ''}` +
       `${r.headClip > 0 ? ` HEADER CLIPPED ${r.headClip}` : ''}` +
+      `${r.covers.length ? ` DOCK COVERS ${r.covers.join('+')}` : ''}` +
+      `${r.scrClip > 0 ? ` SCREEN CLIPS ${r.scrClip}` : ''}` +
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
@@ -431,5 +561,12 @@ async (shared) => {
   // row open included (RBAR-72, ADR-0013): any inner scroll fails the run.
   const scrolling = [...worst.entries()].filter(([, r]) => r.sheetScroll > 0).map(([k]) => k);
   if (scrolling.length) lines.push(`FAIL: a sheet scrolls inside at ${scrolling.join('; ')}`);
+  if (scrolling.length) lines.push(`FAIL: the Setup sheet scrolls inside at ${scrolling.join('; ')}`);
+  // The Rest dock must cover nothing in the column, and the timer screen must fit
+  // (RBAR-94, ADR-0019): either fails the run.
+  const covered = [...worst.entries()].filter(([, r]) => r.covers?.length).map(([k]) => k);
+  if (covered.length) lines.push(`FAIL: the Rest dock covers the column at ${covered.join('; ')}`);
+  const clipped = [...worst.entries()].filter(([, r]) => (r.scrClip ?? 0) > 0).map(([k]) => k);
+  if (clipped.length) lines.push(`FAIL: the timer screen clips at ${clipped.join('; ')}`);
   return lines;
 }

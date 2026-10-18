@@ -121,6 +121,22 @@ import {
   MAX_ANSWER_CHARS,
 } from './quiz.ts';
 import type { QuizRig, QuizSettings } from './quiz.ts';
+import {
+  REST_PRESETS,
+  MAX_REST_S,
+  STALE_OVERTIME_MS,
+  STALE_PAUSE_MS,
+  adjustRest,
+  idleRest,
+  parseRest,
+  pauseRest,
+  readRest,
+  resumeRest,
+  serializeRest,
+  settleRest,
+  startRest,
+} from './rest.ts';
+import type { Rest } from './rest.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -2508,6 +2524,153 @@ describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-00
         expect(d.length).toBeLessThanOrEqual(MAX_ANSWER_CHARS);
         expect(d.split('.').length).toBeLessThanOrEqual(2);
         if (d !== '') expect(Number.isFinite(answerOf(d))).toBe(true);
+      }),
+      opts,
+    );
+  });
+});
+
+describe('Rest timer properties (RBAR-94, ADR-0019)', () => {
+  const T0 = 1_700_000_000_000;
+  const lenArb = fc.oneof(fc.constantFrom(...REST_PRESETS), fc.integer({ min: 15, max: 600 }));
+  // A Rest at some point of its life: started, maybe paused, maybe nudged, maybe run out.
+  const restArb: fc.Arbitrary<{ r: Rest; at: number }> = fc
+    .record({
+      len: lenArb,
+      ops: fc.array(
+        fc.record({
+          dt: fc.integer({ min: 0, max: 400_000 }),
+          op: fc.constantFrom('pause', 'resume', 'plus', 'minus', 'settle'),
+        }),
+        { maxLength: 8 },
+      ),
+    })
+    .map(({ len, ops }) => {
+      let at = T0;
+      let r = startRest(idleRest(), len, at);
+      for (const { dt, op } of ops) {
+        at += dt;
+        if (op === 'pause') r = pauseRest(r, at);
+        else if (op === 'resume') r = resumeRest(r, at);
+        else if (op === 'plus') r = adjustRest(r, 15, at);
+        else if (op === 'minus') r = adjustRest(r, -15, at);
+        else r = settleRest(r, at);
+      }
+      return { r, at };
+    });
+  const gapsArb = fc.array(fc.integer({ min: 0, max: 200_000 }), { minLength: 1, maxLength: 12 });
+
+  it('the clock is read from timestamps: any number of ticks reads the same as none (ADR-0019)', () => {
+    fc.assert(
+      fc.property(restArb, gapsArb, ({ r, at }, gaps) => {
+        let ticked = r;
+        let t = at;
+        for (const g of gaps) {
+          t += g;
+          ticked = settleRest(ticked, t);
+        }
+        expect(readRest(ticked, t)).toEqual(readRest(r, t));
+      }),
+      opts,
+    );
+  });
+
+  it('a paused Rest keeps its time left however long the pause, until the pause goes stale (ADR-0019)', () => {
+    fc.assert(
+      fc.property(lenArb, fc.integer({ min: 0, max: 299_000 }), fc.integer({ min: 0, max: STALE_PAUSE_MS - 1 }), (len, run, gap) => {
+        const r = startRest(idleRest(), len, T0);
+        const before = readRest(r, T0 + run);
+        fc.pre(before.phase === 'run');
+        const p = pauseRest(r, T0 + run);
+        expect(readRest(p, T0 + run + gap)).toEqual({ ...before, phase: 'pause' });
+        expect(readRest(resumeRest(p, T0 + run + gap), T0 + run + gap)).toEqual(before);
+        expect(readRest(p, T0 + run + STALE_PAUSE_MS + gap).phase).toBe('idle');
+      }),
+      opts,
+    );
+  });
+
+  // Below the cap: within 15 s of MAX_REST_S the +15 is clipped, so -15 cannot undo it
+  // (by design). lenArb tops out at 600 s, far below the hour.
+  it('+15 then -15 leaves a running or paused Rest where it was, below the one-hour cap (ADR-0019)', () => {
+    fc.assert(
+      fc.property(lenArb, fc.integer({ min: 0, max: 600_000 }), fc.boolean(), (len, run, paused) => {
+        const at = T0 + run;
+        const started = startRest(idleRest(), len, T0);
+        fc.pre(settleRest(started, at).phase === 'run');
+        const r = paused ? pauseRest(started, at) : started;
+        const back = adjustRest(adjustRest(r, 15, at), -15, at);
+        expect(readRest(back, at).text).toBe(readRest(r, at).text);
+        expect(back.phase).toBe(r.phase);
+        if (back.phase === 'run' && r.phase === 'run') expect(back.endAt).toBe(r.endAt);
+        if (back.phase === 'pause' && r.phase === 'pause') expect(back.leftMs).toBe(r.leftMs);
+      }),
+      opts,
+    );
+  });
+
+  it('at the one-hour cap a +15 is clipped, so +15 then -15 lands 15 s short (ADR-0019)', () => {
+    const r = startRest(idleRest(), MAX_REST_S, T0);
+    const back = adjustRest(adjustRest(r, 15, T0), -15, T0);
+    expect(readRest(back, T0).text).toBe('59:45');
+  });
+
+  it('every reading is well-formed: a fraction in [0, 1], m:ss down or +m:ss up, never past the hour (ADR-0019)', () => {
+    fc.assert(
+      fc.property(restArb, fc.integer({ min: 0, max: 4_000_000 }), ({ r, at }, dt) => {
+        const x = readRest(r, at + dt);
+        expect(x.fraction).toBeGreaterThanOrEqual(0);
+        expect(x.fraction).toBeLessThanOrEqual(1);
+        if (x.phase === 'over') {
+          expect(x.text).toMatch(/^\+\d+:[0-5]\d$/);
+          expect(x.fraction).toBe(0);
+        } else {
+          expect(x.text).toMatch(/^\d+:[0-5]\d$/);
+          const [m, sec] = x.text.split(':').map(Number);
+          expect(m * 60 + sec).toBeLessThanOrEqual(MAX_REST_S);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('zero is crossed once: the countdown never rises, the overtime never falls, and it starts at +0:00 (ADR-0019)', () => {
+    const secs = (text: string): number => {
+      const [m, s] = text.replace('+', '').split(':').map(Number);
+      return m * 60 + s;
+    };
+    fc.assert(
+      fc.property(lenArb, gapsArb, (len, gaps) => {
+        const r = startRest(idleRest(), len, T0);
+        let t = T0;
+        let prev = readRest(r, t);
+        for (const g of gaps) {
+          t += g;
+          const x = readRest(r, t);
+          if (x.phase === 'idle') break; // a stale overtime cleared itself
+          if (prev.phase === 'run' && x.phase === 'run') expect(secs(x.text)).toBeLessThanOrEqual(secs(prev.text));
+          if (prev.phase === 'over') expect(x.phase).toBe('over');
+          if (prev.phase === 'over' && x.phase === 'over') expect(secs(x.text)).toBeGreaterThanOrEqual(secs(prev.text));
+          prev = x;
+        }
+        expect(readRest(r, T0 + len * 1000).text).toBe('+0:00');
+        expect(readRest(r, T0 + len * 1000 + STALE_OVERTIME_MS).phase).toBe('idle');
+      }),
+      opts,
+    );
+  });
+
+  it('a stored Rest reads back exactly, and no stored string throws (ADR-0019, ADR-0007)', () => {
+    fc.assert(
+      fc.property(restArb, ({ r }) => {
+        expect(parseRest(serializeRest(r))).toEqual(r);
+      }),
+      opts,
+    );
+    fc.assert(
+      fc.property(fc.oneof(fc.string(), fc.json()), (raw) => {
+        const r = parseRest(raw);
+        if (r !== null) expect(parseRest(serializeRest(r))).toEqual(r);
       }),
       opts,
     );
