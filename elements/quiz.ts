@@ -762,6 +762,8 @@ class RackQuiz extends HTMLElement {
     el.coll.textContent = q.collarKg > 0 ? `with ${format(q.collarKg, 'kg')} collars` : 'no collars';
     this.palette.side = this.built;
     this.palette.toggleAttribute('inert', !ask);
+    // The discs come off only while building: after a Check they leave the tab order.
+    if (this.sleeve.interactive !== ask) this.sleeve.interactive = ask;
     const empty = this.built.length === 0;
     (el.undo as HTMLButtonElement).disabled = !ask || empty;
     (el.clear as HTMLButtonElement).disabled = !ask || empty;

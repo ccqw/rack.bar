@@ -362,6 +362,7 @@ describe('<rack-quiz> Build the bar (RBAR-101)', () => {
     expect(text(root, '[data-oneway]')).toBe(`One way: ${faces(q.side).join('')}`);
     expect(root.querySelector('[data-target] s')).not.toBeNull();
     expect(root.querySelector('rack-palette')!.hasAttribute('inert')).toBe(true);
+    expect((sleeveOf(root) as Sleeve & { interactive: boolean }).interactive).toBe(false);
     expect(btn(root, '[data-check]').textContent).toBe('Next');
     btn(root, '[data-check]').click();
     expect(el.question!.index).toBe(1);
