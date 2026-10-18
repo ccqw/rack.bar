@@ -13,6 +13,18 @@
 // elements/console.properties.test.ts.
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import {
+  MAX_LIFTS,
+  MAX_PERCENT,
+  addMax,
+  parseMaxes,
+  percentOfMax,
+  removeMax,
+  restoreMax,
+  serializeMaxes,
+  setMax,
+} from './maxes.ts';
+import type { Max } from './maxes.ts';
 import { decode, decodeWithin } from './decode.ts';
 import { addPlate, removePlate, encode } from './encode.ts';
 import {
@@ -2556,6 +2568,95 @@ describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-00
         expect(d.length).toBeLessThanOrEqual(MAX_ANSWER_CHARS);
         expect(d.split('.').length).toBeLessThanOrEqual(2);
         if (d !== '') expect(Number.isFinite(answerOf(d))).toBe(true);
+      }),
+      opts,
+    );
+  });
+});
+
+describe('Saved maxes properties (RBAR-84, ADR-0020)', () => {
+  const unitArb = fc.constantFrom<Unit>('kg', 'lb');
+  const valueArb = fc.integer({ min: 1, max: 999_999 }).map((c) => c / 100);
+  const nameArb = fc.constantFrom('Squat', 'Bench', 'Deadlift', 'Press', 'Clean', 'Snatch', 'Jerk', 'Front squat');
+  const maxArb: fc.Arbitrary<Max> = fc.record({ name: nameArb, value: valueArb, unit: unitArb });
+  const listArb = fc
+    .array(maxArb, { maxLength: 9 })
+    .map((ms) => ms.reduce<readonly Max[]>((acc, m) => addMax(acc, m.name, m.value, m.unit), []));
+  const pctArb = fc.integer({ min: 1, max: MAX_PERCENT * 10 }).map((t) => t / 10);
+
+  it("a percent of a max is that share of it, at two decimals in the max's own Unit, and grows with the percent and the max (RBAR-84, ADR-0020)", () => {
+    fc.assert(
+      fc.property(maxArb, pctArb, pctArb, (m, p, q) => {
+        const t = percentOfMax(m, p)!;
+        // Two decimals in the max's own Unit (an lb max's half-hundredth is finer in kg).
+        const read = m.unit === 'lb' ? kgToLb(t) : t;
+        expect(Math.abs(read - (m.value * p) / 100)).toBeLessThanOrEqual(0.005 + 1e-6);
+        expect(Math.abs(read - Number(read.toFixed(2)))).toBeLessThan(1e-6);
+        if (p <= q) expect(t).toBeLessThanOrEqual(percentOfMax(m, q)!);
+        const heavier = { ...m, value: m.value + 1 };
+        expect(t).toBeLessThanOrEqual(percentOfMax(heavier, p)!);
+      }),
+      opts,
+    );
+  });
+
+  it('a max keeps its Unit as typed: 100% of it reads back its own value in its own Unit (RBAR-84, ADR-0020)', () => {
+    fc.assert(
+      fc.property(maxArb, (m) => {
+        const t = percentOfMax(m, 100)!;
+        const back = m.unit === 'lb' ? kgToLb(t) : t;
+        expect(Math.abs(back - m.value)).toBeLessThan(1e-6);
+      }),
+      opts,
+    );
+  });
+
+  it('the registry holds at most six lifts with distinct names, however it is edited (RBAR-84, ADR-0020)', () => {
+    const opArb = fc.oneof(
+      fc.record({ k: fc.constant('add' as const), m: maxArb }),
+      fc.record({ k: fc.constant('set' as const), i: fc.nat(7), v: valueArb, u: unitArb }),
+      fc.record({ k: fc.constant('remove' as const), i: fc.nat(7) }),
+      fc.record({ k: fc.constant('restore' as const), m: maxArb, i: fc.integer({ min: -2, max: 9 }) }),
+    );
+    fc.assert(
+      fc.property(fc.array(opArb, { maxLength: 30 }), (ops) => {
+        let list: readonly Max[] = [];
+        for (const op of ops) {
+          if (op.k === 'add') list = addMax(list, op.m.name, op.m.value, op.m.unit);
+          else if (op.k === 'set') list = setMax(list, op.i, op.v, op.u);
+          else if (op.k === 'remove') list = removeMax(list, op.i);
+          else list = restoreMax(list, op.m, op.i);
+          expect(list.length).toBeLessThanOrEqual(MAX_LIFTS);
+          const names = list.map((m) => m.name.toLowerCase());
+          expect(new Set(names).size).toBe(names.length);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('Undo of a removal restores the row exactly (RBAR-84, ADR-0020)', () => {
+    fc.assert(
+      fc.property(listArb, fc.nat(5), (list, i) => {
+        fc.pre(i < list.length);
+        expect(restoreMax(removeMax(list, i), list[i], i)).toEqual(list);
+      }),
+      opts,
+    );
+  });
+
+  it('any stored maxes value reads as a valid registry, and what is stored reads back the same (RBAR-84, ADR-0007, ADR-0020)', () => {
+    fc.assert(
+      fc.property(fc.oneof(fc.json(), fc.string(), fc.constant(null)), (raw) => {
+        const list = parseMaxes(raw);
+        expect(list.length).toBeLessThanOrEqual(MAX_LIFTS);
+        expect(parseMaxes(serializeMaxes(list))).toEqual(list);
+      }),
+      opts,
+    );
+    fc.assert(
+      fc.property(listArb, (list) => {
+        expect(parseMaxes(serializeMaxes(list))).toEqual(list);
       }),
       opts,
     );
