@@ -32,6 +32,8 @@ import { waysFor } from '../lib/ways.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
 import { DEFAULT_BAR_KG, DEFAULT_COLLAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { readPersisted, removePersisted, writePersisted } from './persist.ts';
+import type { LiftLink } from './entry.ts';
+import type { Max } from '../lib/maxes.ts';
 import {
   parseRecents,
   parseTarget,
@@ -78,6 +80,8 @@ type Entry = HTMLElement & {
   barKg: number;
   unit: Unit;
   loadLine: string | null;
+  maxes: readonly Max[];
+  readonly link: LiftLink | null;
 };
 type Recents = HTMLElement & {
   targets: readonly number[];
@@ -185,6 +189,7 @@ class RackConsole extends HTMLElement {
   private asked!: HTMLButtonElement;
   private askedNum!: HTMLElement;
   private askedUnit!: HTMLElement;
+  private askedPre!: HTMLElement;
   private secondary!: HTMLButtonElement;
   private status!: HTMLElement;
   private statusLabel!: HTMLElement;
@@ -351,6 +356,13 @@ class RackConsole extends HTMLElement {
   }
   get platesOnHand(): PlatesOnHand {
     return this._onHand;
+  }
+
+  /** The saved maxes (RBAR-84, ADR-0020), for both Target entries' lift rows. The app
+   * owns them; a Target linked to a lift follows its max through the entry's `target`. */
+  set maxes(list: readonly Max[]) {
+    this.entry.maxes = list;
+    this.workEntry.maxes = list;
   }
 
   // The Inventory the core draws from: the active set's (ADR-0010) with its Pairs of
@@ -637,6 +649,12 @@ class RackConsole extends HTMLElement {
         .asked b { color: var(--rack-text); font-weight: 700; }
         .asked .au { font-size: 11px; color: var(--rack-text-dim); }
         .asked:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* A Target typed as a percent of a saved max (RBAR-84, design A): the chip names
+           it ("80% Squat"), quiet and solid when the load is exact, dashed with the
+           Target it makes on a miss ("82.5% Squat = 115.5 kg"). */
+        .asked.lift b { color: var(--rack-accent); }
+        .asked.lift .au { font-size: 12px; color: var(--rack-text-target); }
+        .asked.lift.exact { border-style: solid; border-color: var(--rack-border-muted); }
         /* The Secondary readout: the same Total in the other unit, tap to hide/show
            (ADR-0006/0010). A quiet line under the prominent Total, in Hanken 500 13px
            (prototype L137; RBAR-74). Side pad only, so the button adds no height. */
@@ -781,6 +799,8 @@ class RackConsole extends HTMLElement {
         @media (max-width: 359px) {
           .statusline { gap: 4px; }
           .asked { padding: 4px 6px; }
+          /* "82.5% Squat = 115.5 kg" (RBAR-84) beside its pill: a tighter face. */
+          .asked.lift, .asked.lift .au { font-size: 11px; letter-spacing: -.02em; }
           .status { padding: 3px 7px; }
         }
         /* The short-screen tier (RBAR-67, fit.ts): a tighter column gap, a thinner
@@ -861,7 +881,8 @@ class RackConsole extends HTMLElement {
           <div class="statusline">
             <button type="button" class="secondary" data-secondary></button>
             <button type="button" class="asked" data-asked aria-haspopup="true" hidden
-              >You asked <b data-asked-num></b><span class="au" data-asked-unit></span></button>
+              ><span data-asked-pre>You asked </span><b data-asked-num></b><span class="au"
+              data-asked-unit></span></button>
             <span class="status" data-status hidden
               ><span class="dot" aria-hidden="true"></span
               ><span data-status-label></span></span>
@@ -927,6 +948,7 @@ class RackConsole extends HTMLElement {
     this.asked = this.root.querySelector('[data-asked]')!;
     this.askedNum = this.root.querySelector('[data-asked-num]')!;
     this.askedUnit = this.root.querySelector('[data-asked-unit]')!;
+    this.askedPre = this.root.querySelector('[data-asked-pre]')!;
     this.secondary = this.root.querySelector('[data-secondary]')!;
     this.status = this.root.querySelector('[data-status]')!;
     this.statusLabel = this.root.querySelector('[data-status-label]')!;
@@ -1765,7 +1787,7 @@ class RackConsole extends HTMLElement {
       // pill always come and go together; the chip quotes the Target as typed, the pill
       // reads the rounded miss. Exact: the Target is the hero, not shown twice, and the
       // Secondary readout keeps its place.
-      this.renderAsked(pill.kind === 'exact' ? null : targetKg, unit);
+      this.renderAsked(pill.kind === 'exact' ? null : targetKg, unit, this.entry.link);
       // After a step to another way, or while off the first (RBAR-66), the line says
       // which way and names its Plates -- a bar tap keeps the Total, so the Plates are
       // the news ("140 kilograms, Exact, way 2 of 5, 25 kg + 20 kg + 15 kg per side").
@@ -1897,7 +1919,21 @@ class RackConsole extends HTMLElement {
   // (Caitlin, 2026-10-17): "You asked 142.3 lb", never rounded to the readout's
   // precision -- the pill keeps its own rounded miss. A draft mid-entry ("142.")
   // reads as its number; an empty draft falls back to the Target as shown.
-  private renderAsked(targetKg: number | null, unit: Unit): void {
+  // A Target linked to a saved max (RBAR-84) keeps the chip on an exact load too: it names
+  // the lift and the percent, and on a miss the Target that makes.
+  private renderAsked(targetKg: number | null, unit: Unit, link: LiftLink | null = null): void {
+    this.asked.classList.toggle('lift', link !== null);
+    this.asked.classList.toggle('exact', link !== null && targetKg === null);
+    if (link !== null) {
+      this.asked.hidden = false;
+      this.secondary.hidden = true;
+      this.askedPre.textContent = '';
+      this.askedNum.textContent = `${fmtNum(link.pct)}%`;
+      this.askedUnit.textContent =
+        targetKg === null ? ` ${link.name}` : ` ${link.name} = ${format(targetKg, unit)}`;
+      return;
+    }
+    this.askedPre.textContent = 'You asked ';
     this.asked.hidden = targetKg === null;
     this.secondary.hidden = targetKg !== null;
     const typed = Number(this.entry.reading);

@@ -44,7 +44,9 @@ describe('<rack-setup> Pairs of Plates on Hand (RBAR-72)', () => {
     // Nothing but the tiles and the (hidden) pair row follow the title row.
     expect(labelRow.nextElementSibling?.hasAttribute('data-onhand-tiles')).toBe(true);
     expect(labelRow.nextElementSibling?.nextElementSibling).toBe(row(root));
-    expect(row(root).nextElementSibling).toBeNull();
+    // ...then only the Maxes row (RBAR-84), the sheet's last section.
+    expect(row(root).nextElementSibling?.hasAttribute('data-maxes-row')).toBe(true);
+    expect(row(root).nextElementSibling?.nextElementSibling).toBeNull();
   });
 
   it('shows one tile per Competition size in its Plate color, each reading all', () => {

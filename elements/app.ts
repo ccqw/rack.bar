@@ -30,6 +30,11 @@
 import { persistedPrimaryUnit } from './console.ts';
 import type { LinkLoad } from './console.ts';
 import './setup.ts';
+import { loadMaxes, saveMaxes } from './maxes.ts';
+import type { Maxes } from './maxes.ts';
+import type { LiftLink } from './entry.ts';
+import { addMax, findMax, removeMax, restoreMax, setMax } from '../lib/maxes.ts';
+import type { Max } from '../lib/maxes.ts';
 import { SLIDERS_GLYPH } from './sliders.ts';
 import { GRAD_CAP_GLYPH } from './quizglyphs.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
@@ -64,6 +69,7 @@ import {
 } from '../lib/custombars.ts';
 import type { BarStamp } from '../lib/custombars.ts';
 import { format, isUnit } from '../lib/units.ts';
+import type { Unit } from '../lib/units.ts';
 import { parseLink } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
 import { ALL_PLATES, clearSet, serializePlatesOnHand, setPairs } from '../lib/platesonhand.ts';
@@ -74,7 +80,14 @@ type Console = HTMLElement & {
   collarKg: number;
   plateSet: string;
   platesOnHand: PlatesOnHand;
+  maxes: readonly Max[];
   applyLink(link: LinkLoad): void;
+};
+// A Target entry, as the Maxes sheet's keypad door reaches it (RBAR-84).
+type LiftEntry = HTMLElement & {
+  link: LiftLink | null;
+  pickLift(name: string): void;
+  offerUndo(max: Max, index: number): void;
 };
 type Setup = HTMLElement & {
   barKg: number;
@@ -82,6 +95,8 @@ type Setup = HTMLElement & {
   collarKg: number;
   plateSet: string;
   platesOnHand: PlatesOnHand;
+  maxes: readonly Max[];
+  maxesUnit: Unit;
   open(): void;
   close(): void;
 };
@@ -118,6 +133,12 @@ class RackApp extends HTMLElement {
   // Pairs of Plates on Hand, every set's (RBAR-72, ADR-0016). One setting, saved;
   // a share link never touches it.
   private platesOnHand: PlatesOnHand = ALL_PLATES;
+  // Saved maxes (RBAR-84, ADR-0020): lifter state like the rig, so the app owns, persists
+  // and feeds them -- to Setup's Maxes row, the Maxes sheet, and through the console to
+  // each Target entry's lift row. The keypad that opened the sheet, while it is open.
+  private maxes: readonly Max[] = [];
+  private maxesSheet!: Maxes;
+  private maxesFrom: LiftEntry | null = null;
 
   connectedCallback(): void {
     // A share link in the URL (RBAR-50, ADR-0014) is read FIRST and the fragment cleared,
@@ -130,6 +151,7 @@ class RackApp extends HTMLElement {
     this.barKg = loadBar(this.plateSetKey, this.customBars);
     this.collarKg = loadCollar();
     this.platesOnHand = loadPlatesOnHand();
+    this.maxes = loadMaxes();
     // Children are defined before this runs (imports at top + rack-app's own define is
     // last), so assigning innerHTML upgrades <rack-console>/<rack-setup> synchronously
     // and their connectedCallbacks finish here -- which is why the seeding below (after
@@ -255,10 +277,12 @@ class RackApp extends HTMLElement {
       </header>
       <main><rack-console></rack-console></main>
       <rack-setup></rack-setup>
+      <rack-maxes></rack-maxes>
     `;
 
     this.console = this.root.querySelector('rack-console') as Console;
     this.setup = this.root.querySelector('rack-setup') as Setup;
+    this.maxesSheet = this.root.querySelector('rack-maxes') as Maxes;
     this.pill = this.root.querySelector('[data-setup-pill]')!;
     this.pillLabel = this.root.querySelector('[data-pill-label]')!;
 
@@ -275,6 +299,7 @@ class RackApp extends HTMLElement {
     this.setup.barKg = this.barKg;
     this.setup.collarKg = this.collarKg;
     this.setup.plateSet = this.plateSetKey;
+    this.feedMaxes();
     this.relabel();
 
     this.pill.addEventListener('click', () => this.openSetup());
@@ -309,6 +334,7 @@ class RackApp extends HTMLElement {
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
     );
+    this.wireMaxes();
 
     // A link pasted into an already-open tab changes only the hash (no reload). Listen
     // before applying, so a throw in the boot-time apply cannot also cost the listener.
@@ -327,12 +353,78 @@ class RackApp extends HTMLElement {
 
   // Open the Setup sheet, from the header pill or another door into it (RBAR-66).
   private openSetup(): void {
+    this.setup.maxesUnit = persistedPrimaryUnit();
     this.setup.open();
     this.pill.setAttribute('aria-expanded', 'true');
   }
 
   disconnectedCallback(): void {
     window.removeEventListener('hashchange', this.onHashChange);
+  }
+
+  // Saved maxes (RBAR-84, ADR-0020): one sheet, two doors. Setup's Maxes row opens the
+  // list; a keypad's "+" or a long-press on its lift chip opens the add or edit form,
+  // and on close the sheet hands that keypad its lift (Save) or an Undo (Remove).
+  private wireMaxes(): void {
+    this.setup.addEventListener('maxesopen', () => {
+      this.maxesFrom = null;
+      this.maxesSheet.unit = persistedPrimaryUnit();
+      this.maxesSheet.openList();
+    });
+    this.console.addEventListener('maxedit', (e) => {
+      const name = (e as CustomEvent<{ name?: unknown }>).detail?.name;
+      if (name !== null && typeof name !== 'string') return;
+      this.maxesFrom = e.composedPath()[0] as LiftEntry;
+      this.maxesSheet.unit = persistedPrimaryUnit();
+      this.maxesSheet.openForm(name);
+    });
+    // A keypad's Undo chip and the sheet's Undo row both restore through here.
+    const restore = (e: Event): void => {
+      const { max, index } = ((e as CustomEvent).detail ?? {}) as { max?: Max; index?: unknown };
+      if (!max || typeof index !== 'number') return;
+      this.setMaxes(restoreMax(this.maxes, max, index));
+    };
+    this.console.addEventListener('maxrestore', restore);
+    this.maxesSheet.addEventListener('maxrestore', restore);
+    this.maxesSheet.addEventListener('maxadd', (e) => {
+      const { name, value, unit } = ((e as CustomEvent).detail ?? {}) as Record<string, unknown>;
+      if (typeof name !== 'string' || typeof value !== 'number' || !isUnit(String(unit))) return;
+      this.setMaxes(addMax(this.maxes, name, value, unit as Unit));
+    });
+    this.maxesSheet.addEventListener('maxset', (e) => {
+      const { index, value, unit } = ((e as CustomEvent).detail ?? {}) as Record<string, unknown>;
+      if (typeof index !== 'number' || typeof value !== 'number' || !isUnit(String(unit))) return;
+      this.setMaxes(setMax(this.maxes, index, value, unit as Unit));
+    });
+    this.maxesSheet.addEventListener('maxremove', (e) => {
+      const index = (e as CustomEvent<{ index?: unknown }>).detail?.index;
+      if (typeof index !== 'number') return;
+      this.setMaxes(removeMax(this.maxes, index));
+    });
+    this.maxesSheet.addEventListener('maxesclose', (e) => {
+      const { picked, removed } = (e as CustomEvent<{
+        picked: string | null;
+        removed: { max: Max; index: number } | null;
+      }>).detail;
+      const from = this.maxesFrom;
+      this.maxesFrom = null;
+      if (!from) return;
+      if (picked !== null && findMax(this.maxes, picked) !== -1) from.pickLift(picked);
+      if (removed) from.offerUndo(removed.max, removed.index);
+    });
+  }
+
+  // Adopt, persist and feed down a new maxes list.
+  private setMaxes(list: readonly Max[]): void {
+    this.maxes = list;
+    saveMaxes(list);
+    this.feedMaxes();
+  }
+
+  private feedMaxes(): void {
+    this.console.maxes = this.maxes;
+    this.setup.maxes = this.maxes;
+    this.maxesSheet.maxes = this.maxes;
   }
 
   private onHashChange = (): void => {

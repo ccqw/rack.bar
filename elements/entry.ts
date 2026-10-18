@@ -30,6 +30,20 @@ import { SHORT_SCREEN } from './fit.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
 import { DEL_ICON } from './delglyph.ts';
+import { LONG_PRESS_MS, MOVE_SLOP_PX } from './recents.ts';
+import { MAX_LIFTS, findMax, maxShown, parsePercent, percentOfMax } from '../lib/maxes.ts';
+import type { Max } from '../lib/maxes.ts';
+
+/** A Target entered as a percent of a saved max (RBAR-84): "80% Squat". */
+export interface LiftLink {
+  readonly name: string;
+  readonly pct: number;
+}
+
+// The keypad types at most five digits of a percent ("102.5"), as of a weight.
+const PCT_DIGITS = 5;
+// How long after a hold opens a form its own trailing click is still swallowed.
+const HELD_CLICK_MS = 1000;
 
 // The keypad layout, row-major. 'del' deletes the last character, 'clear' empties.
 const KEYPAD_ROWS: readonly (readonly string[])[] = [
@@ -143,6 +157,77 @@ class RackEntry extends HTMLElement {
    * Enter on one of them while the pad is open is Done, exactly as on the field's own
    * steppers (RBAR-49), never a repeat of the last tap. */
   controls: readonly Element[] = [];
+
+  // Saved maxes (RBAR-84, ADR-0020): the lift row above the digits. The app owns the
+  // list and feeds it down; which lift the keypad is typing a percent of, the percent
+  // typed so far, the Target's link to a lift, and a pending Undo are this field's own.
+  private _maxes: readonly Max[] = [];
+  // The lift whose chip is picked in the open keypad: digits then type a percent of it.
+  private lift: string | null = null;
+  // The percent typed since the lift was picked ('' = none yet).
+  private pctDraft = '';
+  // The Target's link: set when a typed percent made it, cleared by any other edit.
+  private _link: LiftLink | null = null;
+  // A link whose lift was removed: the Target keeps its number, and an Undo of that
+  // removal restores the link too (Caitlin, 2026-10-17). Forgotten on any other edit.
+  private dropped: LiftLink | null = null;
+  // A lift removed through the keypad's door, shown as an Undo chip in its slot until
+  // the keypad closes.
+  private undoSlot: { max: Max; index: number } | null = null;
+  private liftsEl!: HTMLElement;
+  private renderedLifts = '';
+
+  /** The Target's link to a saved max ("80% Squat"), or null when it was typed or
+   * stepped as a weight. */
+  get link(): LiftLink | null {
+    return this._link;
+  }
+
+  /** The saved maxes (RBAR-84). A Target linked to a lift follows its new max (a new PR
+   * re-reads "80% Squat" as 80% of the new number, and emits it); a removed lift drops
+   * the link but keeps the number, and its Undo restores both. */
+  set maxes(list: readonly Max[]) {
+    this._maxes = list;
+    if (this.lift !== null && findMax(list, this.lift) === -1) {
+      this.lift = null;
+      this.pctDraft = '';
+    }
+    if (this._link === null && this.dropped !== null && findMax(list, this.dropped.name) !== -1) {
+      this._link = this.dropped;
+      this.dropped = null;
+    }
+    if (this._link !== null) {
+      const i = findMax(list, this._link.name);
+      if (i === -1) {
+        this.dropped = this._link;
+        this._link = null;
+      } else if (percentOfMax(list[i], this._link.pct) !== this.shownKg) {
+        this.applyPercent(list[i], this._link.pct);
+      }
+    }
+    this.renderLive();
+  }
+  get maxes(): readonly Max[] {
+    return this._maxes;
+  }
+
+  /** Pick `name` in the lift row (the Maxes sheet's keypad door returns here after an
+   * add or an edit, RBAR-84): the digits now type a percent of it. */
+  pickLift(name: string): void {
+    const i = findMax(this._maxes, name);
+    if (i === -1) return;
+    this.lift = this._maxes[i].name;
+    this.pctDraft = '';
+    this.replaceNext = true;
+    this.renderLive();
+  }
+
+  /** Show an Undo chip in `index`'s slot for `max`, removed through the keypad's door,
+   * until the keypad closes (RBAR-84). */
+  offerUndo(max: Max, index: number): void {
+    this.undoSlot = { max, index };
+    this.renderLive();
+  }
   private liveEl!: HTMLElement;
   private liveUEl!: HTMLElement;
   private liveSecEl!: HTMLElement;
@@ -276,6 +361,7 @@ class RackEntry extends HTMLElement {
     this.draft = value === null ? '' : (reading ?? String(shownIn(value, this._unit)));
     this.shownKg = value;
     this.markPristine(false); // a genuine seed: an idle peek-and-close commits null
+    this.unlink();
     this.renderValue();
   }
 
@@ -483,6 +569,49 @@ class RackEntry extends HTMLElement {
         .clear:focus-visible, .done:focus-visible {
           outline: 2px solid var(--rack-accent); outline-offset: 2px;
         }
+        /* The lift row (RBAR-84, design A): saved maxes as chips above the digits, four
+           to a row and scrolling sideways past that; a picked chip makes the digits
+           type a percent of it. "+" (or "+ Add a lift" with none saved) and a
+           long-press on a chip open the Maxes sheet. It takes 7px of the 15px under
+           the readout, so the row costs the sheet 41px. */
+        .lifts {
+          display: flex; gap: 6px; margin: -7px 0 8px; overflow-x: auto;
+          scrollbar-width: none; scroll-snap-type: x proximity;
+        }
+        .lifts::-webkit-scrollbar { display: none; }
+        .lc {
+          flex: 0 0 calc((100% - 18px) / 4); min-width: 0; min-height: 40px; padding: 0 4px;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 1px; scroll-snap-align: start; cursor: pointer;
+          color: var(--rack-text); background: transparent;
+          border: 1px solid var(--rack-border-muted);
+          border-radius: var(--rack-radius-sheet-control);
+          -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
+        }
+        .lc span {
+          max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          font-family: var(--rack-font); font-size: 10.5px; font-weight: 600;
+          color: var(--rack-text-dim);
+        }
+        .lc b { font-family: var(--rack-font-num); font-size: 12px; font-weight: 700; }
+        .lc[aria-pressed="true"] {
+          border-color: var(--rack-accent); background: var(--rack-active);
+        }
+        .lc[aria-pressed="true"] span { color: var(--rack-accent); }
+        .lc.add {
+          flex: 0 0 44px; border-style: dashed; color: var(--rack-text-dim);
+        }
+        .lc.add.first {
+          flex: 0 0 auto; flex-direction: row; gap: 8px; padding: 0 16px;
+          font-family: var(--rack-font); font-size: 13px; font-weight: 600;
+          color: var(--rack-accent); border-color: var(--rack-border-active);
+        }
+        .lc svg { display: block; }
+        .lc.undo { border-style: dashed; border-color: var(--rack-accent); }
+        .lc.undo b { color: var(--rack-accent); font-family: var(--rack-font); }
+        .lc:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: -2px; }
+        .sub .of { color: var(--rack-text-dim); font-family: var(--rack-font-num); }
+        .sub .of b { color: var(--rack-text); font-weight: 700; }
         /* The short-screen tier (RBAR-67, fit.ts): a closer Target section opener;
            the steppers and the value keep their size. */
         @media ${SHORT_SCREEN} {
@@ -538,6 +667,7 @@ class RackEntry extends HTMLElement {
                single active source back to the console's status region. -->
           <span class="load" data-live-load role="status" hidden></span>
         </div>
+        <div class="lifts" data-lifts role="group" aria-label="Lifts"></div>
         <div class="keypad" data-keypad role="group" aria-label="${enter}">
           ${keys}
         </div>
@@ -558,6 +688,8 @@ class RackEntry extends HTMLElement {
     this.liveUEl = this.root.querySelector('[data-live-u]')!;
     this.liveSecEl = this.root.querySelector('[data-live-sec]')!;
     this.liveLoadEl = this.root.querySelector('[data-live-load]')!;
+    this.liftsEl = this.root.querySelector('[data-lifts]')!;
+    this.wireLifts();
 
     // Tapping the value toggles the sheet; the Done button closes it. There is no scrim,
     // so no outside-tap dismissal (the prototype keeps the bar above bright + interactive).
@@ -656,6 +788,11 @@ class RackEntry extends HTMLElement {
     // the pad on an existing Target and typing starts fresh (does NOT touch `pristine`, so
     // a real value peeked and closed still commits).
     this.replaceNext = true;
+    // The lift row opens on the Target's own lift, if it has one (RBAR-84).
+    this.lift = this._link?.name ?? null;
+    this.pctDraft = '';
+    this.undoSlot = null;
+    this.renderValue();
     document.addEventListener('keydown', this.onKeydown);
     this.dispatchEvent(new CustomEvent('keypadopen', { bubbles: true, composed: true }));
   }
@@ -669,6 +806,9 @@ class RackEntry extends HTMLElement {
     this.sheet.hidden = true;
     this.valueEl.setAttribute('aria-expanded', 'false');
     document.removeEventListener('keydown', this.onKeydown);
+    this.lift = null;
+    this.pctDraft = '';
+    this.undoSlot = null;
     this.emitKeypadClose();
   }
 
@@ -709,6 +849,11 @@ class RackEntry extends HTMLElement {
   // than appended to. Any press also clears `pristine`: once the lifter types, the value
   // is one they chose, so closing commits it.
   private press(k: string): void {
+    if (this.lift !== null) {
+      this.pressPercent(k);
+      return;
+    }
+    this.unlink();
     const replace = this.replaceNext;
     // `del` discards a whole value only when it is a genuine placeholder default (the bare
     // Bar seed / a display() seed); on a real value -- including one the pad just reopened
@@ -747,6 +892,9 @@ class RackEntry extends HTMLElement {
   // Public for the headless variant (RBAR-58): the console's hero steppers call it, so
   // a hero +/- is this same nudge on the Target's draft, never on the Total.
   step(dir: 1 | -1): void {
+    this.unlink();
+    this.lift = null;
+    this.pctDraft = '';
     this.pristine = false;
     this.reformatted = false;
     // A nudge is an explicit edit of the current value, so a following digit appends to
@@ -803,6 +951,211 @@ class RackEntry extends HTMLElement {
     this.incBtn.setAttribute('aria-label', `Increase by ${step} ${this._unit}`);
     // Announce the live value (aria-labelledby would override the text and hide it).
     this.valueEl.setAttribute('aria-label', `${this.noun} ${shown} ${this._unit}`);
+    this.renderLive();
+  }
+
+  // Forget the Target's link to a lift: any edit that is not a typed percent.
+  private unlink(): void {
+    this._link = null;
+    this.dropped = null;
+  }
+
+  // A key while a lift is picked (RBAR-84): it edits the percent, and a percent the
+  // keypad takes (above 0, at most MAX_PERCENT) becomes the Target, linked to the lift.
+  // Anything else (blank, "0", "151") leaves the Target as it was until it is fixed.
+  private pressPercent(k: string): void {
+    const replace = this.replaceNext;
+    this.replaceNext = false;
+    if (k === 'clear') this.pctDraft = '';
+    else if (k === 'del') this.pctDraft = this.pctDraft.slice(0, -1);
+    else if (k === '.') {
+      if (replace) this.pctDraft = '';
+      if (!this.pctDraft.includes('.')) this.pctDraft += this.pctDraft === '' ? '0.' : '.';
+    } else {
+      const base = replace ? '' : this.pctDraft;
+      if (base.replace('.', '').length < PCT_DIGITS) this.pctDraft = base === '0' ? k : base + k;
+    }
+    const pct = parsePercent(this.pctDraft);
+    const i = this.lift === null ? -1 : findMax(this._maxes, this.lift);
+    if (pct !== null && i !== -1) this.applyPercent(this._maxes[i], pct);
+    else this.renderLive();
+  }
+
+  // Make the Target `pct` percent of `max` and emit it: the field shows it as a weight
+  // in the display Unit, and the link remembers the lift and the percent.
+  private applyPercent(max: Max, pct: number): void {
+    const kg = percentOfMax(max, pct);
+    if (kg === null) return;
+    this._link = { name: max.name, pct };
+    this.dropped = null;
+    this.pristine = false;
+    this.reformatted = false;
+    this.shownKg = kg;
+    this.draft = String(shownIn(kg, this._unit));
+    if (this.valueEl) this.renderValue();
+    this.dispatchEvent(
+      new CustomEvent<{ target: number | null }>('target', {
+        detail: { target: kg },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  // Tap a lift chip: pick it (a Target already linked to another lift moves to the same
+  // percent of this one), or un-pick the picked one to type a weight again.
+  private tapLift(name: string): void {
+    this.pctDraft = '';
+    this.replaceNext = true;
+    if (this.lift === name) {
+      this.lift = null;
+      this.renderValue();
+      return;
+    }
+    this.lift = name;
+    const i = findMax(this._maxes, name);
+    if (this._link !== null && this._link.name !== name && i !== -1) {
+      this.applyPercent(this._maxes[i], this._link.pct);
+    } else {
+      this.renderLive();
+    }
+  }
+
+  // Ask the app to open the Maxes sheet on this lift's form (null = add a lift).
+  private editLift(name: string | null): void {
+    this.dispatchEvent(
+      new CustomEvent<{ name: string | null }>('maxedit', {
+        detail: { name },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  // The lift row's gestures, delegated on the row: a tap picks, "+" adds, Undo restores,
+  // and a still press of LONG_PRESS_MS (within MOVE_SLOP_PX), a right-click or the
+  // context-menu key opens that lift's form (the RBAR-73 gesture). A pan or the row
+  // scrolling drops the hold.
+  private wireLifts(): void {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let start: { x: number; y: number } | null = null;
+    // When a hold (or a pointer's context menu) last opened a form: the click that ends
+    // the same press is not also a tap. A click well after it (a keyboard Enter on the
+    // Undo chip) is a tap as usual.
+    let heldAt = -Infinity;
+    const drop = (): void => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      start = null;
+    };
+    const chip = (e: Event): HTMLButtonElement | null =>
+      (e.target as Element).closest<HTMLButtonElement>('[data-lift]');
+    this.liftsEl.addEventListener('pointerdown', (e) => {
+      const c = chip(e);
+      heldAt = -Infinity;
+      drop();
+      if (!c) return;
+      start = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(() => {
+        timer = null;
+        heldAt = performance.now();
+        this.editLift(c.dataset.lift!);
+      }, LONG_PRESS_MS);
+    });
+    this.liftsEl.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      const moved = Math.max(Math.abs(e.clientX - start.x), Math.abs(e.clientY - start.y));
+      if (moved > MOVE_SLOP_PX) drop();
+    });
+    for (const t of ['pointerup', 'pointercancel', 'pointerleave', 'scroll']) {
+      this.liftsEl.addEventListener(t, drop);
+    }
+    this.liftsEl.addEventListener('contextmenu', (e) => {
+      const c = chip(e);
+      if (!c) return;
+      e.preventDefault();
+      if (start !== null) heldAt = performance.now();
+      drop();
+      this.editLift(c.dataset.lift!);
+    });
+    this.liftsEl.addEventListener('click', (e) => {
+      const b = (e.target as Element).closest<HTMLButtonElement>('button');
+      if (performance.now() - heldAt < HELD_CLICK_MS) {
+        heldAt = -Infinity; // the press that opened the form is not also a tap
+        return;
+      }
+      if (!b) return;
+      if (b.dataset.lift !== undefined) this.tapLift(b.dataset.lift);
+      else if (b.hasAttribute('data-lift-add')) this.editLift(null);
+      else if (b.hasAttribute('data-lift-undo') && this.undoSlot) {
+        const { max, index } = this.undoSlot;
+        this.undoSlot = null;
+        this.renderLive();
+        this.dispatchEvent(
+          new CustomEvent<{ max: Max; index: number }>('maxrestore', {
+            detail: { max, index },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      }
+    });
+  }
+
+  // The keypad's readout with a lift picked (RBAR-84): the big number is the percent
+  // ("80 %") and the line under it reads what it makes ("Squat 140 = 112 kg"). Without
+  // one, renderValue's weight and its other-Unit reading stand. Then the lift row.
+  private renderLive(): void {
+    if (!this.liftsEl) return;
+    const i = this.lift === null ? -1 : findMax(this._maxes, this.lift);
+    this.liveSecEl.classList.toggle('of', i !== -1);
+    if (i !== -1) {
+      const max = this._maxes[i];
+      const linked = this._link !== null && this._link.name === max.name ? this._link.pct : null;
+      const typed = this.pctDraft !== '';
+      const pct = typed ? parsePercent(this.pctDraft) : linked;
+      rollText(this.liveEl, typed ? this.pctDraft : linked === null ? '0' : String(linked));
+      this.liveEl.classList.toggle('empty', !typed);
+      this.liveUEl.textContent = '%';
+      const kg = pct === null ? null : percentOfMax(max, pct);
+      const b = document.createElement('b');
+      b.textContent = kg === null ? '...' : format(kg, this._unit);
+      this.liveSecEl.replaceChildren(`${max.name} ${maxShown(max, this._unit)} = `, b);
+    }
+    this.renderLifts();
+  }
+
+  // The lift row: a chip per max (name over its number in the display Unit), an Undo
+  // chip in a just-removed lift's slot, then "+" while there is room ("+ Add a lift"
+  // when there are none). Re-rendered only on a real change, so focus is kept.
+  private renderLifts(): void {
+    const esc = (t: string): string =>
+      t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const chips = this._maxes.map((m) => {
+      const n = esc(m.name);
+      const v = maxShown(m, this._unit);
+      return `<button type="button" class="lc" data-lift="${n}"
+        aria-pressed="${m.name === this.lift}" aria-label="${n} ${v} ${this._unit}"
+        title="Press and hold to edit"><span>${n}</span><b>${v}</b></button>`;
+    });
+    if (this.undoSlot) {
+      const n = esc(this.undoSlot.max.name);
+      const at = Math.min(Math.max(0, this.undoSlot.index), chips.length);
+      chips.splice(at, 0, `<button type="button" class="lc undo" data-lift-undo
+        aria-label="Undo removing ${n}"><span>${n}</span><b>Undo</b></button>`);
+    }
+    if (this._maxes.length < MAX_LIFTS) {
+      chips.push(
+        this._maxes.length === 0 && !this.undoSlot
+          ? `<button type="button" class="lc add first" data-lift-add>${PLUS_ICON}Add a lift</button>`
+          : `<button type="button" class="lc add" data-lift-add aria-label="Add a lift">${PLUS_ICON}</button>`,
+      );
+    }
+    const html = chips.join('');
+    if (this.renderedLifts !== html) {
+      this.renderedLifts = html;
+      this.liftsEl.innerHTML = html;
+    }
   }
 
   private emit(): void {
@@ -831,7 +1184,9 @@ class RackEntry extends HTMLElement {
       ? this.reformatted
         ? this.shownKg
         : null
-      : this.currentTarget();
+      : this._link !== null
+        ? this.shownKg // a percent of a max: its exact kg, not the rounded reading
+        : this.currentTarget();
     this.dispatchEvent(
       new CustomEvent<{ target: number | null }>('keypadclose', {
         detail: { target: committed },
