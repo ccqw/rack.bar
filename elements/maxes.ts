@@ -10,6 +10,7 @@
 // the app can hand the keypad its lift or its Undo. The form's draft, the pending Undo
 // row and which view shows are UI state.
 import { DEL_ICON } from './delglyph.ts';
+import { focusIn } from './entry.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
@@ -103,14 +104,16 @@ class RackMaxes extends HTMLElement {
   }
 
   /** Open straight on a form (the keypad's door): retype the lift named `name`, or add
-   * one when `name` is null. */
-  openForm(name: string | null): void {
-    this.door = 'keypad';
+   * one when `name` is null. False (and nothing opens) for an unknown lift or a full
+   * row. */
+  openForm(name: string | null): boolean {
     const i = name === null ? -1 : findMax(this._maxes, name);
-    if (name !== null && i === -1) return;
-    if (name === null && this._maxes.length >= MAX_LIFTS) return;
+    if (name !== null && i === -1) return false;
+    if (name === null && this._maxes.length >= MAX_LIFTS) return false;
+    this.door = 'keypad';
     this.form = { index: i === -1 ? null : i, draft: '', name: null, custom: false };
     this.show();
+    return true;
   }
 
   connectedCallback(): void {
@@ -158,9 +161,11 @@ class RackMaxes extends HTMLElement {
           margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -.01em;
           color: var(--rack-text);
         }
-        .back {
-          display: flex; align-items: center; gap: 10px; padding: 4px 0;
-          background: transparent; border: 0; color: var(--rack-text-dim); cursor: pointer;
+        .back { display: flex; align-items: center; gap: 2px; }
+        .backbtn {
+          display: grid; place-items: center; width: 36px; height: 36px; margin-left: -12px;
+          padding: 0; background: transparent; border: 0; border-radius: 999px;
+          color: var(--rack-text-dim); cursor: pointer;
         }
         .done {
           font: inherit; font-size: 13px; font-weight: 700; min-height: 36px;
@@ -262,7 +267,13 @@ class RackMaxes extends HTMLElement {
     document.removeEventListener('keydown', this.onKeydown);
   }
 
+  // The control that opened the sheet, to hand focus back to on close.
+  private opener: HTMLElement | null = null;
+
   private show(): void {
+    let a = document.activeElement as HTMLElement | null;
+    while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement as HTMLElement;
+    this.opener = a;
     this.undo = null;
     this.hidden = false;
     document.addEventListener('keydown', this.onKeydown);
@@ -276,6 +287,10 @@ class RackMaxes extends HTMLElement {
     this.form = null;
     this.undo = null;
     document.removeEventListener('keydown', this.onKeydown);
+    // Back to the opener if it is still on screen (a keypad chip that was just removed
+    // is not: its row moves focus on, see <rack-entry>).
+    if (this.opener?.isConnected) this.opener.focus();
+    this.opener = null;
     this.dispatchEvent(
       new CustomEvent('maxesclose', {
         detail: { door, picked, removed },
@@ -423,11 +438,21 @@ class RackMaxes extends HTMLElement {
     }
   };
 
+  // A rebuild of the panel keeps focus on the same control (by its act and name), or
+  // lands it on the view's first control when that control is gone.
   private render(): void {
     if (!this.panel) return;
+    const had = focusIn(this.root);
+    const key = had ? `${had.dataset.act ?? ''}|${had.dataset.n ?? had.dataset.i ?? ''}` : null;
     this.panel.innerHTML = this.form ? this.formHtml(this.form) : this.listHtml();
     this.panel.setAttribute('aria-label', this.form ? this.formTitle(this.form) : 'Maxes');
     if (this.form) this.renderLive();
+    if (key !== null && !this.hidden) {
+      const same = [...this.panel.querySelectorAll<HTMLElement>('[data-act]')].find(
+        (b) => `${b.dataset.act ?? ''}|${b.dataset.n ?? b.dataset.i ?? ''}` === key,
+      );
+      (same ?? this.panel.querySelector<HTMLElement>('[data-focus]'))?.focus();
+    }
   }
 
   private listHtml(): string {
@@ -486,9 +511,9 @@ class RackMaxes extends HTMLElement {
         : `<button type="button" data-act="cancel">Cancel</button>
            <button type="button" class="save" data-act="save" data-save>Save</button>`;
     return `<div class="grab"></div>
-      <div class="head"><button type="button" class="back" data-act="cancel" data-focus
-        aria-label="Back"
-        >${BACK}<h2>${esc(this.formTitle(f))}</h2></button></div>
+      <div class="head"><div class="back"><button type="button" class="backbtn"
+        data-act="cancel" data-focus aria-label="Back">${BACK}</button><h2
+        >${esc(this.formTitle(f))}</h2></div></div>
       ${names}
       <div class="live" role="status"><span class="live-num" data-live></span><span
         class="live-u" data-live-u></span></div>

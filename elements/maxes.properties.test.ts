@@ -79,10 +79,10 @@ describe('saved maxes in the console (RBAR-84, ADR-0020)', () => {
     );
   });
 
-  it('removing the linked lift keeps the Target and drops the link; restoring the lift brings the link back (RBAR-84, ADR-0020)', () => {
+  it('removing the linked lift keeps the Target and drops the link; only an Undo of it brings the link back, never a new lift of that name (RBAR-84, ADR-0020)', () => {
     fc.assert(
-      fc.property(rigArb, unitArb, maxArb, pctArb, (rig, u, max, pct) => {
-        const el = fresh(rig, u) as unknown as WithMaxes;
+      fc.property(rigArb, unitArb, maxArb, pctArb, fc.boolean(), (rig, u, max, pct, undo) => {
+        const el = fresh(rig, u) as unknown as WithMaxes & { restoreLift(n: string): void };
         el.maxes = [max];
         typePercent(el, max.name, pct);
         let emitted = 0;
@@ -91,7 +91,12 @@ describe('saved maxes in the console (RBAR-84, ADR-0020)', () => {
         expect(link(el)).toBeNull();
         expect(emitted).toBe(0); // the number stays: nothing is re-decoded
         el.maxes = [max];
-        expect(link(el)).toEqual({ name: max.name, pct });
+        expect(link(el)).toBeNull(); // the same name back is not, by itself, an Undo
+        expect(emitted).toBe(0);
+        if (undo) {
+          el.restoreLift(max.name);
+          expect(link(el)).toEqual({ name: max.name, pct });
+        }
       }),
       { seed: SEED, numRuns: 15 },
     );

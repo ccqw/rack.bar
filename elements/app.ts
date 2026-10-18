@@ -81,6 +81,7 @@ type Console = HTMLElement & {
   plateSet: string;
   platesOnHand: PlatesOnHand;
   maxes: readonly Max[];
+  restoreLift(name: string): void;
   applyLink(link: LinkLoad): void;
 };
 // A Target entry, as the Maxes sheet's keypad door reaches it (RBAR-84).
@@ -374,15 +375,17 @@ class RackApp extends HTMLElement {
     this.console.addEventListener('maxedit', (e) => {
       const name = (e as CustomEvent<{ name?: unknown }>).detail?.name;
       if (name !== null && typeof name !== 'string') return;
-      this.maxesFrom = e.composedPath()[0] as LiftEntry;
       this.maxesSheet.unit = persistedPrimaryUnit();
-      this.maxesSheet.openForm(name);
+      this.maxesFrom = this.maxesSheet.openForm(name) ? (e.composedPath()[0] as LiftEntry) : null;
     });
     // A keypad's Undo chip and the sheet's Undo row both restore through here.
     const restore = (e: Event): void => {
       const { max, index } = ((e as CustomEvent).detail ?? {}) as { max?: Max; index?: unknown };
       if (!max || typeof index !== 'number') return;
-      this.setMaxes(restoreMax(this.maxes, max, index));
+      const next = restoreMax(this.maxes, max, index);
+      if (next.length === this.maxes.length) return; // refused: nothing came back
+      this.setMaxes(next);
+      this.console.restoreLift(max.name);
     };
     this.console.addEventListener('maxrestore', restore);
     this.maxesSheet.addEventListener('maxrestore', restore);

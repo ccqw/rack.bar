@@ -194,6 +194,9 @@ describe('saved maxes (RBAR-84)', () => {
     click(sheetRoot(r), '[data-act="remove"]');
     expect(sheet(r).hidden).toBe(true);
     expect(stored().map((m: { name: string }) => m.name)).toEqual(['Squat', 'Bench', 'Deadlift']);
+    // The keypad is back to typing a weight: the percent readout went with the lift.
+    expect(entry(r).querySelector('[data-live-u]')!.textContent).toBe('kg');
+    expect(entry(r).querySelector('[data-live]')!.textContent).toBe('55');
     // Undo sits in the removed chip's slot, inside the open keypad.
     expect(entry(r).querySelector('[data-lift-undo]')!.textContent).toContain('Press');
     click(entry(r), '[data-done]');
@@ -235,6 +238,32 @@ describe('saved maxes (RBAR-84)', () => {
     expect(sheet(r).hidden).toBe(true);
   });
 
+  it('removing the linked lift from Setup drops the chip at once; its Undo brings it back; a later re-add does not', () => {
+    const r = mountApp();
+    openPad(r);
+    click(entry(r), '[data-lift="Squat"]');
+    typeKeys(entry(r), '80');
+    click(entry(r), '[data-done]');
+    click(r, '[data-setup-pill]');
+    click(setupRoot(r), '[data-maxes-row]');
+    click(sheetRoot(r), '[data-act="edit"][data-i="0"]');
+    click(sheetRoot(r), '[data-act="remove"]');
+    expect(chip(r)).toBeNull();
+    click(sheetRoot(r), '[data-act="undo"]');
+    expect(chip(r)).toBe('80% Squat');
+    // Remove it for good, then add a new Squat: a new max, so the Target stays put.
+    click(sheetRoot(r), '[data-act="edit"][data-i="0"]');
+    click(sheetRoot(r), '[data-act="remove"]');
+    click(sheetRoot(r), '[data-act="done"]');
+    click(setupRoot(r), '[data-maxes-row]');
+    click(sheetRoot(r), '[data-act="add"]');
+    click(sheetRoot(r), '[data-act="name"][data-n="Squat"]');
+    typeKeys(sheetRoot(r), '150');
+    click(sheetRoot(r), '[data-act="save"]');
+    expect(chip(r)).toBeNull();
+    expect(con(r).querySelector('[data-total-num]')!.textContent).toBe('112');
+  });
+
   it('at six lifts there is no add control, in the keypad or the sheet', () => {
     const six = [...FOUR, { name: 'Clean', value: 100, unit: 'kg' }, { name: 'Snatch', value: 80, unit: 'kg' }];
     const r = mountApp(six);
@@ -244,6 +273,17 @@ describe('saved maxes (RBAR-84)', () => {
     click(r, '[data-setup-pill]');
     click(setupRoot(r), '[data-maxes-row]');
     expect(sheetRoot(r).querySelector('[data-act="add"]')).toBeNull();
+  });
+
+  it('picking a lift keeps keyboard focus on its chip, though the row is rebuilt', () => {
+    const r = mountApp();
+    openPad(r);
+    const squat = entry(r).querySelector<HTMLElement>('[data-lift="Squat"]')!;
+    squat.focus();
+    squat.click();
+    const now = entry(r).activeElement as HTMLElement;
+    expect(now.dataset.lift).toBe('Squat');
+    expect(now.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('a stepper nudge drops the link', () => {

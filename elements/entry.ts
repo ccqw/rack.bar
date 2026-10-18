@@ -42,6 +42,20 @@ export interface LiftLink {
 
 // The keypad types at most five digits of a percent ("102.5"), as of a weight.
 const PCT_DIGITS = 5;
+/** The focused element inside `root`, or null. Guarded: happy-dom's activeElement
+ * getter can throw before anything on the page has had focus. */
+export function focusIn(root: ShadowRoot): HTMLElement | null {
+  try {
+    return root.activeElement as HTMLElement | null;
+  } catch {
+    return null;
+  }
+}
+
+// What identifies a lift-row button across a rebuild: its lift, or its role.
+const liftKey = (b: HTMLElement): string =>
+  b.dataset.lift ?? (b.hasAttribute('data-lift-add') ? '+' : 'undo');
+
 // How long after a hold opens a form its own trailing click is still swallowed.
 const HELD_CLICK_MS = 1000;
 
@@ -185,30 +199,42 @@ class RackEntry extends HTMLElement {
 
   /** The saved maxes (RBAR-84). A Target linked to a lift follows its new max (a new PR
    * re-reads "80% Squat" as 80% of the new number, and emits it); a removed lift drops
-   * the link but keeps the number, and its Undo restores both. */
+   * the link but keeps the number (restoreLift brings it back on an Undo). */
   set maxes(list: readonly Max[]) {
+    const was = this._maxes;
     this._maxes = list;
     if (this.lift !== null && findMax(list, this.lift) === -1) {
       this.lift = null;
       this.pctDraft = '';
     }
-    if (this._link === null && this.dropped !== null && findMax(list, this.dropped.name) !== -1) {
-      this._link = this.dropped;
-      this.dropped = null;
-    }
     if (this._link !== null) {
       const i = findMax(list, this._link.name);
+      const j = findMax(was, this._link.name);
       if (i === -1) {
         this.dropped = this._link;
         this._link = null;
-      } else if (percentOfMax(list[i], this._link.pct) !== this.shownKg) {
+      } else if (j === -1 || was[j].value !== list[i].value || was[j].unit !== list[i].unit) {
+        // Only a change to the linked lift's own max moves the Target: an unrelated edit
+        // must not undo a unit toggle's re-expression of it (RBAR-60 retarget).
         this.applyPercent(list[i], this._link.pct);
       }
     }
-    this.renderLive();
+    if (this.valueEl) this.renderValue();
   }
   get maxes(): readonly Max[] {
     return this._maxes;
+  }
+
+  /** An Undo put `name` back (RBAR-84): a Target whose link was dropped with that lift
+   * links to it again, at the same percent of it. A lift merely re-added under the same
+   * name later is a new max, not an Undo, and never relinks (it does not call this). */
+  restoreLift(name: string): void {
+    if (this._link !== null || this.dropped === null) return;
+    const i = findMax(this._maxes, name);
+    if (i === -1 || findMax([this._maxes[i]], this.dropped.name) === -1) return;
+    const { pct } = this.dropped;
+    this.dropped = null;
+    this.applyPercent(this._maxes[i], pct);
   }
 
   /** Pick `name` in the lift row (the Maxes sheet's keypad door returns here after an
@@ -1153,8 +1179,18 @@ class RackEntry extends HTMLElement {
     }
     const html = chips.join('');
     if (this.renderedLifts !== html) {
+      // A rebuild replaces the focused chip, so focus moves to its successor (the same
+      // lift, or "+" / the Undo chip in its place) rather than falling to the page.
+      const had = focusIn(this.root);
+      const key = had && this.liftsEl.contains(had) ? liftKey(had) : null;
       this.renderedLifts = html;
       this.liftsEl.innerHTML = html;
+      if (key !== null) {
+        const next =
+          [...this.liftsEl.querySelectorAll<HTMLElement>('button')].find((b) => liftKey(b) === key) ??
+          this.liftsEl.querySelector<HTMLElement>('[data-lift-undo], [data-lift-add]');
+        next?.focus();
+      }
     }
   }
 
