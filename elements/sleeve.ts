@@ -70,6 +70,7 @@ class RackSleeve extends HTMLElement {
   private plates: readonly Plate[] = [];
   private removable = false;
   private collarsOn = false;
+  private numeralsOn = true;
   private resize?: ResizeObserver;
   private lastScale = NaN;
   private lastShrink = NaN;
@@ -101,6 +102,18 @@ class RackSleeve extends HTMLElement {
   }
   get collars(): boolean {
     return this.collarsOn;
+  }
+
+  /** Whether the discs show their engraved numbers (default on). The Loadout quiz
+   * (RBAR-92) turns them off to drill colours; an iron Plate keeps its stamp either way,
+   * since iron has no colour to read. Setting it re-tags the discs, no re-render. */
+  set numerals(on: boolean) {
+    if (on === this.numeralsOn) return;
+    this.numeralsOn = on;
+    this.fit();
+  }
+  get numerals(): boolean {
+    return this.numeralsOn;
   }
 
   connectedCallback(): void {
@@ -319,7 +332,8 @@ class RackSleeve extends HTMLElement {
       const p = this.plates[i];
       const w = Math.max(p.widthMm * scale, MIN_DISC_PX) * shrink;
       const h = p.diameterMm * scale * shrink;
-      if (numeralFits(w, h, plateLabel(p))) disc.dataset.numeral = String(numeralPx(w));
+      const shown = this.numeralsOn || p.color === 'iron';
+      if (shown && numeralFits(w, h, plateLabel(p))) disc.dataset.numeral = String(numeralPx(w));
       else delete disc.dataset.numeral;
     });
   }

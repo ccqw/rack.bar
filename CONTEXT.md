@@ -4,7 +4,8 @@ A mobile-first, touch-friendly tool for loading a barbell to a target weight in
 the gym. Lives at **rack.bar**. Kilogram-based for v1 (Eleiko competition color
 scheme). Two directions:
 **decode** a target into the plates to load, and **encode** a tapped-on set of
-plates back into a total. A future game mode will quiz this same skill.
+plates back into a total. The **Loadout quiz** (game.html) drills reading a loaded
+Side: it shows one, the lifter types the Total.
 
 ## Language
 

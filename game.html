@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- The Loadout quiz (RBAR-92): the second page of the multi-page app (ADR-0001). It
+       shares lib/ and elements/ with the calculator, reads the lifter's Setup from
+       storage, and is precached by the service worker like index.html (ADR-0018). -->
+  <meta name="theme-color" content="#0d0e10">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="rack.bar">
+  <title>Loadout quiz - rack.bar</title>
+  <meta name="description" content="Read a loaded bar and say the total. A quick drill for loading plates by eye.">
+  <link rel="preload" href="/fonts/hanken-grotesk-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/jetbrains-mono-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    html { touch-action: manipulation; }
+    /* One phone screen (ADR-0013): exactly the small viewport, a fixed column. */
+    body {
+      background: var(--rack-bg);
+      color: var(--rack-fg);
+      font-family: var(--rack-font);
+      height: 100svh;
+      display: flex; flex-direction: column;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right)
+               env(safe-area-inset-bottom) env(safe-area-inset-left);
+      overflow-x: hidden;
+    }
+  </style>
+</head>
+<body>
+  <rack-quiz></rack-quiz>
+  <script type="module" src="./elements/quiz.ts"></script>
+  <!-- Works offline (ADR-0018): a lifter who lands here first registers the worker too. -->
+  <script type="module" src="./elements/update.ts"></script>
+</body>
+</html>

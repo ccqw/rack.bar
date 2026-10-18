@@ -106,6 +106,21 @@ import {
   ALL_PLATES,
 } from './platesonhand.ts';
 import type { PlatesOnHand } from './platesonhand.ts';
+import {
+  COLLARS_MODES,
+  MAX_PLATES_CHOICES,
+  diagnose,
+  isRight,
+  mistakes,
+  parseQuizSaved,
+  quizQuestion,
+  serializeQuizSaved,
+  smallestFullPlate,
+  typeKey,
+  answerOf,
+  MAX_ANSWER_CHARS,
+} from './quiz.ts';
+import type { QuizRig, QuizSettings } from './quiz.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -2275,6 +2290,226 @@ describe('Another way properties (RBAR-66, ADR-0003, ADR-0012, ADR-0016)', () =>
         expect(ways).toEqual(waysOracle(inv, sideLoadKg(loaded.side), MAX_WAYS));
       }),
       { seed: SEED, numRuns: 150 },
+    );
+  });
+});
+
+describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-0012, ADR-0016)', () => {
+  // A quiz case: a rig (every set x Bar x Collar v1 offers), optional Plate limits, the
+  // gear's settings, and a (seed, index) in the list.
+  const capArb = fc.oneof(fc.integer({ min: 0, max: 3 }), fc.constant(Infinity));
+  const settingsArb: fc.Arbitrary<QuizSettings> = fc.record({
+    maxPlates: fc.constantFrom(...MAX_PLATES_CHOICES),
+    change: fc.boolean(),
+    collars: fc.constantFrom(...COLLARS_MODES),
+    numbers: fc.boolean(),
+  });
+  const caseArb = rigArb.chain((rig) =>
+    fc.record({
+      rig: fc.constant(rig),
+      caps: fc.option(
+        fc.array(capArb, { minLength: rig.inventory.length, maxLength: rig.inventory.length }),
+        { freq: 3 },
+      ),
+      settings: settingsArb,
+      seed: fc.integer(),
+      index: fc.integer({ min: 0, max: 500 }),
+    }),
+  );
+  const quizRig = (rig: Rig, caps: number[] | null): QuizRig => ({
+    set: rig.set,
+    barKg: rig.barKg,
+    collarKg: rig.collarKg,
+    inventory: caps
+      ? withLimits(rig.inventory, Object.fromEntries(rig.inventory.map((p, i) => [plateFace(p), caps[i]])))
+      : rig.inventory,
+  });
+  // The Inventory the rule says a question draws from: the lifter's, minus the change
+  // Plates when the gear has them off.
+  const drawn = (qr: QuizRig, change: boolean): readonly InventoryEntry[] =>
+    change
+      ? qr.inventory
+      : withLimits(
+          qr.inventory,
+          Object.fromEntries(
+            qr.inventory
+              .filter((p) => Number(plateFace(p)) < smallestFullPlate(qr.set))
+              .map((p) => [plateFace(p), 0]),
+          ),
+        );
+  const oracles = new Map<string, ReturnType<typeof cappedFewestOracle>>();
+  const oracleFor = (inv: readonly InventoryEntry[], set: PlateSetKey) => {
+    const key = set + inv.map((p) => `${plateFace(p)}:${p.maxPerSide ?? 'all'}`).join(',');
+    let o = oracles.get(key);
+    if (!o) {
+      o = cappedFewestOracle(inv, GRID_KG[set]);
+      oracles.set(key, o);
+    }
+    return o;
+  };
+  const quizOpts = { seed: SEED, numRuns: 150 };
+
+  it("a question's Side is the oracle's fewest-Plate, heaviest-first stack for its sum, within the Sleeve and the Plate limits (RBAR-92, ADR-0003, ADR-0012, ADR-0016)", () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {
+        const qr = quizRig(rig, caps);
+        const q = quizQuestion(seed, index, qr, settings);
+        if (!q) {
+          expect(qr.inventory.every((p) => p.maxPerSide === 0)).toBe(true);
+          return;
+        }
+        expect(q.side.length).toBeGreaterThan(0);
+        expect(sideWidthMm(q.side)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+        for (const p of qr.inventory) {
+          const n = q.side.filter((x) => plateFace(x) === plateFace(p)).length;
+          expect(n).toBeLessThanOrEqual(p.maxPerSide ?? Infinity);
+        }
+        const inv = drawn(qr, settings.change);
+        const units = Math.round(sideLoadKg(q.side) / GRID_KG[rig.set]);
+        const pick = oracleFor(inv, rig.set).pick(units);
+        // The one-Plate fallback (no Side in range under tight limits) is still a
+        // fewest-Plate stack: one Plate is the fewest there is.
+        if (q.side.length > 1) expect(pick?.map(plateFace)).toEqual(q.side.map(plateFace));
+      }),
+      quizOpts,
+    );
+  });
+
+  it('when the Plates on hand allow no Side in range, the question is one Plate: the heaviest the lifter has, by kg (RBAR-92, ADR-0016)', () => {
+    // At most two sizes on hand, one pair each, and up to 6 per side (3 Plates at
+    // least): no draw can fit, so every question is the fallback.
+    const fallbackArb = rigArb.chain((rig) =>
+      fc.record({
+        rig: fc.constant(rig),
+        keep: fc.uniqueArray(fc.nat({ max: rig.inventory.length - 1 }), { minLength: 1, maxLength: 2 }),
+        change: fc.boolean(),
+        seed: fc.integer(),
+        index: fc.nat({ max: 50 }),
+      }),
+    );
+    fc.assert(
+      fc.property(fallbackArb, ({ rig, keep, change, seed, index }) => {
+        const caps = rig.inventory.map((_, i) => (keep.includes(i) ? 1 : 0));
+        const qr = quizRig(rig, caps);
+        const settings: QuizSettings = { maxPlates: 6, change, collars: 'off', numbers: false };
+        const q = quizQuestion(seed, index, qr, settings)!;
+        const kept = keep.map((i) => rig.inventory[i]);
+        const small = smallestFullPlate(rig.set);
+        const full = kept.filter((p) => Number(plateFace(p)) >= small);
+        // Change Plates off: the heaviest full Plate on hand, if there is one.
+        const pool = !change && full.length > 0 ? full : kept;
+        const heaviest = Math.max(...pool.map((p) => p.kg));
+        expect(q.side.length).toBe(1);
+        expect(q.side[0].kg).toBe(heaviest);
+      }),
+      quizOpts,
+    );
+  });
+
+  it('a question keeps to the gear: at most its Plates per side, and no change Plate when they are off, unless the lifter has only change Plates (RBAR-92)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {
+        const qr = quizRig(rig, caps);
+        const q = quizQuestion(seed, index, qr, settings);
+        if (!q) return;
+        expect(q.side.length).toBeLessThanOrEqual(settings.maxPlates);
+        const small = smallestFullPlate(rig.set);
+        const hasFull = qr.inventory.some((p) => p.maxPerSide !== 0 && Number(plateFace(p)) >= small);
+        if (!settings.change && hasFull) {
+          expect(q.side.every((p) => Number(plateFace(p)) >= small)).toBe(true);
+        }
+      }),
+      quizOpts,
+    );
+  });
+
+  it('the Total is Bar + 2 x Collar + 2 x Side Load, an achievable Total, and the shown Total is the right answer (RBAR-92, ADR-0002, ADR-0008, ADR-0012)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, settings, seed, index }) => {
+        const qr = quizRig(rig, null);
+        const q = quizQuestion(seed, index, qr, settings)!;
+        expect(q.totalKg).toBeCloseTo(rig.barKg + 2 * q.collarKg + 2 * sideLoadKg(q.side), 9);
+        const baseline = { ...rig, baselineKg: rig.barKg + 2 * q.collarKg };
+        expect(achievableTotals(baseline).some((t) => Math.abs(t - q.totalKg) < 1e-6)).toBe(true);
+        expect(q.totalShown).toBe(shownIn(q.totalKg, q.unit));
+        expect(isRight(q, q.totalShown)).toBe(true);
+        expect(diagnose(q, q.totalShown)).toBe('');
+      }),
+      quizOpts,
+    );
+  });
+
+  it('Collars only when Setup has them, on the kg set, never on a bare Bar; Always puts them on every question and Off on none (RBAR-92, ADR-0008)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {
+        const qr = quizRig(rig, caps);
+        const q = quizQuestion(seed, index, qr, settings);
+        if (!q) return;
+        const offered = rig.collarKg > 0 && PLATE_SETS[rig.set].unit === 'kg';
+        if (q.collarKg > 0) {
+          expect(offered).toBe(true);
+          expect(q.collarKg).toBe(rig.collarKg);
+          expect(q.side.length).toBeGreaterThan(0);
+        }
+        if (!offered || settings.collars === 'off') expect(q.collarKg).toBe(0);
+        if (offered && settings.collars === 'always') expect(q.collarKg).toBe(rig.collarKg);
+      }),
+      quizOpts,
+    );
+  });
+
+  it('the list is seeded: the same (seed, index, rig, gear) is the same question (RBAR-92)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {
+        const qr = quizRig(rig, caps);
+        expect(quizQuestion(seed, index, qr, settings)).toEqual(quizQuestion(seed, index, qr, settings));
+      }),
+      { seed: SEED, numRuns: 60 },
+    );
+  });
+
+  it('every plausible mistake is a wrong answer that diagnoses as a named mistake (RBAR-92)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, settings, seed, index }) => {
+        const q = quizQuestion(seed, index, quizRig(rig, null), settings)!;
+        const ms = mistakes(q);
+        expect(ms.length).toBeGreaterThan(0);
+        const whys = new Set(ms.map((m) => m.why));
+        for (const m of ms) {
+          expect(m.value).toBeGreaterThan(0);
+          expect(isRight(q, m.value)).toBe(false);
+          const why = diagnose(q, m.value);
+          if (q.unit === 'kg') expect(why).toBe(m.why);
+          else expect(whys.has(why)).toBe(true);
+        }
+      }),
+      quizOpts,
+    );
+  });
+
+  it('any stored quiz value reads as valid settings and a record, and what is stored reads back the same (RBAR-92, ADR-0007)', () => {
+    fc.assert(
+      fc.property(fc.oneof(fc.json(), fc.string(), fc.constant(null)), (raw) => {
+        const s = parseQuizSaved(raw);
+        expect(MAX_PLATES_CHOICES).toContain(s.settings.maxPlates);
+        expect(COLLARS_MODES).toContain(s.settings.collars);
+        expect(s.record.best).toBeGreaterThanOrEqual(s.record.streak);
+        expect(parseQuizSaved(serializeQuizSaved(s))).toEqual(s);
+      }),
+      opts,
+    );
+  });
+
+  it('the keypad never types past its length or a second point, and what it types reads as a number (RBAR-92)', () => {
+    const keyArb = fc.constantFrom('0', '1', '2', '5', '9', '.', 'del');
+    fc.assert(
+      fc.property(fc.array(keyArb, { maxLength: 20 }), (keys) => {
+        const d = keys.reduce(typeKey, '');
+        expect(d.length).toBeLessThanOrEqual(MAX_ANSWER_CHARS);
+        expect(d.split('.').length).toBeLessThanOrEqual(2);
+        if (d !== '') expect(Number.isFinite(answerOf(d))).toBe(true);
+      }),
+      opts,
     );
   });
 });
