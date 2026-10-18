@@ -7,11 +7,22 @@
 // console-state.properties.test.ts for the conventions.
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import { decode } from '../lib/decode.ts';
+import { waysFor } from '../lib/ways.ts';
+import { draftToKg } from '../lib/units.ts';
+import { plateFace } from '../lib/plates.ts';
+import type { Plate } from '../lib/plates.ts';
+import { PLATE_SETS } from '../lib/platesets.ts';
+import type { PlateSetKey } from '../lib/platesets.ts';
 import {
-  SEED, on, q, sr, type, step, heroTap, done, roundUp, modeBtn, rigDraftCaseArb, rigArb,
-  unitArb, draftArb, captionText, facesOnScreen, followCaption,
+  SEED, on, fresh, q, sr, type, step, heroTap, done, roundUp, modeBtn, rigDraftCaseArb,
+  rigArb, unitArb, draftArb, captionText, facesOnScreen, followCaption, sideOnScreen,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
+
+// The Side on screen as stamped faces of `inventory` (the active set's, after a switch).
+const facesOn = (inventory: readonly Plate[], el: HTMLElement): string[] =>
+  sideOnScreen(el).map((d) => plateFace(inventory.find((p) => Math.abs(p.kg - d.kg) < 1e-9)!));
 
 type Act =
   | { readonly kind: 'target'; readonly draft: string }
@@ -76,6 +87,46 @@ describe('<rack-console> By Weight Plate moves caption (RBAR-83, ADR-0015)', () 
         }
       }),
       { seed: SEED, numRuns: 60 },
+    );
+  });
+
+  it('a Setup change or an opened share link is not a lifter move: no caption for its load, and the next move is measured from it (RBAR-83, ADR-0010, ADR-0014)', () => {
+    type Setup = 'bar' | 'set' | 'onhand' | 'link';
+    fc.assert(
+      fc.property(
+        rigArb, unitArb, draftsArb, draftsArb,
+        fc.constantFrom<Setup>('bar', 'set', 'onhand', 'link'),
+        (rig, u, first, second, change) => {
+          const el = fresh(rig, u) as Console & {
+            applyLink(l: unknown): void;
+            platesOnHand: unknown;
+          };
+          heroTap(el).click();
+          type(el, first);
+          done(el);
+          step(el, 'inc');
+          const inv = () => PLATE_SETS[el.plateSet as PlateSetKey].inventory;
+          if (change === 'bar') el.barKg = rig.barKg === 20 ? 15 : 20;
+          else if (change === 'set') el.plateSet = rig.set === 'comp' ? 'training' : 'comp';
+          else if (change === 'onhand') {
+            el.platesOnHand = { [rig.set]: { [plateFace(rig.inventory[0])]: 1 } };
+          } else {
+            // A link to another way of another Target: its Plates, from the set itself.
+            const t = draftToKg(second, u) ?? 0;
+            const ways = waysFor(decode(t, rig.baselineKg, rig.inventory).primary.side, rig.inventory);
+            el.applyLink({ mode: 'decode', side: ways[ways.length - 1], targetKg: t, unit: u });
+          }
+          expect(captionText(el)).toBeNull();
+          const before = facesOn(inv(), el);
+          step(el, 'inc');
+          const after = facesOn(inv(), el);
+          const cap = captionText(el);
+          const changed = JSON.stringify(before) !== JSON.stringify(after);
+          expect(cap !== null).toBe(before.length > 0 && after.length > 0 && changed);
+          if (cap !== null) expect(followCaption(before, cap)).toEqual(after);
+        },
+      ),
+      { seed: SEED, numRuns: 40 },
     );
   });
 

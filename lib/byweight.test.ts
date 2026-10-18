@@ -2,7 +2,7 @@
 // properties in lib/properties.test.ts; these pin the wording and the track's steps.
 import { describe, it, expect } from 'vitest';
 import { NO_TRACK, movesCaption, trackLoad } from './byweight.ts';
-import { ELEIKO_KG, IRON_LB } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, withLimits } from './plates.ts';
 
 const kg = (...ns: number[]) => ns.map((n) => ELEIKO_KG.find((p) => p.kg === n)!);
 const lb = (...ls: string[]) => ls.map((l) => IRON_LB.find((p) => p.label === l)!);
@@ -38,7 +38,7 @@ describe('movesCaption (RBAR-83)', () => {
     const a = kg(25);
     const b = kg(25, 5);
     let t = trackLoad(trackLoad(NO_TRACK, a, false), b, false);
-    t = trackLoad(t, b, false); // a re-render (a unit toggle that kept the Plates)
+    t = trackLoad(t, b, false); // a re-render of the same load (a Recents push)
     expect(movesCaption(t, b, 'kg')).toBe('+5 kg');
     const c = kg(25, 10);
     t = trackLoad(t, c, false);
@@ -63,5 +63,14 @@ describe('movesCaption (RBAR-83)', () => {
     expect(t).toEqual(NO_TRACK);
     t = trackLoad(t, kg(25, 5), false);
     expect(movesCaption(t, kg(25, 5), 'kg')).toBeNull();
+  });
+
+  it('matches Plates by their stamp: equal Plates in other objects are no move', () => {
+    const limited = withLimits(ELEIKO_KG, { '25': 1 }); // a new 25 kg object
+    const before = kg(25, 20); // e.g. a share link's Plates, from the base set
+    const after = [limited.find((p) => p.kg === 25)!, ...kg(20, 5)];
+    let t = trackLoad(NO_TRACK, before, false);
+    t = trackLoad(t, after, false);
+    expect(movesCaption(t, after, 'kg')).toBe('+5 kg');
   });
 });

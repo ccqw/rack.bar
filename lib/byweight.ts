@@ -6,6 +6,7 @@
 // previous one exactly. Pure (ADR-0001): the shell feeds each Side it renders through
 // trackLoad and shows movesCaption; Decode still picks its loadout on its own (ADR-0003).
 import type { Plate } from './plates.ts';
+import { plateFace } from './plates.ts';
 import { movesBetween } from './moves.ts';
 import { deltaText } from './warmup.ts';
 import type { Unit } from './units.ts';
@@ -24,13 +25,15 @@ export interface LoadTrack {
   readonly from: Side | null;
 }
 
-/** Nothing tracked: outside By Weight, or before the first load. */
+/** Nothing tracked: outside By Weight, before the first load, or after a load the
+ *  lifter did not choose (a Setup change, an opened share link). */
 export const NO_TRACK: LoadTrack = { seen: null, base: null, from: null };
 
 /**
  * Advance the track to the Side on the Bar now. `side` null means By Weight is not
  * showing (another mode), which forgets everything: entering By Weight never captions
- * the carried load. `editing` is true while the Target keypad is open.
+ * the carried load. From NO_TRACK the Side is the first load, with no caption.
+ * `editing` is true while the Target keypad is open.
  */
 export function trackLoad(t: LoadTrack, side: Side | null, editing: boolean): LoadTrack {
   if (side === null) return NO_TRACK;
@@ -42,9 +45,12 @@ export function trackLoad(t: LoadTrack, side: Side | null, editing: boolean): Lo
 /**
  * The caption for `side` under track `t`, in Plates stamped in `plateUnit`: null when
  * nothing was on the Bar before, when nothing is on it now, or when the Plates did not
- * change.
+ * change. Plates match by their stamp, not their object (a share link's Plates and a
+ * Decode answer on limited Plates on Hand are equal Plates in different objects).
  */
 export function movesCaption(t: LoadTrack, side: Side, plateUnit: Unit): string | null {
   if (t.from === null || t.from.length === 0 || side.length === 0) return null;
-  return deltaText(movesBetween(t.from, side), plateUnit);
+  const now = new Map(side.map((p) => [plateFace(p), p]));
+  const from = t.from.map((p) => now.get(plateFace(p)) ?? p);
+  return deltaText(movesBetween(from, side), plateUnit);
 }
