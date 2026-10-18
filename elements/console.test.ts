@@ -2544,6 +2544,14 @@ describe('<rack-console> phone fit (RBAR-67)', () => {
     expect(sleeve).toContain('min-height: 0');
   });
 
+  // RBAR-99: the Home Screen app's spare height (tokens.css sets --rack-bar-air to auto
+  // in standalone) goes under the capped bar block, so the bar and toggle stay put
+  // across modes and the controls sit on the bottom inset. Never the keypad or tiles.
+  it('puts the Home Screen app\'s spare height under the bar block', () => {
+    expect(rule(css(), '.viz')).toContain('margin-bottom: var(--rack-bar-air)');
+    expect(rule(css(), '.stack > :not(.viz)')).not.toContain('--rack-bar-air');
+  });
+
   it('keeps every other block at its natural height (only the bar flexes)', () => {
     expect(rule(css(), '.stack > :not(.viz)')).toContain('flex: none');
   });

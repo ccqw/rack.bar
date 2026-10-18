@@ -53,6 +53,14 @@
     }
     /* No horizontal scroll at a phone width: the app is a single column. */
     body { overflow-x: hidden; }
+    /* RBAR-99: the Home Screen app has no toolbars to collapse, so svh's reason (a
+       layout that never jumps as Safari's toolbars hide) does not apply; fill the
+       dynamic viewport, the whole screen. The safe-area padding above stays inside
+       it, so the controls still clear the home indicator. tokens.css gives the spare
+       height to the air around the bar block. */
+    @media (display-mode: standalone) {
+      body { height: 100dvh; }
+    }
   </style>
 </head>
 <body>

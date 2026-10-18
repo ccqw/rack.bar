@@ -35,6 +35,10 @@
                env(safe-area-inset-bottom) env(safe-area-inset-left);
       overflow-x: hidden;
     }
+    /* The Home Screen app fills the whole screen (RBAR-99, as index.html). */
+    @media (display-mode: standalone) {
+      body { height: 100dvh; }
+    }
   </style>
 </head>
 <body>

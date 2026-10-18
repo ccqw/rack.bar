@@ -276,3 +276,14 @@ describe('the way in and the page', () => {
     expect(precacheUrls(pages)).toEqual(['/', '/game.html']);
   });
 });
+
+// RBAR-99: in the Home Screen app the spare height goes under the capped bar block
+// (tokens.css: --rack-bar-air is auto in standalone), never into the keypad.
+describe('<rack-quiz> Home Screen app height (RBAR-99)', () => {
+  it('puts the spare height under the bar block', () => {
+    const css = mount().root.querySelector('style')!.textContent!;
+    const at = css.indexOf('.viz {');
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(css.slice(at, css.indexOf('}', at))).toContain('margin-bottom: var(--rack-bar-air)');
+  });
+});

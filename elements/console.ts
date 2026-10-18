@@ -449,6 +449,10 @@ class RackConsole extends HTMLElement {
           flex: 1 1 0;
           min-height: ${VIZ_PAD_PX + LABEL_PX + VIZ_GAP_PX + SLEEVE_MIN_PX}px;
           max-height: ${SLEEVE_BLOCK_PX}px;
+          /* RBAR-99: in the Home Screen app the height left once the block is at its
+             cap goes around it (auto margins take only what flexing leaves), never
+             into the keypad or tiles. 0 in a browser tab (tokens.css). */
+          margin-bottom: var(--rack-bar-air);
         }
         .viz rack-sleeve { flex: 1 1 0; min-height: 0; }
         /* Another way (RBAR-66): with more than one way to make the Total, the bar is a
