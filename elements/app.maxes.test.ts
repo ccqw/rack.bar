@@ -21,7 +21,7 @@ function mountApp(maxes: unknown[] | null = FOUR): ShadowRoot {
   return el.shadowRoot!;
 }
 const con = (r: ShadowRoot) => r.querySelector('rack-console')!.shadowRoot!;
-const entry = (r: ShadowRoot) => con(r).querySelector('rack-entry:not([data-working])')!.shadowRoot!;
+const entry = (r: ShadowRoot) => con(r).querySelector('rack-entry')!.shadowRoot!;
 const sheet = (r: ShadowRoot) => r.querySelector('rack-maxes') as HTMLElement;
 const sheetRoot = (r: ShadowRoot) => sheet(r).shadowRoot!;
 const setupRoot = (r: ShadowRoot) => r.querySelector('rack-setup')!.shadowRoot!;
@@ -284,6 +284,23 @@ describe('saved maxes (RBAR-84)', () => {
     const now = entry(r).activeElement as HTMLElement;
     expect(now.dataset.lift).toBe('Squat');
     expect(now.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('the link follows the one Target into Warm up and back (RBAR-87): its keypad opens on the lift, and a percent typed there is the Target By Weight shows', () => {
+    const r = mountApp();
+    openPad(r);
+    click(entry(r), '[data-lift="Squat"]');
+    typeKeys(entry(r), '80');
+    click(entry(r), '[data-done]');
+    click(con(r), '[data-mode="warmup"]');
+    click(entry(r), '[data-value]');
+    expect(entry(r).querySelector('[data-lift="Squat"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(entry(r).querySelector('[data-live-sec]')!.textContent).toBe('Squat 140 = 112 kg');
+    typeKeys(entry(r), '70');
+    click(entry(r), '[data-done]');
+    expect(JSON.parse(localStorage.getItem('rackbar.target')!)).toBe(98);
+    click(con(r), '[data-mode="decode"]');
+    expect(chip(r)).toBe('70% Squat'); // 98 kg loads exactly
   });
 
   it('a stepper nudge drops the link', () => {

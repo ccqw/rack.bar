@@ -49,6 +49,9 @@ walks the keypad on a percent, the miss chip, the add form and the Maxes list.
 ## Not decided here
 
 - Estimating a max from weight x reps (Epley) is parked until Caitlin says yes.
-- Warm up's working-weight keypad has the same lift row, but the link is not shown in Warm
-  up's readout and is not persisted: entering Warm up re-seeds the field from the saved
-  Working set, which drops it.
+- Since RBAR-87 By Weight and Warm up share one Target and one entry, so the link follows
+  it across the two modes: Warm up's keypad opens on the linked lift, and a percent typed
+  there is the Target By Weight's chip names. Warm up shows no chip (RBAR-87 keeps the
+  "You asked" chip By Weight's), and the link is not persisted: after a reload the
+  Target (`rackbar.target`) comes back as a plain weight. Persisting it would need its
+  own key or a field in the Target's, and a rule for a lift renamed or removed meanwhile.

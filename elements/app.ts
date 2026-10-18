@@ -136,7 +136,7 @@ class RackApp extends HTMLElement {
   private platesOnHand: PlatesOnHand = ALL_PLATES;
   // Saved maxes (RBAR-84, ADR-0020): lifter state like the rig, so the app owns, persists
   // and feeds them -- to Setup's Maxes row, the Maxes sheet, and through the console to
-  // each Target entry's lift row. The keypad that opened the sheet, while it is open.
+  // the Target entry's lift row. The keypad that opened the sheet, while it is open.
   private maxes: readonly Max[] = [];
   private maxesSheet!: Maxes;
   private maxesFrom: LiftEntry | null = null;

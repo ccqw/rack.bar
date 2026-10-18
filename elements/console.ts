@@ -359,21 +359,20 @@ class RackConsole extends HTMLElement {
     return this._onHand;
   }
 
-  /** The saved maxes (RBAR-84, ADR-0020), for both Target entries' lift rows. The app
+  /** The saved maxes (RBAR-84, ADR-0020), for the Target entry's lift row
+   * (one entry since RBAR-87, so a link carries between By Weight and Warm up). The app
    * owns them; a Target linked to a lift follows its max through the entry's `target`. */
   set maxes(list: readonly Max[]) {
     if (!this.entry) return;
     this.entry.maxes = list;
-    this.workEntry.maxes = list;
     this.render(); // a dropped link changes the chip without a new Target
   }
 
-  /** An Undo restored lift `name` (RBAR-84): an entry whose Target was linked to it
-   * links again. */
+  /** An Undo restored lift `name` (RBAR-84): a Target that was linked to it links
+   * again. */
   restoreLift(name: string): void {
     if (!this.entry) return;
     this.entry.restoreLift(name);
-    this.workEntry.restoreLift(name);
     this.render();
   }
 
