@@ -29,6 +29,7 @@ import { SLEEVE_PAD_PX, sleeveLayout } from './sleevefit.ts';
 import {
   draftToKg,
   displayCeilingKg,
+  displayFloorKg,
   kgToLb,
   lbToKg,
   shownIn,
@@ -57,6 +58,7 @@ import {
   fewestPlatesFor,
   maxTotal,
   rampTotalsOracle,
+  warmWorkingOracle,
   stationRampOracle,
   oracleStationCost,
   oracleMoveCost,
@@ -75,7 +77,7 @@ import {
   PLATES_PER_SIZE,
   BIG_PLATE_DIAMETER_MM,
 } from './moves.ts';
-import { planRamp, DEFAULT_RAMP } from './plan.ts';
+import { planRamp, DEFAULT_RAMP, workingLoad } from './plan.ts';
 import type { RampStep } from './plan.ts';
 import type { Rig } from './properties.oracle.ts';
 import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
@@ -660,10 +662,12 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
     ]);
   const caseArb = fc.record({ rt: rigTargetArb, u: unitArb, steps: fc.oneof(stepsArb, fc.constant([...DEFAULT_RAMP])) });
 
-  // The console's call, exactly: the Working set solved as read in the active unit.
+  // The console's call, exactly: the Working set solved as read in the active unit, and
+  // rounded up only when it reads short of the Target (RBAR-87).
   const plan = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
     planRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
       ceilingKg: displayCeilingKg(t, u),
+      floorKg: displayFloorKg(t, u),
     });
 
   it('every row is loadable within the Sleeve: Total = its baseline + 2 x Side Load, Plates from the Inventory, the canonical stack (ADR-0015, ADR-0012, ADR-0003)', () => {
@@ -699,19 +703,54 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
     );
   });
 
-  it('the Working set is the at-or-under solve as read and never overshoots (ADR-0015, ADR-0003)', () => {
+  it('the Working set is the at-or-under solve as read when that reaches the Target, else its round-up; Decode is unchanged (ADR-0015 as amended RBAR-87, ADR-0003)', () => {
     fc.assert(
       fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
         const { rows, working } = plan(rig, t, u, steps);
         const solved = decodeWithin(t, displayCeilingKg(t, u), rig.baselineKg, rig.inventory);
+        // The Ramp still carries Decode's own solve, which never overshoots (ADR-0003).
         expect(working).toEqual(solved);
         const last = rows[rows.length - 1];
         expect(last.kind).toBe('working');
-        expect(last.side).toEqual(solved.primary.side);
-        expect(last.total).toBeCloseTo(greatestAtOrUnder(rig, displayCeilingKg(t, u)), 9);
-        if (shownIn(t, u) >= shownIn(rig.baselineKg, u)) {
-          expect(shownIn(last.total, u)).toBeLessThanOrEqual(shownIn(t, u));
+        const load = workingLoad(solved, displayFloorKg(t, u));
+        expect(last.side).toEqual(load.side);
+        expect(last.total).toBeCloseTo(warmWorkingOracle(rig, t, displayCeilingKg(t, u), displayFloorKg(t, u)), 9);
+        // It overshoots only by rounding a short load up: the at-or-under one read short.
+        if (shownIn(last.total, u) > shownIn(t, u) && shownIn(t, u) >= shownIn(rig.baselineKg, u)) {
+          expect(shownIn(solved.primary.total, u)).toBeLessThan(shownIn(t, u));
+          expect(last.total).toBeCloseTo(leastAbove(rig, displayCeilingKg(t, u))!, 9);
         }
+      }),
+      opts,
+    );
+  });
+
+  it("Warm up's Working Total rounds up to the least loadable Total at or above the Target (RBAR-87, ADR-0015 as amended)", () => {
+    // kg-canonical, floor = the Target (workingLoad's default): the Working Total is
+    // loadable, at or above the Target whenever anything loadable is, and no loadable
+    // Total lies between the Target and it. With nothing loadable at or above the
+    // Target (past the Sleeve) it is the at-or-under Total, as before.
+    fc.assert(
+      fc.property(rigTargetArb, ({ rig, t }) => {
+        fc.pre(Number.isFinite(t) && t > 0);
+        const rigArg = { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory };
+        const rows = planRamp(t, DEFAULT_RAMP, rigArg).rows;
+        const w = rows[rows.length - 1].total;
+        const totals = achievableTotals(rig);
+        expect(totals.some((x) => Math.abs(x - w) < 1e-6)).toBe(true);
+        const up = totals.find((x) => x >= t - 1e-9);
+        if (up === undefined) {
+          expect(w).toBeCloseTo(greatestAtOrUnder(rig, t), 9);
+        } else {
+          expect(w).toBeGreaterThanOrEqual(t - 1e-9);
+          expect(totals.some((x) => x >= t - 1e-9 && x < w - 1e-6)).toBe(false);
+          expect(w).toBeCloseTo(up, 9);
+        }
+        // planEasyRamp keeps that Working Total; only its Side may differ.
+        const easyRows = planEasyRamp(t, DEFAULT_RAMP, rigArg).rows;
+        expect(easyRows[easyRows.length - 1].total).toBeCloseTo(w, 9);
+        // By Weight's Decode of the same Target is untouched: never over (ADR-0003).
+        if (t >= rig.baselineKg) expect(decode(t, rig.baselineKg, rig.inventory).primary.total).toBeLessThanOrEqual(t + 1e-9);
       }),
       opts,
     );
@@ -721,7 +760,7 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
     fc.assert(
       fc.property(caseArb, ({ rt: { rig, t }, u, steps }) => {
         const got = plan(rig, t, u, steps).rows.map((r) => r.total);
-        const want = rampTotalsOracle(rig, t, displayCeilingKg(t, u), steps);
+        const want = rampTotalsOracle(rig, t, displayCeilingKg(t, u), steps, displayFloorKg(t, u));
         expect(got.length).toBe(want.length);
         got.forEach((g, i) => expect(g).toBeCloseTo(want[i], 9));
       }),
@@ -734,7 +773,7 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
     for (const rig of RIGS) {
       for (const total of achievableTotals(rig)) {
         const got = plan(rig, total, 'kg', DEFAULT_RAMP).rows.map((r) => r.total);
-        const want = rampTotalsOracle(rig, total, displayCeilingKg(total, 'kg'), DEFAULT_RAMP);
+        const want = rampTotalsOracle(rig, total, displayCeilingKg(total, 'kg'), DEFAULT_RAMP, displayFloorKg(total, 'kg'));
         if (got.some((g, i) => Math.abs(g - want[i]) > 1e-6)) {
           misses.push(`${rig.name}: ${total} -> ${got.join(',')} (want ${want.join(',')})`);
         }
@@ -818,6 +857,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
   const easy = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
     planEasyRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
       ceilingKg: displayCeilingKg(t, u),
+      floorKg: displayFloorKg(t, u),
     });
   const isBig = (p: Plate) => p.diameterMm >= RULE.bigDiameterMm;
   // Totals as map keys, to 1e-6 kg (the iron kg are lbToKg products).
@@ -889,7 +929,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
     fc.assert(
       fc.property(smallCaseArb, ({ rig, t, u, steps }) => {
         const got = easy(rig, t, u, steps);
-        const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+        const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE, displayFloorKg(t, u));
         const cost = costOf(got.rows, tol);
         cost.forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
         expect(got.cost).toBeCloseTo(cost[2], 6);
@@ -922,7 +962,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
         // order-free capped walk), and no Plate goes past its count in Decode's own Side.
         const work = got.rows[got.rows.length - 1];
         expect(cappedTotals(rig, () => RULE.cap).has(key(work.total))).toBe(false);
-        const own = got.working.primary.side;
+        const own = workingLoad(got.working, displayFloorKg(t, u)).side;
         for (const r of got.rows) {
           for (const p of r.side) {
             const n = r.side.filter((q) => q === p).length;
@@ -944,14 +984,14 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
     );
   });
 
-  it('the Working Total equals the at-or-under Total as read; only its Side may differ (ADR-0015 as amended, ADR-0003)', () => {
+  it('the Working Total is the at-or-under Total as read, rounded up when it reads short; only its Side may differ (ADR-0015 as amended, ADR-0003)', () => {
     fc.assert(
       fc.property(fullCaseArb, ({ rt: { rig, t }, u, steps }) => {
         const got = easy(rig, t, u, steps);
         const solved = decodeWithin(t, displayCeilingKg(t, u), rig.baselineKg, rig.inventory);
         const last = got.rows[got.rows.length - 1];
         expect(last.kind).toBe('working');
-        expect(last.total).toBeCloseTo(solved.primary.total, 9);
+        expect(last.total).toBeCloseTo(warmWorkingOracle(rig, t, displayCeilingKg(t, u), displayFloorKg(t, u)), 9);
         expect(got.working).toEqual(solved);
       }),
       rampOpts,
@@ -965,7 +1005,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
         const tol = Math.max(RULE.band * work, Math.min(...rig.inventory.map((p) => p.kg)));
         // The caps: brute force on a small rig; on a full one, 2 of each when that loads
         // the Working Total, else Decode's own counts (an order-free capped walk).
-        const own = got.working.primary.side;
+        const own = workingLoad(got.working, displayFloorKg(t, u)).side;
         const caps: (p: Plate) => number = small
           ? oracleCaps(rig, work, RULE)
           : cappedTotals(rig, () => RULE.cap).has(key(work))
@@ -1002,7 +1042,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
         })),
         ({ rig, t, u, steps }) => {
           const got = easy(rig, t, u, steps);
-          const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+          const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE, displayFloorKg(t, u));
           costOf(got.rows, tol).forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
         },
       ),
@@ -1120,20 +1160,26 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
     });
 
     const knapsack = new Map<string, ReturnType<typeof cappedFewestOracle>>();
-    it('the Working row is the capped Decode as read: exact or under, never over (ADR-0016, ADR-0003)', () => {
+    it('the Working row is the capped Decode as read, rounded up to the least capped Total above it when that reads short (ADR-0016, ADR-0015 as amended RBAR-87, ADR-0003)', () => {
       fc.assert(
         fc.property(limitedFullArb, ({ rig, t, u, steps }) => {
           const got = easy(rig, t, u, steps);
           const ceiling = displayCeilingKg(t, u);
           // The bounded-knapsack oracle's greatest Side sum at or under the reading
-          // (cached per limited rig: building it is the slow part).
+          // (cached per limited rig: building it is the slow part), and the least above.
           const o = knapsack.get(rig.name) ?? cappedFewestOracle(rig.inventory, GRID_KG[rig.set]);
           knapsack.set(rig.name, o);
           const budget = (Math.max(ceiling, t) - rig.baselineKg) / 2;
-          const best = greatestSumAtOrUnder(o, Math.floor((budget + EPS) / o.gridKg));
+          const budgetUnits = Math.floor((budget + EPS) / o.gridKg);
+          const best = greatestSumAtOrUnder(o, budgetUnits);
+          const up = o.sums.find((x) => x > budgetUnits);
+          const under = rig.baselineKg + 2 * best * o.gridKg;
+          const want = under >= displayFloorKg(t, u) - EPS || up === undefined
+            ? under
+            : rig.baselineKg + 2 * up * o.gridKg;
           const last = got.rows[got.rows.length - 1];
           expect(last.kind).toBe('working');
-          expect(last.total).toBeCloseTo(rig.baselineKg + 2 * best * o.gridKg, 6);
+          expect(last.total).toBeCloseTo(want, 6);
           expect(got.working).toEqual(decodeWithin(t, ceiling, rig.baselineKg, rig.inventory));
         }),
         rampOpts,
@@ -1198,7 +1244,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
           const tol = Math.max(RULE.band * work, oracleGridKg(rig.inventory));
           // The planner's caps: 2 of each within the pairs on hand when that loads the
           // Working Total, else Decode's own counts, still within the pairs on hand.
-          const own = got.working.primary.side;
+          const own = workingLoad(got.working, displayFloorKg(t, u)).side;
           const flat = (p: Plate) => Math.min(RULE.cap, onHand(p));
           const caps = cappedTotals(rig, flat).has(key(work))
             ? flat
@@ -1233,7 +1279,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
       fc.assert(
         fc.property(smallLimitedArb, ({ rig, t, u, steps }) => {
           const got = easy(rig, t, u, steps);
-          const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE);
+          const { best, tol } = stationRampOracle(rig, t, displayCeilingKg(t, u), steps, RULE, displayFloorKg(t, u));
           const cost = costOf(got.rows, tol);
           cost.forEach((c, i) => expect(c).toBeCloseTo(best[i], 6));
         }),

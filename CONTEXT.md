@@ -128,8 +128,10 @@ _Avoid_: alternate unit.
 The top set of a session -- the heaviest load the lifter trains at. Its Target is
 the Target: one number shared by By Weight and Warm up (RBAR-87), so the weight set in
 By Weight, or the Total of a load built in By Plates, is what the Ramp builds to.
-Its Total is Decode's at-or-under answer
-(ADR-0003) and is the Ramp's 100%. The UI may label its Target "working weight"
+Its Total is Decode's at-or-under answer (ADR-0003) when that reads as the Target;
+when it reads short, Warm up rounds the Working set up to the least loadable Total
+above the Target (RBAR-87). That Total is the Ramp's 100%. The Target itself stays as
+typed, and By Weight still decodes it at or under. The UI may label its Target "working weight"
 (plain-language copy), but in code and docs it is the Working set's Target.
 _Avoid_: top set, work set, working weight (as a glossary term).
 

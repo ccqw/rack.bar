@@ -9,6 +9,7 @@ import {
   stepFor,
   format,
   displayCeilingKg,
+  displayFloorKg,
 } from './units.ts';
 
 describe('units (kg|lb conversion, ADR-0010/ADR-0006)', () => {
@@ -115,5 +116,44 @@ describe('displayCeilingKg (RBAR-60)', () => {
   it('passes a non-finite Target through untouched', () => {
     expect(displayCeilingKg(Number.NaN, 'kg')).toBeNaN();
     expect(displayCeilingKg(Infinity, 'lb')).toBe(Infinity);
+  });
+});
+
+// RBAR-87: Warm up rounds its Working set up only when the load reads SHORT of the
+// Target, so it needs the bottom of the reading's bucket as well as the top.
+describe('displayFloorKg (RBAR-87)', () => {
+  const cases: [number, 'kg' | 'lb'][] = [
+    [lbToKg(146), 'lb'],
+    [lbToKg(55), 'lb'],
+    [lbToKg(313), 'lb'],
+    [29.48, 'kg'],
+    [100, 'kg'],
+    [61.234, 'kg'],
+  ];
+
+  it('never raises the Target and still reads the same as it', () => {
+    for (const [kg, unit] of cases) {
+      const bottom = displayFloorKg(kg, unit);
+      expect(bottom, `${kg} ${unit}`).toBeLessThanOrEqual(kg);
+      expect(shownIn(bottom, unit), `${kg} ${unit}`).toBe(shownIn(kg, unit));
+    }
+  });
+
+  it('is the bottom of the bucket: a hair below it reads differently', () => {
+    for (const [kg, unit] of cases) {
+      const bottom = displayFloorKg(kg, unit);
+      const hair = unit === 'lb' ? lbToKg(1e-6) : 1e-6;
+      expect(shownIn(bottom - hair, unit), `${kg} ${unit}`).not.toBe(shownIn(kg, unit));
+    }
+  });
+
+  it('reaches the real load a reading stands for: 66 kg reads 146 lb', () => {
+    expect(66).toBeLessThan(lbToKg(146));
+    expect(displayFloorKg(lbToKg(146), 'lb')).toBeLessThanOrEqual(66);
+  });
+
+  it('passes a non-finite Target through untouched', () => {
+    expect(displayFloorKg(Number.NaN, 'kg')).toBeNaN();
+    expect(displayFloorKg(Infinity, 'lb')).toBe(Infinity);
   });
 });

@@ -301,7 +301,10 @@ export function planEasyRamp(
   const { barKg, collarKg, inventory } = rig;
   const sleeveMm = rig.sleeveMm ?? SLEEVE_MM;
   const baselineKg = barWithCollars(barKg, collarKg);
-  const workingTotal = nearest.working.primary.total;
+  // The Working row is planRamp's: Decode's at-or-under load, or its round-up when that
+  // reads short (workingLoad, RBAR-87). Its Total is fixed; only its Side may change.
+  const workRow = nearest.rows[nearest.rows.length - 1];
+  const workingTotal = workRow.total;
 
   // No Plates to load (an empty Inventory, one whose every size is none -- ADR-0016's
   // hasUsablePlates -- or a Working Total on the bare rig): every row is planRamp's
@@ -325,7 +328,8 @@ export function planEasyRamp(
   const tol = Math.max(RAMP_BAND * workingTotal, grid);
 
   // The cap per size: PLATES_PER_SIZE, unless that cannot load the Working Total; then
-  // each size may go up to the count Decode's own Side uses (ADR-0003's stack).
+  // each size may go up to the count the Working row's Decode Side uses (ADR-0003's
+  // stack, or the round-up's).
   // A size's own Plate limit caps both (Decode's Side already respects it).
   const onHand = (s: Size) => s.plate.maxPerSide ?? Infinity;
   let caps = sizes.map((s) => Math.min(PLATES_PER_SIZE, onHand(s)));
@@ -334,7 +338,7 @@ export function planEasyRamp(
     caps = sizes.map((s) =>
       Math.min(
         onHand(s),
-        Math.max(PLATES_PER_SIZE, nearest.working.primary.side.filter((p) => p === s.plate).length),
+        Math.max(PLATES_PER_SIZE, workRow.side.filter((p) => p === s.plate).length),
       ),
     );
     loadable = loadableUnits(sizes, caps, sleeveMm, workUnits);
@@ -574,9 +578,10 @@ export function planEasyRamp(
         }
       }
     }
-    // The Working row always has Decode's own stack when the caps allow it.
+    // The Working row always has Decode's own stack (its round-up's, when rounded up)
+    // when the caps allow it.
     if (kind === 'working') {
-      const seq = nearest.working.primary.side.map((p) => indexOf.get(p)!);
+      const seq = workRow.side.map((p) => indexOf.get(p)!);
       if (seq.every((j) => seq.filter((x) => x === j).length <= caps[j])) add(seq);
     }
     const list = [...out.values()].filter((c) => widthOk(c.counts));

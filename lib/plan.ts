@@ -4,8 +4,10 @@
 // passes the Working set's display ceiling, never a Unit.
 //
 // The rules, all in ADR-0015:
-//   - The Working set is Decode's at-or-under solve, unchanged (ADR-0003): decodeWithin
-//     on the effective Bar. Its achieved Total is the Ramp's 100%.
+//   - The Working set starts from Decode's at-or-under solve (ADR-0003): decodeWithin on
+//     the effective Bar. When that reads short of the Target, the Working set rounds UP
+//     to Decode's round-up instead (`workingLoad`, RBAR-87, ADR-0015 as amended) -- a
+//     Warm up rule; Decode itself is unchanged. Its achieved Total is the Ramp's 100%.
 //   - A percentage step is taken of that achieved Total (Q1) and rounds to the NEAREST
 //     loadable Total, ties down -- the warm-up carve-out from ADR-0003 (Q2).
 //   - Every row is floored at the bare Bar, Totals never decrease down the Ramp, and no
@@ -21,7 +23,7 @@
 import { SLEEVE_MM, barWithCollars, totalKg } from './plates.ts';
 import type { InventoryEntry, Plate } from './plates.ts';
 import { decodeWithin } from './decode.ts';
-import type { Decoded } from './decode.ts';
+import type { Decoded, Loadout } from './decode.ts';
 import { sideAtOrUnder, sideAbove } from './sideloads.ts';
 
 // Loadable Totals are >= 1 kg apart on every shipped rig; this absorbs only float drift
@@ -50,6 +52,30 @@ export const RAMP_BAND = 0.05;
 export function drifted(total: number, rawKg: number, workingTotal: number, rigKg: number): boolean {
   if (Math.abs(total - rigKg) <= EPS) return false;
   return Math.abs(total - rawKg) > RAMP_BAND * workingTotal + EPS;
+}
+
+/**
+ * The Working set's load for a Ramp (RBAR-87, ADR-0015 as amended): Decode's at-or-under
+ * `primary` when it reaches the Target, else the least loadable Total above it -- the
+ * round-up `over` -- so the Working set ("Work") is what really goes on the Bar and the
+ * Ramp's percentages are of it. "Reaches" means a Total at or above `floorKg`: the
+ * bottom of the Target's displayed reading (units.ts displayFloorKg), or the Target
+ * itself in kg-only callers. A Total that reads as the Target is exact, so it is kept
+ * even a hair under the typed kg (146 lb on Competition: 66 kg reads 146 lb).
+ *
+ * `decoded` must be decodeWithin's result for that Target, so `primary` is the greatest
+ * loadable Total at or under the ceiling and `over` the least above it: nothing
+ * loadable lies between the Target and the returned Total. With no round-up (the
+ * Sleeve or the pairs on hand are spent) it falls back to `primary`, short.
+ *
+ * This is a Warm up rule only. Decode, and so By Weight, never overshoots by default
+ * (ADR-0003): the shared Target stays as typed and By Weight still decodes it at or
+ * under.
+ */
+export function workingLoad(decoded: Decoded, floorKg: number): Loadout {
+  const { primary, over } = decoded;
+  if (primary.total >= floorKg - EPS || over === undefined) return primary;
+  return over;
 }
 
 /**
@@ -120,7 +146,7 @@ export interface WarmUpRow extends RowBase {
   readonly pct: number;
 }
 
-/** The Working set: Decode's at-or-under primary (ADR-0003). */
+/** The Working set: `workingLoad` -- Decode's primary, or its round-up when short. */
 export interface WorkingRow extends RowBase {
   readonly kind: 'working';
   readonly pct: 100;
@@ -132,8 +158,9 @@ export type RampRow = BarRow | WarmUpRow | WorkingRow;
 export interface Ramp {
   readonly rows: readonly RampRow[];
   /**
-   * The Working set's full Decode, so the shell can still offer the ADR-0003 round-up
-   * (`over`) on that row. Its `primary` is the Working row's Side and Total.
+   * The Working set's full Decode (ADR-0003), as By Weight would solve the Target. The
+   * Working row loads `workingLoad` of it: its `primary`, or its `over` when the primary
+   * reads short (RBAR-87). Read the Working row, not this, for what is on the Bar.
    */
   readonly working: Decoded;
 }
@@ -144,6 +171,12 @@ export interface PlanOptions {
    * displayed reading (units.ts displayCeilingKg). Defaults to the Target itself.
    */
   readonly ceilingKg?: number;
+  /**
+   * The bottom of the Target's displayed reading (units.ts displayFloorKg): a Working
+   * Total at or above it reads as the Target, so it is not rounded up (`workingLoad`).
+   * Defaults to the Target itself.
+   */
+  readonly floorKg?: number;
   /** Reps for the Working set (a positive integer), if any. */
   readonly workingReps?: number;
 }
@@ -230,7 +263,8 @@ function nearestSide(
 /**
  * Plan a warm-up Ramp building to `workingTarget` (kg) on `rig`: one row per step in
  * `steps`, then the Working set. The Working set is Decode's at-or-under solve within
- * `options.ceilingKg` (ADR-0003, unchanged); each percentage step is that achieved
+ * `options.ceilingKg` (ADR-0003), rounded up to Decode's round-up when it reads short
+ * of `options.floorKg` (`workingLoad`, RBAR-87); each percentage step is that achieved
  * Total x pct / 100, rounded to the nearest loadable Total with ties down, floored at
  * the previous row and the bare Bar and capped at the Working set (ADR-0015).
  *
@@ -247,7 +281,7 @@ export function planRamp(
   rig: RampRig,
   options: PlanOptions = {},
 ): Ramp {
-  const { ceilingKg = workingTarget, workingReps } = options;
+  const { ceilingKg = workingTarget, floorKg = workingTarget, workingReps } = options;
   assertPlan(steps, rig, workingReps);
   const { barKg, collarKg, inventory } = rig;
   const sleeveMm = rig.sleeveMm ?? SLEEVE_MM;
@@ -255,7 +289,9 @@ export function planRamp(
   const baselineKg = barWithCollars(barKg, collarKg);
 
   const working = decodeWithin(workingTarget, ceilingKg, baselineKg, inventory, sleeveMm);
-  const workingTotal = working.primary.total;
+  // A non-finite Target degrades to the bare rig as Decode does; nothing to round up to.
+  const work = Number.isFinite(workingTarget) ? workingLoad(working, floorKg) : working.primary;
+  const workingTotal = work.total;
   const pctOf = (total: number) => (total / workingTotal) * 100;
 
   const rows: RampRow[] = [];
@@ -302,7 +338,7 @@ export function planRamp(
     kind: 'working',
     pct: 100,
     targetKg: workingTarget,
-    side: working.primary.side,
+    side: work.side,
     collars,
     total: workingTotal,
     realPct: 100,

@@ -158,6 +158,9 @@ on the row when a set drifts from its percentage. The Working set stays exact or
 5. **The Working set** is the capped Decode as read, exact or under (ADR-0003). When the
    pairs on hand cannot reach the Target it reads "N kg short", from slice 2's
    `sleeveBinds` rule ("Bar at capacity" only when the Sleeve is full).
+   Amended by RBAR-87 (ADR-0015, 2026-10-18): when that reads short and the pairs on
+   hand load some Total above the Target, Warm up rounds the Working set up to the least
+   such Total. It reads short only when nothing on hand loads above.
 
 Tests:
 - **Examples.** `lib/moves.test.ts` ("under Plate limits") and `lib/warmup.test.ts`

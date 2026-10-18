@@ -50,7 +50,7 @@ import type { PlateSetKey } from '../lib/platesets.ts';
 import { ALL_PLATES, inventoryOnHand } from '../lib/platesonhand.ts';
 import type { PlatesOnHand } from '../lib/platesonhand.ts';
 import type { LoadSummary } from '../lib/summary.ts';
-import { format, shownIn, displayCeilingKg, draftToKg, stepFor } from '../lib/units.ts';
+import { format, shownIn, displayCeilingKg, displayFloorKg, draftToKg, stepFor } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
@@ -1201,7 +1201,7 @@ class RackConsole extends HTMLElement {
       // to 265). Otherwise the field re-reads the SAME canonical kg in the new unit (the
       // entry's RBAR-38 reformat). Either way the Ramp re-plans against the new
       // reading's ceiling (ADR-0015 Q7).
-      const workKg = this.ramp?.working.primary.total;
+      const workKg = this.ramp?.rows[this.ramp.rows.length - 1].total;
       if (
         this.target !== null &&
         workKg !== undefined &&
@@ -1590,8 +1590,11 @@ class RackConsole extends HTMLElement {
   // (lib/moves.ts, ADR-0015 as amended), and load the selected row. The Working set's
   // Target is the one Target (RBAR-87); with none, or a non-positive one (a typed 0),
   // there is no Ramp: the prompt and a bare Bar. The Working set solves at or under its
-  // reading in the display unit (displayCeilingKg, RBAR-60), exactly as By Weight would.
-  // The template is DEFAULT_RAMP (editing it is slice 3). The selection is kept across
+  // reading in the display unit (displayCeilingKg, RBAR-60), exactly as By Weight would,
+  // then -- when that load reads short of the Target -- rounds UP to the least loadable
+  // Total above it (displayFloorKg + plan.ts workingLoad, RBAR-87), so "Work" is what is
+  // really on the Bar. The Target itself stays as typed; By Weight still decodes it at
+  // or under (ADR-0003). The template is DEFAULT_RAMP (editing it is slice 3). The selection is kept across
   // re-plans, clamped into the rows.
   private planWarmup(): void {
     const working = this.target;
@@ -1604,7 +1607,10 @@ class RackConsole extends HTMLElement {
       working,
       DEFAULT_RAMP,
       { barKg: this._barKg, collarKg: this._collarKg, inventory: this.inventory() },
-      { ceilingKg: displayCeilingKg(working, this.activeUnit()) },
+      {
+        ceilingKg: displayCeilingKg(working, this.activeUnit()),
+        floorKg: displayFloorKg(working, this.activeUnit()),
+      },
     );
     this.warmIdx = Math.min(this.warmIdx, this.ramp.rows.length - 1);
     this.side = this.ramp.rows[this.warmIdx].side;
@@ -1920,7 +1926,8 @@ class RackConsole extends HTMLElement {
 
   // Warm up's status (RBAR-65 slice 2): the pill reads the selected row off the
   // DISPLAYED numbers (warmStatus: "Bare bar", "70% - exact", "71% of 140 kg"); a Working
-  // set that is not exact reads Decode's own pill (short / at capacity, ADR-0003). The
+  // set that is not exact reads the By Weight pill for its own Total: "1 kg over" when
+  // it rounded up (RBAR-87), else short / at capacity when nothing loads above. The
   // By Weight round-up row is not part of Warm up, so its occupants stay hidden. The
   // working-weight keypad's "On the bar" line reads the Working set, and the spoken line
   // is the selected row's Total + its pill + what to change to load it ("add 10 and 2.5
@@ -1928,7 +1935,7 @@ class RackConsole extends HTMLElement {
   // the announcement is where a screen reader hears what to load.
   private renderWarmStatus(ramp: Ramp, idx: number, working: number, unit: Unit): void {
     const row = ramp.rows[idx];
-    const workingTotal = ramp.working.primary.total;
+    const workingTotal = ramp.rows[ramp.rows.length - 1].total;
     const atCap = this.sleeveBinds(ramp.working.over, working, displayCeilingKg(working, unit));
     const pill =
       warmStatus(row, workingTotal, unit) ??

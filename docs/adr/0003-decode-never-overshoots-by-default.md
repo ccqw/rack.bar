@@ -124,6 +124,11 @@ This rule governs Decode and, through it, a Ramp's Working set, which is still t
 at-or-under solve. Warm-up sets are carved out: they round to the nearest loadable
 Total, ties down, between the previous row and the Working set. See ADR-0015.
 
+Since RBAR-87 (2026-10-18) a Ramp's Working set is carved out too: when the at-or-under
+solve reads short of the Target, Warm up loads Decode's round-up instead (ADR-0015 as
+amended). Decode itself is unchanged: By Weight still decodes the typed Target at or
+under, and the round-up stays an opt-in there.
+
 ## 2026-10-17 -- the other ways to the same Total (RBAR-66, "Another way")
 
 The canonical pick (Sleeve fit, greatest Total, fewest Plates, heaviest-first) stays the

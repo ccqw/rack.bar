@@ -351,3 +351,70 @@ weight". In `elements/warmup.test.ts`: the one-time migration; the By Plates rul
 set switch, a By Weight peek, an opened link); `parseTarget` on stored hex, exponent
 and over-cap values; and a failed write. `lib/recents.test.ts` covers `parseTarget`
 itself.
+
+## 2026-10-18 -- Warm up rounds a short Working set UP (RBAR-87, PR #132)
+
+Caitlin's call on PR #132: when the working weight cannot be loaded exactly (typed
+141, loads 142), the Working set rounds UP to the loadable Total, instead of holding
+Decode's at-or-under load under the typed value. "Work" then shows what is really on
+the Bar. This amends decision 1 ("The Working set is Decode, unchanged") and decision 3
+of the station-rule amendment, for Warm up only.
+
+**This is a Warm up rule, not a Decode change.** Decode, and so By Weight, still never
+overshoots by default (ADR-0003, unchanged). The shared Target stays exactly what the
+lifter typed: switching to By Weight decodes that typed Target at or under, with the
+round-up offered as before.
+
+1. **The rule.** `lib/plan.ts` `workingLoad(decoded, floorKg)`, a pure function of
+   Decode's own result (`decodeWithin`, as read in the display unit). When Decode's
+   at-or-under `primary` reads as the Target or above, it is the Working set, as before.
+   When it reads short, the Working set is Decode's round-up `over`: the least loadable
+   Total above the Target's reading. So the Working Total is loadable, at or above the
+   Target, and no loadable Total lies between the Target and it.
+2. **"Reads short" is judged on the display reading** (ADR-0010). `floorKg` is the
+   bottom of the Target's reading, `displayFloorKg` in `lib/units.ts`, the mirror of
+   `displayCeilingKg`. A load that reads as the Target is exact, even a hair under the
+   typed kg: 146 lb on Competition is 66.22 kg, and 66 kg reads 146 lb, so it stays.
+   Judged on the raw kg it would round up to 67 kg, which reads 148 lb. Callers that
+   pass no floor (kg-only) use the Target itself.
+3. **The fallback.** When nothing loads above the Target (the Sleeve is full, ADR-0012,
+   or the pairs on hand ran out, ADR-0016), there is no round-up, and the Working set is
+   the at-or-under load, short, as before. Its pill reads Decode's "N short" (or the
+   capacity reading).
+4. **The Ramp reads off the rounded-up Total.** The "Work" stair, its Total, the sleeve
+   and readout, the "On the bar" line and the pill all show the Working row's Total.
+   A rounded-up Working set is not exact, so its pill is the By Weight pill for that
+   Total: "1 kg over". The percentages (decision 2: of the achieved Working Total) are of
+   it, so the Warm-up sets ramp to what is really loaded. The station rule's Plate caps
+   use the round-up's own Side where it uses Decode's.
+5. **`Ramp.working` is still Decode's full result**, untouched, as By Weight would
+   solve the Target. The shell reads the Working row, never `working.primary`, for what
+   is on the Bar.
+6. **Unit toggle.** The RBAR-60 carry in Warm up (an Exact Working set becomes the
+   Target in the new unit) reads the Working row. A rounded-up Working set never reads
+   Exact, so the toggle keeps the typed Target and re-plans.
+
+Worked example (Training iron, 45 lb Bar, typed 137 lb): By Weight decodes 135 lb, "2 lb
+short", with 140 lb offered. Warm up's Working set is 140 lb, "3 lb over", and the
+station-rule Ramp is 45 / 70 / 95 / 125 / 140 lb (50% of 140 = 70, 70% = 98 -> 95, 90%
+= 126 -> 125). The field still reads 137, and By Weight still shows 135.
+
+Tests:
+- `lib/properties.test.ts`: "Warm up's Working Total rounds up to the least loadable
+  Total at or above the Target (RBAR-87, ADR-0015 as amended)" checks, against the
+  oracle's achievable Totals, that the Working Total is loadable, at or above the
+  Target, with no loadable Total in between, and that it falls back to at or under when
+  nothing is above. The existing Working-set properties now compare with
+  `warmWorkingOracle` / `cappedWorkingOracle` (`lib/properties.oracle.ts`), which apply
+  the same rule by brute force, and still check `working` is Decode's own solve.
+- `elements/warmup.properties.test.ts`: "Warm up's Working set rounds up to the least
+  loadable Total at or above the Target; By Weight still decodes the typed Target at or
+  under", through the working-weight keypad, judged from the stair, the sleeve, the
+  readout and the pill. `elements/onhand.properties.test.ts` checks the same under
+  Plate limits against the bounded-knapsack oracle.
+- Examples: `lib/plan.test.ts` (137 lb iron, the 146 lb floor, past the Sleeve),
+  `lib/moves.test.ts` (75 kg with no change Plates loads 80; past every pair on hand
+  stays at or under), `elements/warmup.test.ts` (140.3 kg reads "0.7 kg over" in Warm up
+  and "0.3 kg short" in By Weight), `lib/units.test.ts` (`displayFloorKg`).
+- Each new test fails with `workingLoad` returning the primary unconditionally.
+

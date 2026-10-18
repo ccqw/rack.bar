@@ -264,13 +264,28 @@ describe('<rack-console> Warm up mode (RBAR-65 slice 2)', () => {
     expect(statusLabel(el)).toBe('50% of 141 kg');
   });
 
-  it('reads a short Working set with the By Weight pill (ADR-0003)', () => {
+  it('rounds a Working set that cannot load exactly UP, and its pill says so (RBAR-87)', () => {
     const el = mountConsole();
     modeBtn(el, 'warmup').click();
     commitWorking(el, '140.3');
     stairs(el)[4].click();
-    expect(statusKind(el)).toBe('short');
+    expect(totalText(el)).toBe('141 kg');
+    expect(stairs(el)[4].querySelector('.tot')!.textContent).toBe('141 kg');
+    expect(statusKind(el)).toBe('over');
+    expect(statusLabel(el)).toBe('0.7 kg over');
+    // The field keeps the typed Target; By Weight still decodes it at or under (ADR-0003).
+    expect(workDraft(el)).toBe('140.3');
+    modeBtn(el, 'decode').click();
+    expect(totalText(el)).toBe('140 kg');
     expect(statusLabel(el)).toBe('0.3 kg short');
+  });
+
+  it('reads a short Working set with the By Weight pill when nothing loads above it (ADR-0003)', () => {
+    const el = mountConsole();
+    modeBtn(el, 'warmup').click();
+    commitWorking(el, '500'); // past the Sleeve: no round-up to take
+    stairs(el)[4].click();
+    expect(statusLabel(el)).toMatch(/ kg short$/);
   });
 
   it('keeps the bare-Bar row Collar-free: its Total is the Bar alone (ADR-0015 Q5)', () => {

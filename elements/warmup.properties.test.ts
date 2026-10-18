@@ -10,14 +10,14 @@ import fc from 'fast-check';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import { RAMP_BAND } from '../lib/moves.ts';
 import { pushRecent } from '../lib/recents.ts';
-import { draftToKg, displayCeilingKg, format, shownIn } from '../lib/units.ts';
+import { draftToKg, displayCeilingKg, displayFloorKg, format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { rampTotalsOracle, achievableTotals } from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, EPS, other, fresh, resetPool, q, sr, unitBtn, modeBtn, totalText, sideOnScreen,
   stairs, nextBtn, workDraft, commitWorking, storedRecents, rigDraftCaseArb, nextRun,
-  rigArb, unitArb, tapAdd, type, step, entryDraft, workRoot, expectedFor,
+  rigArb, unitArb, tapAdd, type, step, entryDraft, workRoot, expectedFor, statusLabel,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
 
@@ -50,10 +50,11 @@ function warmOn(rig: Rig, u: Unit, draft: string): Console {
   return el;
 }
 
-// The oracle's Ramp Totals for `draft` typed in `u` on `rig` (ADR-0015).
+// The oracle's Ramp Totals for `draft` typed in `u` on `rig` (ADR-0015): the Working
+// set rounds up when the at-or-under load reads short (RBAR-87).
 function oracleTotals(rig: Rig, u: Unit, draft: string): number[] {
   const t = draftToKg(draft, u)!;
-  return rampTotalsOracle(rig, t, displayCeilingKg(t, u), DEFAULT_RAMP);
+  return rampTotalsOracle(rig, t, displayCeilingKg(t, u), DEFAULT_RAMP, displayFloorKg(t, u));
 }
 
 // Whether `shown` is a Total the station-rule Ramp may load on row `i` (ADR-0015 as
@@ -305,6 +306,43 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
       }),
       { seed: SEED, numRuns: 25 },
     );
+  });
+
+  it("Warm up's Working set rounds up to the least loadable Total at or above the Target; By Weight still decodes the typed Target at or under (RBAR-87, ADR-0015 as amended, ADR-0003)", async () => {
+    // Typed through the working-weight keypad and judged from the screen: the Work
+    // stair, the sleeve, the readout and the pill all read the rounded-up Total when the
+    // at-or-under load reads short and something loads above it; otherwise the
+    // at-or-under load, as before. The field keeps the typed Target, and By Weight
+    // decodes that Target never over (expectedFor: the ADR-0003 oracle, by reading).
+    let roundedUp = 0;
+    await fc.assert(
+      fc.asyncProperty(workCaseArb, async ([rig, u, draft]) => {
+        await nextRun();
+        const el = warmOn(rig, u, draft);
+        const t = draftToKg(draft, u)!;
+        const { totalKg, short, roundUpKg } = expectedFor(rig, u, draft);
+        const want = short && roundUpKg !== null ? roundUpKg : totalKg;
+        stairs(el).at(-1)!.click();
+        const work = drawnRowKg(el, rig, DEFAULT_RAMP.length);
+        expect(work).toBeCloseTo(want, 6);
+        expect(totalText(el)).toBe(format(want, u));
+        expect(stairTotals(el).at(-1)).toBe(format(want, u));
+        if (want !== totalKg) {
+          roundedUp++;
+          // Loadable, reads at or above the Target, and nothing loadable reads in between.
+          expect(shownIn(work, u)).toBeGreaterThan(shownIn(t, u));
+          expect(achievableTotals(rig).some((x) => shownIn(x, u) >= shownIn(t, u) && x < work - 1e-6)).toBe(false);
+          expect(statusLabel(el)).toMatch(new RegExp(` ${u} over$`));
+        }
+        expect(workDraft(el)).toBe(draft);
+        modeBtn(el, 'decode').click();
+        expect(entryDraft(el)).toBe(draft);
+        expect(totalText(el)).toBe(format(totalKg, u));
+      }),
+      { seed: SEED, numRuns: 40 },
+    );
+    // The generator lands between loadable Totals often enough to exercise the rule.
+    expect(roundedUp).toBeGreaterThan(5);
   });
 
   it('a unit toggle keeps the working weight as read: an Exact Working set stays put, a load never moves down, and a second round trip changes nothing (ADR-0010 RBAR-60)', async () => {

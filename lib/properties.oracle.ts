@@ -156,11 +156,34 @@ export function maxTotal(rig: Rig): number {
 export type OracleStep = { readonly kind: 'bar' } | { readonly kind: 'pct'; readonly pct: number };
 
 /**
+ * Warm up's Working Total (ADR-0015 as amended, RBAR-87), by brute force over every
+ * achievable Total: the greatest at or under the solve ceiling (max(ceiling, Target)),
+ * floored at the bare rig; when that is under `floor` (the bottom of the Target's
+ * reading), the least achievable Total above the ceiling instead, when one exists. A
+ * non-finite Target is the bare rig.
+ */
+export function warmWorkingOracle(
+  rig: Rig,
+  workingTarget: number,
+  ceiling: number,
+  floor: number = workingTarget,
+): number {
+  if (!Number.isFinite(workingTarget)) return rig.baselineKg;
+  const solveTo = Number.isFinite(ceiling) ? Math.max(ceiling, workingTarget) : workingTarget;
+  const under = greatestAtOrUnder(rig, solveTo);
+  if (under >= floor - TOL) return under;
+  return leastAbove(rig, solveTo) ?? under;
+}
+
+/**
  * The Totals a warm-up Ramp must reach on `rig` (ADR-0015), one per step then the
  * Working set, by brute force over every achievable Total -- no call into the planner:
  *   - the Working set is the greatest achievable Total at or under its solve ceiling
  *     (max(ceiling, Target)), floored at the bare rig (ADR-0003 as read, RBAR-60);
  *     a non-finite Target is the bare rig;
+ *   - when that Working Total is under `floor` (the bottom of the Target's reading;
+ *     the Target by default), it is the least achievable Total above the solve
+ *     ceiling instead, if there is one (Warm up rounds up, ADR-0015 as amended RBAR-87);
  *   - a bare-Bar step is the Bar alone, no Collars;
  *   - a percentage step is the achievable Total (Collars included, ADR-0008) nearest
  *     pct / 100 x the Working Total among those at or above both the previous row and
@@ -171,9 +194,9 @@ export function rampTotalsOracle(
   workingTarget: number,
   ceiling: number,
   steps: readonly OracleStep[],
+  floor: number = workingTarget,
 ): number[] {
-  const solveTo = Number.isFinite(ceiling) ? Math.max(ceiling, workingTarget) : workingTarget;
-  const working = Number.isFinite(workingTarget) ? greatestAtOrUnder(rig, solveTo) : rig.baselineKg;
+  const working = warmWorkingOracle(rig, workingTarget, ceiling, floor);
   const out: number[] = [];
   let prev = -Infinity;
   for (const step of steps) {
@@ -376,17 +399,29 @@ function allSides(inventory: readonly Plate[], sleeveMm: number = SLEEVE_MM): (r
  * The Working Total under Plate limits (ADR-0016, ADR-0003 as read): the greatest Total
  * some Side within the pairs on hand and the Sleeve reaches at or under the solve
  * ceiling (max(ceiling, Target)), floored at the bare rig; a non-finite Target is the
- * bare rig. Brute force over allSides, so for SMALL Inventories only.
+ * bare rig. When that is under `floor` (the bottom of the Target's reading), Warm up
+ * rounds up to the least such Total above the ceiling, when one exists (ADR-0015 as
+ * amended, RBAR-87). Brute force over allSides, so for SMALL Inventories only.
  */
-export function cappedWorkingOracle(rig: Rig, workingTarget: number, ceiling: number): number {
+export function cappedWorkingOracle(
+  rig: Rig,
+  workingTarget: number,
+  ceiling: number,
+  floor: number = workingTarget,
+): number {
   if (!Number.isFinite(workingTarget)) return rig.baselineKg;
   const solveTo = Number.isFinite(ceiling) ? Math.max(ceiling, workingTarget) : workingTarget;
   let best = rig.baselineKg;
+  let above = Infinity;
   for (const s of allSides(rig.inventory)) {
     const t = rig.baselineKg + 2 * sumKg(s);
-    if (t <= solveTo + 1e-9 && t > best) best = t;
+    if (t <= solveTo + 1e-9) {
+      if (t > best) best = t;
+    } else if (t < above) {
+      above = t;
+    }
   }
-  return best;
+  return best >= floor - 1e-9 || above === Infinity ? best : above;
 }
 
 /**
@@ -410,8 +445,8 @@ export function oracleGridKg(inventory: readonly Plate[]): number {
  * 2026-10-17, the station rule):
  *   - bare-Bar rows are the empty Side at the Bar;
  *   - the Working row is any legal Side reaching exactly the Working Total (the
- *     at-or-under Total as read, from rampTotalsOracle; under Plate limits, from
- *     cappedWorkingOracle);
+ *     at-or-under Total as read, rounded up when it reads short, from
+ *     warmWorkingOracle; under Plate limits, from cappedWorkingOracle);
  *   - no Side holds more of a Plate than its pairs on hand (ADR-0016, oracleCaps);
  *   - a percentage row is any legal Side whose Total is at or above the bare rig and at
  *     or under the Working Total (the band is a cost key, not a filter);
@@ -424,10 +459,11 @@ export function stationRampOracle(
   ceiling: number,
   steps: readonly OracleStep[],
   rule: StationRule,
+  floor: number = workingTarget,
 ): { readonly best: StationCost; readonly tol: number; readonly caps: Caps } {
   const working = rig.inventory.some((p) => onHand(p) !== Infinity)
-    ? cappedWorkingOracle(rig, workingTarget, ceiling)
-    : rampTotalsOracle(rig, workingTarget, ceiling, steps).at(-1)!;
+    ? cappedWorkingOracle(rig, workingTarget, ceiling, floor)
+    : warmWorkingOracle(rig, workingTarget, ceiling, floor);
   const tol = Math.max(rule.band * working, oracleGridKg(rig.inventory));
   const caps = oracleCaps(rig, working, rule);
   const sides = legalSides(rig.inventory, rule, caps).map((side) => ({ side, total: rig.baselineKg + 2 * sumKg(side) }));
