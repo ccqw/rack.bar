@@ -33,7 +33,7 @@ colors:
   plate-iron: "#34383e"
   sleeve-shaft: "#4e545b"
   sleeve-collar: "#8b9199"
-  sleeve-end: "#5c636b"
+  sleeve-end: "#5c636b" # the Collar's 1px edge (RBAR-96; was the end collar)
   sleeve-empty: "#2f343a"
 typography:
   display:
@@ -176,8 +176,10 @@ semantic vocabulary, never decoration and never restyled: red #e0263a
 (25 / 2.5), blue #2563c9 (20 / 2.0), yellow #f5c518 (15 / 1.5), green
 #25a45a (10 / 1.0), white #eef0f2 (5 / 0.5), iron #34383e (the lb training
 set -- one dark finish, distinguished by stamped label, needs light ink).
-Sleeve chrome greys (shaft #4e545b, collar #8b9199, end #5c636b, empty-state
-#2f343a) render the bar itself.
+Sleeve chrome greys render the bar itself: shaft #4e545b (the shaft and the
+bare sleeve end), collar #8b9199 (the inner collar and the Collar's fill), end
+#5c636b (the Collar's 1px edge), empty-state #2f343a. The Collar's latch
+borrows plate red.
 
 ### Named Rules
 **The Plates Own the Color Rule.** UI chrome stays near-monochrome; saturated
@@ -338,6 +340,19 @@ discs heaviest-to-lightest from the inside out, engraved vertical numerals,
 real-diameter proportions scaled to fit. Empty state is the dashed box. In
 Add plates mode discs are tappable; fullscreen blows the same render up into
 rotated landscape.
+
+- **Sleeve end (RBAR-96):** past the outer disc (or the empty box) the sleeve
+  runs out as a bare stub to a plain rounded end -- 30 x 11px, shaft grey,
+  radius 0 5px 5px 0. No end collar and no cap: nothing after the plates
+  looks like a stopper.
+- **Collar (RBAR-96, "look 2 flat"):** drawn only when Setup's collars are on
+  AND the Bar has plates; a bare Bar never gets one. It clamps the outer
+  disc: 20px wide, 1px off the disc, 92 mm tall on the disc scale (it scales
+  with the discs), radius 3px, a solid collar-grey fill with a 1px end-grey
+  edge, and a flat 8x8 plate-red latch standing on its top edge. No gradient,
+  no number -- the Total already counts the Collar.
+- The console sleeve, the fullscreen card and the share picture all draw this
+  end and Collar from one geometry (lib/sleevefit.ts).
 
 ## Do's and Don'ts
 

@@ -34,12 +34,21 @@ export const CHROME_PX = SHAFT_PX + COLLAR_INNER_PX + BARE_END_PX;
 export const DISC_GAP_PX = 1.5;
 // The Collar clamped on the outer disc when Setup's collars are on (RBAR-96, prototype
 // `.ccol2`, "look 2 flat"): 20px wide, 1px off the outer disc, 92 mm tall on the disc
-// scale, with an 8x8 flat latch standing 8px above it, 5px in from its inner edge.
+// scale, edged 1px, with an 8x8 flat latch on top.
 export const COLLAR_PX = 20;
 export const COLLAR_GAP_PX = 1;
 export const COLLAR_MM = 92;
+/** The Collar's edge (border) width. */
+export const COLLAR_EDGE_PX = 1;
+/** The latch's side: an 8x8 flat tab. */
 export const LATCH_PX = 8;
-export const LATCH_LEFT_PX = 5;
+// The latch's offsets from the Collar's OUTER box (its border edge), the one source for
+// both surfaces. The prototype places it `top: -8px; left: 5px` inside the 1px edge, so
+// from the outer box it sits 6px in and rises 7px above (overlapping the edge by 1px).
+// The CSS subtracts COLLAR_EDGE_PX (an ::after is placed from the padding box); the
+// share picture's canvas draws from the outer box as is.
+export const LATCH_LEFT_PX = 6;
+export const LATCH_TOP_PX = -7;
 /** The floor under each disc's width, so a thin change Plate keeps a visible sliver. */
 export const MIN_DISC_PX = 9;
 /** The bare-Bar box: 34px wide, 120px tall at full zoom (prototype L104), 5px inset. */
@@ -242,4 +251,17 @@ export function sleeveLayout(
   }
   piece('bare-end', BARE_END_PX, BARE_END_H_PX);
   return parts;
+}
+
+/**
+ * The latch's box on a drawn Collar part (RBAR-96), in the same px as the part: 8x8,
+ * at the shared outer-box offsets -- where the sleeve's CSS ::after lands it.
+ */
+export function collarLatch(collar: Pick<SleevePart, 'x' | 'y'>): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
+  return { x: collar.x + LATCH_LEFT_PX, y: collar.y + LATCH_TOP_PX, w: LATCH_PX, h: LATCH_PX };
 }

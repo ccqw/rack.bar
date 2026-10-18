@@ -36,8 +36,10 @@ import {
   EMPTY_INSET_PX,
   EMPTY_MM,
   EMPTY_W_PX,
+  COLLAR_EDGE_PX,
   LATCH_LEFT_PX,
   LATCH_PX,
+  LATCH_TOP_PX,
   MAX_SCALE,
   MIN_DISC_PX,
   SHAFT_H_PX,
@@ -178,11 +180,11 @@ class RackSleeve extends HTMLElement {
           position: relative;
           width: ${COLLAR_PX}px; margin-left: ${COLLAR_GAP_PX}px; border-radius: 3px;
           height: calc(var(--rack-mm-scale, ${FALLBACK_SCALE}) * ${COLLAR_MM}px * var(--rack-fit-shrink, 1));
-          border: 1px solid var(--rack-sleeve-end);
+          border: ${COLLAR_EDGE_PX}px solid var(--rack-sleeve-end);
         }
         .collar-on::after {
           content: ""; position: absolute;
-          top: -${LATCH_PX}px; left: ${LATCH_LEFT_PX}px;
+          top: ${LATCH_TOP_PX - COLLAR_EDGE_PX}px; left: ${LATCH_LEFT_PX - COLLAR_EDGE_PX}px;
           width: ${LATCH_PX}px; height: ${LATCH_PX}px;
           border-radius: 2px 2px 0 0; background: var(--rack-plate-red);
         }

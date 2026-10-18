@@ -17,9 +17,9 @@ import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { FULLSCREEN } from '../lib/fullscreenframe.ts';
 import {
+  COLLAR_EDGE_PX,
   DISC_INK,
-  LATCH_LEFT_PX,
-  LATCH_PX,
+  collarLatch,
   darkInk,
   sleeveLayout,
 } from '../lib/sleevefit.ts';
@@ -271,20 +271,18 @@ function drawSleeve(ctx: CanvasRenderingContext2D, parts: readonly SleevePart[],
       continue;
     }
     if (part.kind === 'collar') {
-      ctx.fillStyle = token('--rack-plate-red');
-      roundRect(
-        ctx,
-        { x: part.x + LATCH_LEFT_PX, y: part.y - LATCH_PX, w: LATCH_PX, h: LATCH_PX },
-        [2, 2, 0, 0],
-      );
-      ctx.fill();
+      // Fill, then the edge, then the latch on top -- the CSS paint order (the ::after
+      // child over its parent's border), at the shared outer-box offsets.
       ctx.fillStyle = token('--rack-sleeve-collar');
       roundRect(ctx, part, 3);
       ctx.fill();
       ctx.strokeStyle = token('--rack-sleeve-end');
-      ctx.lineWidth = 1;
-      roundRect(ctx, inset(part, 0.5), 2.5);
+      ctx.lineWidth = COLLAR_EDGE_PX;
+      roundRect(ctx, inset(part, COLLAR_EDGE_PX / 2), 3 - COLLAR_EDGE_PX / 2);
       ctx.stroke();
+      ctx.fillStyle = token('--rack-plate-red');
+      roundRect(ctx, collarLatch(part), [2, 2, 0, 0]);
+      ctx.fill();
       continue;
     }
     if (part.kind !== 'disc' || !part.plate) {

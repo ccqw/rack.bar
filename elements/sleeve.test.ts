@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import './sleeve.ts';
 import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from './sleeve.ts';
 import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
+import { CHROME_PX, COLLAR_GAP_PX, COLLAR_PX, DISC_GAP_PX, MIN_DISC_PX } from '../lib/sleevefit.ts';
 import type { Plate } from '../lib/plates.ts';
 
 function side(...kgs: number[]): Plate[] {
@@ -288,19 +289,25 @@ describe('<rack-sleeve>', () => {
   });
 
   describe('block geometry + overflow guard (RBAR-41: 204px block, 168px cap, no overflow)', () => {
-    // The fixed chrome the fit budget reserves (sleeve.ts constants, text-locked here
-    // the same way the mm sizing tests lock the plate table).
-    const CHROME = 52 + 11 + 8 + 13;
-    const END_GAP = 3;
-    const DISC_GAP = 1.5;
-    const MIN_DISC = 9;
+    // The fixed chrome the fit budget reserves: shaft + inner collar + bare end
+    // (lib/sleevefit.ts, RBAR-96), plus the Collar and its gap when one is drawn.
+    const CHROME = CHROME_PX;
+    const COLLAR = COLLAR_GAP_PX + COLLAR_PX;
+    const DISC_GAP = DISC_GAP_PX;
+    const MIN_DISC = MIN_DISC_PX;
+
+    it('reserves the RBAR-96 chrome: 52 shaft + 11 inner collar + 30 bare end, 1 + 20 per Collar', () => {
+      expect(CHROME).toBe(52 + 11 + 30);
+      expect(COLLAR).toBe(1 + 20);
+    });
 
     function styleText(el: HTMLElement): string {
       return el.shadowRoot!.querySelector('style')!.textContent!;
     }
-    function fitted(width: number, load: Plate[]): Sleeve {
+    function fitted(width: number, load: Plate[], collars = false): Sleeve {
       const el = mountSleeve();
       Object.defineProperty(el, 'clientWidth', { value: width, configurable: true });
+      el.collars = collars;
       el.sideLoad = load;
       return el;
     }
@@ -327,7 +334,7 @@ describe('<rack-sleeve>', () => {
       const shrink = Number(el.style.getPropertyValue('--rack-fit-shrink'));
       expect(shrink).toBeGreaterThan(0);
       expect(shrink).toBeLessThan(1);
-      const budget = 200 - CHROME - END_GAP - DISC_GAP * (load.length - 1);
+      const budget = 200 - CHROME - DISC_GAP * (load.length - 1);
       expect(rowPx(el, load)).toBeLessThanOrEqual(budget + 1e-6);
     });
 
@@ -345,11 +352,16 @@ describe('<rack-sleeve>', () => {
         side(...Array(20).fill(0.5)),
         side(...Array(8).fill(2.5)),
       ];
-      for (const width of [200, 280, 390]) {
-        for (const load of loads) {
-          const el = fitted(width, load);
-          const budget = width - CHROME - END_GAP - DISC_GAP * (load.length - 1);
-          expect(rowPx(el, load)).toBeLessThanOrEqual(budget + 1e-6);
+      for (const collars of [false, true]) {
+        for (const width of [200, 280, 390]) {
+          for (const load of loads) {
+            const el = fitted(width, load, collars);
+            const budget =
+              width - CHROME - (collars ? COLLAR : 0) - DISC_GAP * (load.length - 1);
+            expect(rowPx(el, load), `${width}px collars ${collars}`).toBeLessThanOrEqual(
+              budget + 1e-6,
+            );
+          }
         }
       }
     });

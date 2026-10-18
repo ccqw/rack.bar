@@ -4,6 +4,7 @@ import {
   DISC_GAP_PX,
   DISC_INK,
   BARE_END_PX,
+  COLLAR_EDGE_PX,
   COLLAR_GAP_PX,
   COLLAR_MM,
   COLLAR_PX,
@@ -12,6 +13,7 @@ import {
   SLEEVE_BLOCK_PX,
   SLEEVE_PAD_PX,
   TARGET_BUMPER_PX,
+  collarLatch,
   darkInk,
   fitRow,
   plateLabel,
@@ -109,6 +111,17 @@ describe('sleeveLayout (one Side, as the sleeve lays it out)', () => {
     expect(collar.w).toBe(COLLAR_PX);
     expect(collar.h).toBeCloseTo(COLLAR_MM * MAX_SCALE, 9);
     expect(parts[7]!.x).toBeCloseTo(right(collar), 9);
+  });
+
+  it('seats the latch where the CSS ::after lands it: 6px in, 7px up from the outer box', () => {
+    const collar = sleeveLayout(side, W, H, true).find((p) => p.kind === 'collar')!;
+    // CSS: top -8px / left 5px from the padding box, inside the 1px edge.
+    expect(collarLatch(collar)).toEqual({
+      x: collar.x + COLLAR_EDGE_PX + 5,
+      y: collar.y + COLLAR_EDGE_PX - 8,
+      w: 8,
+      h: 8,
+    });
   });
 
   it('never clamps a Collar on a bare Bar, collars on or not', () => {
