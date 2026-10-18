@@ -324,6 +324,36 @@ describe('the floating pill (option B)', () => {
     expect(pill(app)).toEqual(['time', 'pp', 'more']);
   });
 
+  it('focus on a pill button that hides moves on: restart -> pause, pause -> restart at zero', () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    inDock(app, '[data-pp]').focus();
+    later(121_000);
+    expect(sr(dock(app)).activeElement).toBe(inDock(app, '[data-again]'));
+    inDock(app, '[data-again]').click();
+    expect(sr(dock(app)).activeElement).toBe(inDock(app, '[data-pp]'));
+  });
+
+  it("the x hands focus to the stopwatch as the pill goes", () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    inDock(app, '[data-more]').click();
+    inDock(app, '[data-clear]').focus();
+    inDock(app, '[data-clear]').click();
+    expect(dock(app).hidden).toBe(true);
+    expect(sr(con(app)).activeElement).toBe(stopwatch(app));
+  });
+
+  it('a tap on the screen padding or between rows closes it too', () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    stopwatch(app).click();
+    inScreen<HTMLElement>(app, '.col').dispatchEvent(
+      new MouseEvent('click', { bubbles: true, composed: true, clientX: 5, clientY: 400 }),
+    );
+    expect(screen(app).hidden).toBe(true);
+  });
+
   it('tapping the time opens the Ring screen', () => {
     const app = mountApp();
     stopwatch(app).click();

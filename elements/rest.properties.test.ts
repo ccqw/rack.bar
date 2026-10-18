@@ -1,8 +1,8 @@
 // Property-based invariants for the Rest timer's shell (RBAR-94, ADR-0019), driven
 // through the REAL input paths -- the stopwatch, the pill (pause, the dots, -15 / +15,
-// restart, x), the
-// timer screen (presets, -15/+15, pause, reset), Warm up's Next, time passing and a
-// reload -- on a fake clock, and judged from what is on screen. The core rules (time
+// restart, x), the timer screen (presets, -15/+15, pause, reset, restart, done,
+// settings), Warm up's Next, time passing and a reload -- on a fake clock, and judged
+// from what is on screen. The core rules (time
 // from timestamps, pause holds time, the round trip) are in lib/properties.test.ts.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fc from 'fast-check';
@@ -249,7 +249,9 @@ describe('Rest timer shell properties (RBAR-94, ADR-0019)', () => {
           fc.pre(next !== null && !next.disabled);
           next!.click();
           const after = dockText(a);
-          if (on) expect(after).not.toBeNull();
+          // On, Next starts the remembered Rest afresh: the full length, counting.
+          if (on) expect(after).toMatch(/^\d+:\d\d$/);
+          if (on) expect(sr(dock(a)).querySelector('[data-dock]')!.classList.contains('is-run')).toBe(true);
           else expect(after).toBe(before);
         },
       ),

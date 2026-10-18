@@ -52,6 +52,9 @@ class RackRestDock extends HTMLElement {
   // The phase last drawn: "Rest over" is announced only on a run/pause -> over change,
   // never for a Rest that was already over when the page loaded (ADR-0019).
   private drawn: string | null = null;
+  // The pill button holding focus, if any (focusin / focusout), so a button that hides
+  // (restart once tapped, pause at zero, the x) can hand focus on instead of dropping it.
+  private focused: HTMLButtonElement | null = null;
   private readonly onChange = (): void => this.render();
   private readonly onTick = (): void => this.paint();
 
@@ -174,6 +177,8 @@ class RackRestDock extends HTMLElement {
     `;
     this.dock = this.root.querySelector('[data-dock]')!;
 
+    this.dock.addEventListener('focusin', (e) => (this.focused = e.target as HTMLButtonElement));
+    this.dock.addEventListener('focusout', () => (this.focused = null));
     this.root.addEventListener('click', (e) => {
       const c = this._clock;
       const b = (e.target as Element).closest('button');
@@ -248,6 +253,18 @@ class RackRestDock extends HTMLElement {
           : ' left, open timer';
     if (c) q('[data-again]').setAttribute('aria-label', `Restart ${formatClock(c.state.last)}`);
 
+    // Focus on a button that just hid moves to its stand-in on the pill: the restart at
+    // zero, pause once a Rest counts again. With the pill gone (the x), the app focuses
+    // the stopwatch (`restfocus`, as the screen does).
+    const f = this.focused;
+    if (f?.hidden || (f && this.hidden)) {
+      if (this.hidden) {
+        this.focused = null;
+        this.dispatchEvent(new Event('restfocus', { bubbles: true, composed: true }));
+      } else {
+        q(phase === 'over' ? '[data-again]' : '[data-pp]').focus();
+      }
+    }
     q<HTMLElement>('[data-announce]').textContent =
       phase === 'over' && (this.drawn === 'run' || this.drawn === 'pause') ? 'Rest over' : '';
     this.drawn = phase;

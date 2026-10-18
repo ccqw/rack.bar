@@ -1,6 +1,7 @@
 // <rack-rest> -- the Rest timer (RBAR-94, ADR-0019): the RestClock plus its two views,
 // the floating pill (the dock) and the timer screen, and the thin yellow line that
-// blinks at the screen edge when a Rest reaches zero. <rack-app> mounts one beside the console and wires two doors in:
+// blinks at the screen edge when a Rest reaches zero. <rack-app> mounts one beside the
+// console and wires two doors in:
 //
 //   tap()        -- the console's stopwatch button: open the screen while a Rest shows,
 //                   else start the remembered Rest (the dock comes up)

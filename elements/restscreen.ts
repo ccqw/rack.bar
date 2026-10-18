@@ -383,7 +383,11 @@ class RackRestScreen extends HTMLElement {
   // closes the screen; a tap on the ring or its digits keeps it. Not while the settings
   // card is up: its scrim takes the tap and closes the card instead.
   private tapBackground(e: MouseEvent): void {
-    if (this.settingsOpen || !(e.target as Element).closest('[data-bg]')) return;
+    // The background: the marked cells, or the screen's own padding and row gaps (a tap
+    // that lands on .scr, .col or .ctl itself, between their children).
+    const t = e.target as Element;
+    const bare = t === this.scr || t.matches('.col, .ctl');
+    if (this.settingsOpen || !(bare || t.closest('[data-bg]'))) return;
     const ring = this.root.querySelector<HTMLElement>('.rg')!;
     const r = ring.getBoundingClientRect();
     const dx = e.clientX - (r.left + r.width / 2);
