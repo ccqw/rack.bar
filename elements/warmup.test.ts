@@ -73,7 +73,7 @@ describe('<rack-warmup> stairs + Next (RBAR-65 slice 2)', () => {
     }
     const labels = steps(el).map((b) => b.getAttribute('aria-label'));
     expect(labels[2]).toBe('Set 3 of 5, 70 percent, 98 kilograms, add 10 and 2.5 and 1.5 kilograms per side');
-    expect(next(el).textContent).toBe('Next: 50% - 70 kg+25 kg per side');
+    expect(next(el).textContent).toBe('Next');
   });
 
   it('reports a stair tap as a warmupselect of that row', () => {
@@ -94,13 +94,14 @@ describe('<rack-warmup> stairs + Next (RBAR-65 slice 2)', () => {
     expect(picks).toEqual([3, 1, 0, 4]);
   });
 
-  it('Next selects the following row; it disables and reads "Working set loaded" on the Working set', () => {
+  it('Next selects the following row; on the Working set it still reads just "Next", disabled (RBAR-95)', () => {
     const { el, picks } = mountWarmup(VIEW140(1));
     next(el).click();
     expect(picks).toEqual([2]);
     el.view = VIEW140(4);
     expect(next(el).disabled).toBe(true);
-    expect(next(el).textContent).toBe('Working set loaded');
+    expect(next(el).textContent).toBe('Next');
+    expect(next(el).children).toHaveLength(0);
   });
 });
 

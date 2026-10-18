@@ -10,7 +10,7 @@ import { PLATE_SETS, PLATE_SET_KEYS } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { plateFace, withLimits } from '../lib/plates.ts';
 import { GRID_KG, cappedFewestOracle, greatestSumAtOrUnder } from '../lib/fewest.oracle.ts';
-import { displayCeilingKg, draftToKg, format, shownIn } from '../lib/units.ts';
+import { displayCeilingKg, draftToKg, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import {
@@ -219,9 +219,9 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
           const aria = stairs(c)[i].getAttribute('aria-label') ?? '';
           if (drifted) expect(aria).toContain(`${step.pct} percent planned, about ${real} percent loaded`);
           else expect(aria).not.toContain('planned');
-          // Next from the row before names the same step and its Total in the unit.
+          // The Next button carries no step name or Total: it reads just "Next" (RBAR-95).
           stairs(c)[i - 1].click();
-          expect(q(nextBtn(c), '[data-next-label]').textContent).toBe(`Next: ${want} - ${format(loads[i], u)}`);
+          expect(nextBtn(c).textContent).toBe('Next');
         });
         expect(names[n - 1]).toBe('Work');
 

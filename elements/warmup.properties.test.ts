@@ -120,9 +120,10 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     );
   });
 
-  it('following the Next caption literally rebuilds the next Side exactly: off from the outside, then on (ADR-0015 as amended)', async () => {
-    // The caption is what the lifter does at the Bar. Read it off the Next button,
-    // apply it to the Side on screen, and the result must be the Side Next loads.
+  it('following the add caption literally rebuilds the Side Next loads: off from the outside, then on (ADR-0015 as amended)', async () => {
+    // The caption is what the lifter does at the Bar. Press Next, read the add caption
+    // beside "per side", apply it to the Side that was on screen, and the result must
+    // be the Side Next loaded. The Next button itself reads just "Next" (RBAR-95).
     const faces = (rig: Rig, el: HTMLElement) =>
       sideOnScreen(el).map((d) => {
         const p = rig.inventory.find((x) => Math.abs(x.kg - d.kg) < 1e-9)!;
@@ -155,11 +156,12 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
         for (let i = 0; i < n - 1; i++) {
           stairs(el)[i].click();
           const before = faces(rig, el);
-          const sub = nextBtn(el).querySelector('[data-next-sub]')!.textContent ?? '';
+          expect(nextBtn(el).textContent).toBe('Next');
           nextBtn(el).click();
           const after = faces(rig, el);
-          if (sub === 'same plates') expect(after).toEqual(before);
-          else expect(apply(before, sub)).toEqual(after);
+          const cap = q<HTMLElement>(sr(el), '[data-viz-add]');
+          if (cap.hidden) expect(after).toEqual(before);
+          else expect(apply(before, cap.textContent ?? '')).toEqual(after);
         }
       }),
       { seed: SEED, numRuns: 30 },

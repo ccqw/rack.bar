@@ -1,6 +1,7 @@
 // <rack-warmup> -- the Warm up mode's ramp block (RBAR-65 slice 2, Caitlin's Option D
 // "Ramp stairs + Next"): one tappable stair per Ramp row, its height the loaded Total,
-// then a full-width accent Next button naming the following set and what to change.
+// then a full-width accent Next button that just reads "Next" (RBAR-95): the stairs name
+// the sets and the add caption says what to load, so the button carries no copy of its own.
 // A dumb view (ADR-0001): the console plans the Ramp (lib/plan.ts) and hands down a
 // ready-made WarmupView (lib/warmup.ts); this element only draws it and reports which
 // row the lifter picked, as a `warmupselect` event { index }. Back is a tap on an
@@ -24,8 +25,6 @@ class RackWarmup extends HTMLElement {
   private stairs!: HTMLElement;
   private prompt!: HTMLElement;
   private nextBtn!: HTMLButtonElement;
-  private nextLabel!: HTMLElement;
-  private nextSub!: HTMLElement;
   private _view: WarmupView | null = null;
 
   /** The Ramp to draw, or null for the no-Working-set prompt. */
@@ -94,22 +93,14 @@ class RackWarmup extends HTMLElement {
           color: var(--rack-text-dim);
         }
         /* Next: the thumb-sized forward action (mock option D), 44px -- the touch
-           floor -- on the accent pill; the delta rides as a small mono line. */
-        /* A long delta (Plates off then on) wraps under the label instead of being cut off: the
-           two lines still fit the 44px pill. */
+           floor -- on the accent pill. */
         .next {
-          height: 44px; flex: none; display: flex; flex-wrap: wrap; align-content: center;
-          align-items: baseline; justify-content: center;
-          gap: 0 10px; padding: 0 14px; min-width: 0; line-height: 1.15;
+          height: 44px; flex: none; display: flex; align-items: center; justify-content: center;
+          padding: 0 14px; min-width: 0;
           border: 0; border-radius: var(--rack-radius-pill); cursor: pointer;
           background: var(--rack-accent); color: var(--rack-accent-ink);
           font-family: var(--rack-font); font-size: 14px; font-weight: 700; white-space: nowrap;
         }
-        .next small {
-          font-family: var(--rack-font-num); font-size: 11px; font-weight: 600; opacity: .75;
-          max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-        }
-        .next small:empty { display: none; }
         .next:disabled { background: var(--rack-selected); color: var(--rack-text-dim); cursor: default; }
         .next:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         @media ${SHORT_SCREEN} {
@@ -119,14 +110,11 @@ class RackWarmup extends HTMLElement {
       </style>
       <div class="stairs" data-stairs role="group" aria-label="Warm-up sets" hidden></div>
       <div class="prompt" data-prompt>Enter your working weight</div>
-      <button type="button" class="next" data-next disabled
-        ><span data-next-label>Next</span><small data-next-sub></small></button>
+      <button type="button" class="next" data-next disabled>Next</button>
     `;
     this.stairs = this.root.querySelector('[data-stairs]')!;
     this.prompt = this.root.querySelector('[data-prompt]')!;
     this.nextBtn = this.root.querySelector('[data-next]')!;
-    this.nextLabel = this.root.querySelector('[data-next-label]')!;
-    this.nextSub = this.root.querySelector('[data-next-sub]')!;
 
     this.stairs.addEventListener('click', (e) => {
       const st = (e.target as Element).closest<HTMLElement>('.st');
@@ -169,8 +157,6 @@ class RackWarmup extends HTMLElement {
     if (v === null) {
       this.stairs.replaceChildren();
       this.nextBtn.disabled = true;
-      this.nextLabel.textContent = 'Next';
-      this.nextSub.textContent = '';
       return;
     }
     // Rebuild the stairs only when the row count changes, so a selection change keeps
@@ -202,8 +188,6 @@ class RackWarmup extends HTMLElement {
       b.querySelector('[data-name]')!.textContent = s.name;
     });
     this.nextBtn.disabled = v.next.disabled;
-    this.nextLabel.textContent = v.next.label;
-    this.nextSub.textContent = v.next.sub;
   }
 }
 
