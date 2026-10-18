@@ -104,13 +104,14 @@
   --rack-swatch-iron: #3a3f45;
   --rack-swatch-iron-deep: #2c3036;
 
-  /* Bar chrome greys (RBAR-24, handoff section 3 "Bar visualizer"). The sleeve shaft,
-     collars, and end cap that frame the loaded discs, plus the dashed empty-state box.
+  /* Bar chrome greys (RBAR-24, handoff section 3 "Bar visualizer"; end redrawn by
+     RBAR-96). The sleeve shaft, inner collar and bare end that frame the loaded discs,
+     the Collar drawn on the outer disc, plus the dashed empty-state box.
      Not in the handoff --rb-* token list (the prototype inlines them); captured here so
      the bar renderer styles through tokens (ADR-0001), one source of truth per value. */
-  --rack-sleeve-shaft: #4e545b;   /* the sleeve shaft + the end cap (structural grey) */
-  --rack-sleeve-collar: #8b9199;  /* the bright inner collar face */
-  --rack-sleeve-end: #5c636b;     /* the outer end collar */
+  --rack-sleeve-shaft: #4e545b;   /* the sleeve shaft + the bare end (structural grey) */
+  --rack-sleeve-collar: #8b9199;  /* the bright inner collar face + the Collar's fill */
+  --rack-sleeve-end: #5c636b;     /* the Collar's 1px edge (RBAR-96) */
   --rack-sleeve-empty: #2f343a;   /* the dashed empty-state box outline (a bare Bar) */
   --rack-sleeve-empty-glyph: #3f454c; /* the + glyph inside it (prototype L106; RBAR-34 --
                                          between text-disabled 41464c and sleeve-empty) */

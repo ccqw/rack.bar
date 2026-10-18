@@ -3,12 +3,17 @@ import {
   BUMPER_MM,
   DISC_GAP_PX,
   DISC_INK,
-  END_GAP_PX,
+  BARE_END_PX,
+  COLLAR_EDGE_PX,
+  COLLAR_GAP_PX,
+  COLLAR_MM,
+  COLLAR_PX,
   MAX_SCALE,
   MIN_DISC_PX,
   SLEEVE_BLOCK_PX,
   SLEEVE_PAD_PX,
   TARGET_BUMPER_PX,
+  collarLatch,
   darkInk,
   fitRow,
   plateLabel,
@@ -70,9 +75,9 @@ describe('sleeveLayout (one Side, as the sleeve lays it out)', () => {
   const H = SLEEVE_BLOCK_PX;
   const right = (p: SleevePart) => p.x + p.w;
 
-  it('orders shaft, inner collar, discs heaviest-first, end collar, cap', () => {
+  it('orders shaft, inner collar, discs heaviest-first, then the bare end (no end collar, no cap)', () => {
     expect(sleeveLayout(side, W, H).map((p) => p.kind)).toEqual([
-      'shaft', 'collar-inner', 'disc', 'disc', 'disc', 'disc', 'collar-end', 'cap',
+      'shaft', 'collar-inner', 'disc', 'disc', 'disc', 'disc', 'bare-end',
     ]);
     expect(
       sleeveLayout(side, W, H).filter((p) => p.plate).map((p) => p.plate!.kg),
@@ -87,12 +92,51 @@ describe('sleeveLayout (one Side, as the sleeve lays it out)', () => {
     for (const p of parts) expect(p.y + p.h / 2).toBeCloseTo(H / 2, 9);
   });
 
-  it('spaces the pieces with the sleeve gaps: flush collar, 1.5px between discs, 3px before the end collar', () => {
+  it('spaces the pieces with the sleeve gaps: flush collar, 1.5px between discs, the bare end flush', () => {
     const parts = sleeveLayout(side, W, H);
     expect(parts[2]!.x).toBeCloseTo(right(parts[1]!), 9);
     expect(parts[3]!.x - right(parts[2]!)).toBeCloseTo(DISC_GAP_PX, 9);
-    expect(parts[6]!.x - right(parts[5]!)).toBeCloseTo(END_GAP_PX, 9);
+    expect(parts[6]!.x).toBeCloseTo(right(parts[5]!), 9);
+    expect(parts[6]!.w).toBe(BARE_END_PX);
     expect(parts[1]!.x).toBeCloseTo(right(parts[0]!), 9);
+  });
+
+  it('with collars on, clamps a Collar 1px off the outer disc, 92 mm tall on the disc scale', () => {
+    const parts = sleeveLayout(side, W, H, true);
+    expect(parts.map((p) => p.kind)).toEqual([
+      'shaft', 'collar-inner', 'disc', 'disc', 'disc', 'disc', 'collar', 'bare-end',
+    ]);
+    const collar = parts[6]!;
+    expect(collar.x - right(parts[5]!)).toBeCloseTo(COLLAR_GAP_PX, 9);
+    expect(collar.w).toBe(COLLAR_PX);
+    expect(collar.h).toBeCloseTo(COLLAR_MM * MAX_SCALE, 9);
+    expect(parts[7]!.x).toBeCloseTo(right(collar), 9);
+  });
+
+  it('seats the latch where the CSS ::after lands it: 6px in, 7px up from the outer box', () => {
+    const collar = sleeveLayout(side, W, H, true).find((p) => p.kind === 'collar')!;
+    // CSS: top -8px / left 5px from the padding box, inside the 1px edge.
+    expect(collarLatch(collar)).toEqual({
+      x: collar.x + COLLAR_EDGE_PX + 5,
+      y: collar.y + COLLAR_EDGE_PX - 8,
+      w: 8,
+      h: 8,
+    });
+  });
+
+  it('never clamps a Collar on a bare Bar, collars on or not', () => {
+    expect(sleeveLayout([], W, H, true).map((p) => p.kind)).toEqual([
+      'shaft', 'collar-inner', 'empty', 'bare-end',
+    ]);
+  });
+
+  it('a drawn Collar takes its width from the discs: a full sleeve still fits the host', () => {
+    const wall = Array(7).fill(eleiko(25));
+    const narrow = 260; // a narrow host, so the row already zooms out
+    const parts = sleeveLayout(wall, narrow, H, true);
+    expect(parts[0]!.x).toBeGreaterThanOrEqual(-1e-9);
+    expect(right(parts[parts.length - 1]!)).toBeLessThanOrEqual(narrow + 1e-9);
+    expect(sleeveFit(wall, narrow, H, true).scale).toBeLessThan(sleeveFit(wall, narrow, H).scale);
   });
 
   it('sizes discs at the sleeveFit scale: a full-zoom bumper is 168px, the 25 fatter than the 10', () => {
@@ -112,7 +156,7 @@ describe('sleeveLayout (one Side, as the sleeve lays it out)', () => {
   it('draws a bare Bar as the empty box, 5px off the inner collar', () => {
     const parts = sleeveLayout([], W, H);
     expect(parts.map((p) => p.kind)).toEqual([
-      'shaft', 'collar-inner', 'empty', 'collar-end', 'cap',
+      'shaft', 'collar-inner', 'empty', 'bare-end',
     ]);
     expect(parts[2]!.x - right(parts[1]!)).toBeCloseTo(5, 9);
     expect(parts[2]!.h).toBeCloseTo(120, 9); // the 120px box at full zoom

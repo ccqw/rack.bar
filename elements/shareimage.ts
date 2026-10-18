@@ -16,7 +16,13 @@ import { configText, loadTotalKg } from '../lib/summary.ts';
 import { format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { FULLSCREEN } from '../lib/fullscreenframe.ts';
-import { DISC_INK, darkInk, sleeveLayout } from '../lib/sleevefit.ts';
+import {
+  COLLAR_EDGE_PX,
+  DISC_INK,
+  collarLatch,
+  darkInk,
+  sleeveLayout,
+} from '../lib/sleevefit.ts';
 import type { SleevePart } from '../lib/sleevefit.ts';
 import {
   SHARE_CAPTION_MAX_W,
@@ -33,8 +39,8 @@ import {
 import type { ShadowLayer } from '../lib/shareimage.ts';
 
 // The sleeve's disc corner radius (4px), the empty box's (6px), the chrome's (the
-// shaft's 4px lead end, collars 3/2px, the cap's rounded tip), the numeral tracking and
-// the dashed empty box -- the values elements/sleeve.ts writes in its CSS.
+// shaft's 4px lead end, the collars' 3px, the bare end's rounded tip), the numeral
+// tracking and the dashed empty box -- the values elements/sleeve.ts writes in its CSS.
 const DISC_RADIUS = 4;
 const EMPTY_RADIUS = 6;
 const NUMERAL_TRACK_EM = 0.04;
@@ -208,7 +214,7 @@ function draw(ctx: CanvasRenderingContext2D, load: LoadSummary, setLabel: string
   ctx.scale(f.blowUp, f.blowUp);
   ctx.rotate(Math.PI / 2);
   ctx.translate(-host.w / 2, -host.h / 2);
-  drawSleeve(ctx, sleeveLayout(load.side, host.w, host.h), mono);
+  drawSleeve(ctx, sleeveLayout(load.side, host.w, host.h, load.collarKg > 0), mono);
   ctx.restore();
 }
 
@@ -234,15 +240,15 @@ function setDropShadow(ctx: CanvasRenderingContext2D, s: ShadowLayer): void {
   ctx.shadowOffsetY = s.x * k;
 }
 
-// Paint the sleeve pieces as <rack-sleeve> does: grey chrome, then each disc in the
+// Paint the sleeve pieces as <rack-sleeve> does: grey chrome, the flat Collar (RBAR-96:
+// solid fill, a 1px edge, a flat red latch on top) when drawn, then each disc in the
 // top-lit plate gradient with --rack-shadow-disc (outer lift + inset ring), and the
 // engraved numeral rotated -90deg so the card's +90deg turn sets it upright.
 function drawSleeve(ctx: CanvasRenderingContext2D, parts: readonly SleevePart[], mono: string): void {
   const chrome: Record<string, { color: string; radii: number | number[] }> = {
     shaft: { color: token('--rack-sleeve-shaft'), radii: [4, 0, 0, 4] },
     'collar-inner': { color: token('--rack-sleeve-collar'), radii: 3 },
-    'collar-end': { color: token('--rack-sleeve-end'), radii: 2 },
-    cap: { color: token('--rack-sleeve-shaft'), radii: [1, 5, 5, 1] },
+    'bare-end': { color: token('--rack-sleeve-shaft'), radii: [0, 5, 5, 0] },
   };
   const shadows = parseShadows(token('--rack-shadow-disc'));
   const drop = shadows.find((s) => !s.inset);
@@ -262,6 +268,21 @@ function drawSleeve(ctx: CanvasRenderingContext2D, parts: readonly SleevePart[],
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('+', part.x + part.w / 2, part.y + part.h / 2);
+      continue;
+    }
+    if (part.kind === 'collar') {
+      // Fill, then the edge, then the latch on top -- the CSS paint order (the ::after
+      // child over its parent's border), at the shared outer-box offsets.
+      ctx.fillStyle = token('--rack-sleeve-collar');
+      roundRect(ctx, part, 3);
+      ctx.fill();
+      ctx.strokeStyle = token('--rack-sleeve-end');
+      ctx.lineWidth = COLLAR_EDGE_PX;
+      roundRect(ctx, inset(part, COLLAR_EDGE_PX / 2), 3 - COLLAR_EDGE_PX / 2);
+      ctx.stroke();
+      ctx.fillStyle = token('--rack-plate-red');
+      roundRect(ctx, collarLatch(part), [2, 2, 0, 0]);
+      ctx.fill();
       continue;
     }
     if (part.kind !== 'disc' || !part.plate) {

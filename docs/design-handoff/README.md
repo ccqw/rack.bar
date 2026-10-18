@@ -70,6 +70,8 @@ The app is a single phone screen (design frame **384px** wide content area; the 
 - In *Add plates* mode discs are tappable (tap removes that plate). Top-right: a **fullscreen** icon button.
 - Label above: `per side` / `Tap a plate to load` / `Enter a weight` depending on state.
 
+> **Superseded in part (2026-10-17, RBAR-96):** the end collar + cap after the discs were replaced, per Caitlin's 2026-10-17 pick ("new end"). The sleeve now runs out past the outer disc as a bare stub with a plain rounded end, and a flat Collar is drawn on the outer disc only when Setup's collars are on and the Bar has plates. The rest of this section stands. See `DESIGN.md` (Bar Visualizer) and `lib/sleevefit.ts`.
+
 ### 4a. *Enter weight* mode (below the bar)
 - **Total readout:** `Total` label + kg/lb unit segmented toggle. Big number (Hanken 800, **54px**, −.025em, `tnum`) = the achieved on-bar total, with small unit suffix (`#8b929a`). Secondary line = the same in the other unit.
 - **Status pill** beside secondary line: `✓ Exact` (green dot) / `N over` (solid accent pill) / `N short` (outline pill). When the sleeve is full and still short → `● Bar at capacity`.

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import './sleeve.ts';
 import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from './sleeve.ts';
 import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
+import { CHROME_PX, COLLAR_GAP_PX, COLLAR_PX, DISC_GAP_PX, MIN_DISC_PX } from '../lib/sleevefit.ts';
 import type { Plate } from '../lib/plates.ts';
 
 function side(...kgs: number[]): Plate[] {
@@ -11,6 +12,7 @@ function side(...kgs: number[]): Plate[] {
 type Sleeve = HTMLElement & {
   sideLoad: readonly Plate[];
   interactive: boolean;
+  collars: boolean;
 };
 
 function mountSleeve(): Sleeve {
@@ -58,13 +60,15 @@ describe('<rack-sleeve>', () => {
       return el.shadowRoot!.querySelector(sel) !== null;
     }
 
-    it('frames the loaded discs with a sleeve shaft, inner collar, end collar, and end cap', () => {
+    it('frames the loaded discs with a sleeve shaft, inner collar, and a bare end (RBAR-96)', () => {
       const el = mountSleeve();
       el.sideLoad = side(25, 15);
       expect(has(el, '.shaft')).toBe(true);
       expect(has(el, '.collar-inner')).toBe(true);
-      expect(has(el, '.collar-end')).toBe(true);
-      expect(has(el, '.cap')).toBe(true);
+      expect(has(el, '.bare-end')).toBe(true);
+      // No end collar and no cap: nothing after the plates looks like a stopper.
+      expect(has(el, '.collar-end')).toBe(false);
+      expect(has(el, '.cap')).toBe(false);
     });
 
     it('keeps the full chrome on a bare Bar (the empty state is still a barbell)', () => {
@@ -72,14 +76,50 @@ describe('<rack-sleeve>', () => {
       el.sideLoad = [];
       expect(has(el, '.shaft')).toBe(true);
       expect(has(el, '.collar-inner')).toBe(true);
-      expect(has(el, '.collar-end')).toBe(true);
-      expect(has(el, '.cap')).toBe(true);
+      expect(has(el, '.bare-end')).toBe(true);
+    });
+
+    it('draws the bare end as a 30 x 11 shaft-grey stub with a plain rounded end', () => {
+      const el = mountSleeve();
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const body = css.match(/\.bare-end \{([^}]*)\}/)![1]!;
+      expect(body).toMatch(/width: 30px/);
+      expect(body).toMatch(/height: 11px/);
+      expect(body).toMatch(/border-radius: 0 5px 5px 0/);
+      expect(body).toMatch(/background: var\(--rack-sleeve-shaft\)/);
+    });
+
+    it('draws the Collar flat: solid collar fill, a 1px end-token edge, a flat red latch, no number', () => {
+      const el = mountSleeve();
+      el.collars = true;
+      el.sideLoad = side(20, 15, 2.5);
+      const collar = el.shadowRoot!.querySelector('.collar-on')!;
+      expect(collar.textContent).toBe('');
+      expect(collar.getAttribute('aria-hidden')).toBe('true');
+      // the Collar sits after the outer disc, then the bare end
+      expect(collar.previousElementSibling!.classList.contains('disc')).toBe(true);
+      expect(collar.nextElementSibling!.classList.contains('bare-end')).toBe(true);
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const body = css.match(/\.collar-on \{([^}]*)\}/)![1]!;
+      expect(body).toMatch(/width: 20px/);
+      expect(body).toMatch(/margin-left: 1px/);
+      expect(body).toMatch(/border-radius: 3px/);
+      expect(body).toMatch(/border: 1px solid var\(--rack-sleeve-end\)/);
+      expect(body).toMatch(/\* 92px/);
+      expect(body).not.toMatch(/gradient/);
+      const latch = css.match(/\.collar-on::after \{([^}]*)\}/)![1]!;
+      expect(latch).toMatch(/top: -8px/);
+      expect(latch).toMatch(/left: 5px/);
+      expect(latch).toMatch(/width: 8px; height: 8px/);
+      expect(latch).toMatch(/border-radius: 2px 2px 0 0/);
+      expect(latch).toMatch(/background: var\(--rack-plate-red\)/);
+      expect(css.match(/\.collar \{([^}]*)\}/)![1]).toMatch(/background: var\(--rack-sleeve-collar\)/);
     });
 
     it('renders the chrome decoratively (the discs carry the accessible names)', () => {
       const el = mountSleeve();
       el.sideLoad = side(25);
-      for (const sel of ['.shaft', '.collar-inner', '.collar-end', '.cap']) {
+      for (const sel of ['.shaft', '.collar-inner', '.bare-end']) {
         expect(el.shadowRoot!.querySelector(sel)!.getAttribute('aria-hidden')).toBe('true');
       }
     });
@@ -249,19 +289,25 @@ describe('<rack-sleeve>', () => {
   });
 
   describe('block geometry + overflow guard (RBAR-41: 204px block, 168px cap, no overflow)', () => {
-    // The fixed chrome the fit budget reserves (sleeve.ts constants, text-locked here
-    // the same way the mm sizing tests lock the plate table).
-    const CHROME = 52 + 11 + 8 + 13;
-    const END_GAP = 3;
-    const DISC_GAP = 1.5;
-    const MIN_DISC = 9;
+    // The fixed chrome the fit budget reserves: shaft + inner collar + bare end
+    // (lib/sleevefit.ts, RBAR-96), plus the Collar and its gap when one is drawn.
+    const CHROME = CHROME_PX;
+    const COLLAR = COLLAR_GAP_PX + COLLAR_PX;
+    const DISC_GAP = DISC_GAP_PX;
+    const MIN_DISC = MIN_DISC_PX;
+
+    it('reserves the RBAR-96 chrome: 52 shaft + 11 inner collar + 30 bare end, 1 + 20 per Collar', () => {
+      expect(CHROME).toBe(52 + 11 + 30);
+      expect(COLLAR).toBe(1 + 20);
+    });
 
     function styleText(el: HTMLElement): string {
       return el.shadowRoot!.querySelector('style')!.textContent!;
     }
-    function fitted(width: number, load: Plate[]): Sleeve {
+    function fitted(width: number, load: Plate[], collars = false): Sleeve {
       const el = mountSleeve();
       Object.defineProperty(el, 'clientWidth', { value: width, configurable: true });
+      el.collars = collars;
       el.sideLoad = load;
       return el;
     }
@@ -288,7 +334,7 @@ describe('<rack-sleeve>', () => {
       const shrink = Number(el.style.getPropertyValue('--rack-fit-shrink'));
       expect(shrink).toBeGreaterThan(0);
       expect(shrink).toBeLessThan(1);
-      const budget = 200 - CHROME - END_GAP - DISC_GAP * (load.length - 1);
+      const budget = 200 - CHROME - DISC_GAP * (load.length - 1);
       expect(rowPx(el, load)).toBeLessThanOrEqual(budget + 1e-6);
     });
 
@@ -306,11 +352,16 @@ describe('<rack-sleeve>', () => {
         side(...Array(20).fill(0.5)),
         side(...Array(8).fill(2.5)),
       ];
-      for (const width of [200, 280, 390]) {
-        for (const load of loads) {
-          const el = fitted(width, load);
-          const budget = width - CHROME - END_GAP - DISC_GAP * (load.length - 1);
-          expect(rowPx(el, load)).toBeLessThanOrEqual(budget + 1e-6);
+      for (const collars of [false, true]) {
+        for (const width of [200, 280, 390]) {
+          for (const load of loads) {
+            const el = fitted(width, load, collars);
+            const budget =
+              width - CHROME - (collars ? COLLAR : 0) - DISC_GAP * (load.length - 1);
+            expect(rowPx(el, load), `${width}px collars ${collars}`).toBeLessThanOrEqual(
+              budget + 1e-6,
+            );
+          }
         }
       }
     });
