@@ -280,6 +280,21 @@ describe('<rack-console> Warm up mode (RBAR-65 slice 2)', () => {
     expect(statusLabel(el)).toBe('0.3 kg short');
   });
 
+  it('re-judges a rounded-up Working set on the new reading after a unit toggle (RBAR-87)', () => {
+    // 140.3 kg rounds up to 141 kg in kg; in lb the Target reads 309 lb, and 140 kg also
+    // reads 309 lb, so the at-or-under load is exact there and Work steps down to it.
+    const el = mountConsole();
+    modeBtn(el, 'warmup').click();
+    commitWorking(el, '140.3');
+    stairs(el)[4].click();
+    expect(totalText(el)).toBe('141 kg');
+    sr(el).querySelector<HTMLButtonElement>('[data-unit="lb"]')!.click();
+    stairs(el)[4].click();
+    expect(workDraft(el)).toBe('309');
+    expect(totalText(el)).toBe('309 lb');
+    expect(statusLabel(el)).toBe('100% - exact');
+  });
+
   it('reads a short Working set with the By Weight pill when nothing loads above it (ADR-0003)', () => {
     const el = mountConsole();
     modeBtn(el, 'warmup').click();

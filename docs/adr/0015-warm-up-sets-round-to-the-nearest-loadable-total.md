@@ -354,9 +354,10 @@ itself.
 
 ## 2026-10-18 -- Warm up rounds a short Working set UP (RBAR-87, PR #132)
 
-Caitlin's call on PR #132: when the working weight cannot be loaded exactly (typed
-141, loads 142), the Working set rounds UP to the loadable Total, instead of holding
-Decode's at-or-under load under the typed value. "Work" then shows what is really on
+The owner's call on PR #132: when the working weight cannot be loaded exactly (in
+the owner's words, "141 -> 142"; on the default Competition set, 140.3 kg loads 141),
+the Working set rounds UP to the loadable Total, instead of holding Decode's
+at-or-under load under the typed value. "Work" then shows what is really on
 the Bar. This amends decision 1 ("The Working set is Decode, unchanged") and decision 3
 of the station-rule amendment, for Warm up only.
 
@@ -392,7 +393,13 @@ round-up offered as before.
    is on the Bar.
 6. **Unit toggle.** The RBAR-60 carry in Warm up (an Exact Working set becomes the
    Target in the new unit) reads the Working row. A rounded-up Working set never reads
-   Exact, so the toggle keeps the typed Target and re-plans.
+   Exact, so the toggle keeps the typed Target and re-plans on its new reading. That
+   can step Work DOWN: 140.3 kg rounds up to 141 kg in kg, but the Target reads 309 lb
+   and 140 kg also reads 309 lb, so in lb the at-or-under load is exact and Work is 140
+   kg. This is the rule applied to the reading on screen, not a lost load, so it is
+   accepted; the old "a load never moves down on a toggle" property now holds only for
+   a Working set that was not rounded up (a rounded-up one is checked against the
+   oracle on the new reading), and `elements/warmup.test.ts` pins the 140.3 kg case.
 
 Worked example (Training iron, 45 lb Bar, typed 137 lb): By Weight decodes 135 lb, "2 lb
 short", with 140 lb offered. Warm up's Working set is 140 lb, "3 lb over", and the

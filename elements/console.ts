@@ -1185,7 +1185,10 @@ class RackConsole extends HTMLElement {
   //    bucket changed). A short load can only move UP -- the new reading may admit a
   //    heavier load (27.2 kg on iron reads 60 lb, which 60 lb of iron meets) -- never
   //    down: the old load is at or under the Target, so the new ceiling still covers
-  //    it. A chosen round-up stays chosen only while the same load is still
+  //    it. (Warm up's rounded-up Working set is the exception, RBAR-87: it is re-judged
+  //    on the new reading, so when the at-or-under load reads exact there -- 140.3 kg
+  //    rounds up to 141 kg, but 140 kg reads 309 lb like the Target -- Work steps down
+  //    to it.) A chosen round-up stays chosen only while the same load is still
   //    the round-up; if the new reading makes it the Exact primary (100.95 kg -> 223 lb,
   //    and 101 kg reads 223 lb), it is shown as the primary instead -- never a stale
   //    "over" whose "use" button would step the lifter down to a short load.
@@ -1200,7 +1203,9 @@ class RackConsole extends HTMLElement {
       // itself (586 lb on Comp loads 266 kg; re-solving the typed 265.8 kg would drop
       // to 265). Otherwise the field re-reads the SAME canonical kg in the new unit (the
       // entry's RBAR-38 reformat). Either way the Ramp re-plans against the new
-      // reading's ceiling (ADR-0015 Q7).
+      // reading's ceiling and floor (ADR-0015 Q7; RBAR-87: a rounded-up Working set never
+      // reads Exact, so it is re-judged on the new reading and may step down to a load
+      // that reads exact there).
       const workKg = this.ramp?.rows[this.ramp.rows.length - 1].total;
       if (
         this.target !== null &&
@@ -1591,11 +1596,11 @@ class RackConsole extends HTMLElement {
   // Target is the one Target (RBAR-87); with none, or a non-positive one (a typed 0),
   // there is no Ramp: the prompt and a bare Bar. The Working set solves at or under its
   // reading in the display unit (displayCeilingKg, RBAR-60), exactly as By Weight would,
-  // then -- when that load reads short of the Target -- rounds UP to the least loadable
-  // Total above it (displayFloorKg + plan.ts workingLoad, RBAR-87), so "Work" is what is
-  // really on the Bar. The Target itself stays as typed; By Weight still decodes it at
-  // or under (ADR-0003). The template is DEFAULT_RAMP (editing it is slice 3). The selection is kept across
-  // re-plans, clamped into the rows.
+  // then -- when that load reads short of the Target's reading -- rounds UP to the least
+  // loadable Total above that reading (displayFloorKg + plan.ts workingLoad, RBAR-87), so
+  // "Work" is what is really on the Bar. The Target itself stays as typed; By Weight
+  // still decodes it at or under (ADR-0003). The template is DEFAULT_RAMP (editing it is
+  // slice 3). The selection is kept across re-plans, clamped into the rows.
   private planWarmup(): void {
     const working = this.target;
     if (working === null || !isRememberable(working)) {

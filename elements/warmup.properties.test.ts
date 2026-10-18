@@ -12,7 +12,7 @@ import { RAMP_BAND } from '../lib/moves.ts';
 import { pushRecent } from '../lib/recents.ts';
 import { draftToKg, displayCeilingKg, displayFloorKg, format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
-import { rampTotalsOracle, achievableTotals } from '../lib/properties.oracle.ts';
+import { rampTotalsOracle, achievableTotals, warmWorkingOracle } from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, EPS, other, fresh, resetPool, q, sr, unitBtn, modeBtn, totalText, sideOnScreen,
@@ -345,7 +345,7 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
     expect(roundedUp).toBeGreaterThan(5);
   });
 
-  it('a unit toggle keeps the working weight as read: an Exact Working set stays put, a load never moves down, and a second round trip changes nothing (ADR-0010 RBAR-60)', async () => {
+  it('a unit toggle keeps the working weight as read: an Exact Working set stays put, an at-or-under load never moves down, a rounded-up one is re-judged on the new reading, and a second round trip changes nothing (ADR-0010 RBAR-60, RBAR-87)', async () => {
     await fc.assert(
       fc.asyncProperty(workCaseArb, async ([rig, u, draft]) => {
         await nextRun();
@@ -359,7 +359,15 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
         expect(workDraft(el)).toBe(String(shownIn(exact ? workBefore : kg, other(u))));
         stairs(el).at(-1)!.click();
         const workAfter = drawnRowKg(el, rig, 4);
-        expect(workAfter).toBeGreaterThanOrEqual(workBefore - EPS);
+        // A Working set rounded up past the Target (RBAR-87) is re-planned on the new
+        // reading of the same Target, which may now read its at-or-under load exact.
+        const roundedUp = shownIn(workBefore, u) > shownIn(kg, u) && kg >= rig.baselineKg;
+        if (roundedUp) {
+          const ou = other(u);
+          expect(workAfter).toBeCloseTo(warmWorkingOracle(rig, kg, displayCeilingKg(kg, ou), displayFloorKg(kg, ou)), 6);
+        } else {
+          expect(workAfter).toBeGreaterThanOrEqual(workBefore - EPS);
+        }
         if (exact) expect(Math.abs(workAfter - workBefore)).toBeLessThan(1e-6);
         unitBtn(el, u).click();
         const settled = [workDraft(el), ...stairTotals(el)];

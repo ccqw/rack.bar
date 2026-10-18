@@ -77,7 +77,7 @@ import {
   PLATES_PER_SIZE,
   BIG_PLATE_DIAMETER_MM,
 } from './moves.ts';
-import { planRamp, DEFAULT_RAMP, workingLoad } from './plan.ts';
+import { planRamp, DEFAULT_RAMP } from './plan.ts';
 import type { RampStep } from './plan.ts';
 import type { Rig } from './properties.oracle.ts';
 import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
@@ -712,9 +712,10 @@ describe('Warm-up Ramp properties (ADR-0015)', () => {
         expect(working).toEqual(solved);
         const last = rows[rows.length - 1];
         expect(last.kind).toBe('working');
-        const load = workingLoad(solved, displayFloorKg(t, u));
-        expect(last.side).toEqual(load.side);
-        expect(last.total).toBeCloseTo(warmWorkingOracle(rig, t, displayCeilingKg(t, u), displayFloorKg(t, u)), 9);
+        // Its Total is the oracle's; its Side is Decode's canonical stack for that Total.
+        const want = warmWorkingOracle(rig, t, displayCeilingKg(t, u), displayFloorKg(t, u));
+        expect(last.total).toBeCloseTo(want, 9);
+        expect(last.side).toEqual(decode(want, rig.baselineKg, rig.inventory).primary.side);
         // It overshoots only by rounding a short load up: the at-or-under one read short.
         if (shownIn(last.total, u) > shownIn(t, u) && shownIn(t, u) >= shownIn(rig.baselineKg, u)) {
           expect(shownIn(solved.primary.total, u)).toBeLessThan(shownIn(t, u));
@@ -962,7 +963,8 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
         // order-free capped walk), and no Plate goes past its count in Decode's own Side.
         const work = got.rows[got.rows.length - 1];
         expect(cappedTotals(rig, () => RULE.cap).has(key(work.total))).toBe(false);
-        const own = workingLoad(got.working, displayFloorKg(t, u)).side;
+        // Decode's canonical stack for the Working Total (its round-up's, when rounded up).
+        const own = decode(work.total, rig.baselineKg, rig.inventory).primary.side;
         for (const r of got.rows) {
           for (const p of r.side) {
             const n = r.side.filter((q) => q === p).length;
@@ -1005,7 +1007,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
         const tol = Math.max(RULE.band * work, Math.min(...rig.inventory.map((p) => p.kg)));
         // The caps: brute force on a small rig; on a full one, 2 of each when that loads
         // the Working Total, else Decode's own counts (an order-free capped walk).
-        const own = workingLoad(got.working, displayFloorKg(t, u)).side;
+        const own = decode(work, rig.baselineKg, rig.inventory).primary.side;
         const caps: (p: Plate) => number = small
           ? oracleCaps(rig, work, RULE)
           : cappedTotals(rig, () => RULE.cap).has(key(work))
@@ -1244,7 +1246,7 @@ describe("Station rule properties (ADR-0015 as amended 2026-10-17, Caitlin's sta
           const tol = Math.max(RULE.band * work, oracleGridKg(rig.inventory));
           // The planner's caps: 2 of each within the pairs on hand when that loads the
           // Working Total, else Decode's own counts, still within the pairs on hand.
-          const own = workingLoad(got.working, displayFloorKg(t, u)).side;
+          const own = decode(work, rig.baselineKg, rig.inventory).primary.side;
           const flat = (p: Plate) => Math.min(RULE.cap, onHand(p));
           const caps = cappedTotals(rig, flat).has(key(work))
             ? flat
