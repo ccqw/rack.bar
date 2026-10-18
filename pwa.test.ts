@@ -63,10 +63,11 @@ describe('index.html install wiring', () => {
   it('carries the standalone and iOS Home Screen metas', () => {
     expect(meta('mobile-web-app-capable')).toBe('yes');
     expect(meta('apple-mobile-web-app-capable')).toBe('yes');
-    expect(meta('apple-mobile-web-app-status-bar-style')).toBe('black-translucent');
+    // No status-bar style (RBAR-98): on iOS 26 it blurs the top of the header.
+    expect(meta('apple-mobile-web-app-status-bar-style')).toBeNull();
     expect(meta('apple-mobile-web-app-title')).toBe('rack.bar');
-    // black-translucent puts the page under the status bar: the body must still
-    // pad by the top safe area or the header would sit under the clock.
+    // The body still pads by the top safe area, so the header never sits under the
+    // clock whatever the status bar does.
     expect(read('index.html')).toMatch(/padding:\s*env\(safe-area-inset-top\)/);
   });
 
