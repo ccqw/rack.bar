@@ -76,6 +76,13 @@ import {
   BIG_PLATE_DIAMETER_MM,
 } from './moves.ts';
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
+import { walkIndex, warmupView } from './warmup.ts';
+import {
+  SWIPE_MIN_PX,
+  swipeDirection,
+  swipeIndex,
+  warmupFullscreenView,
+} from './warmupfullscreen.ts';
 import type { RampStep } from './plan.ts';
 import type { Rig } from './properties.oracle.ts';
 import { GRID_KG, fewestOracle } from './fewest.oracle.ts';
@@ -2508,6 +2515,114 @@ describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-00
         expect(d.length).toBeLessThanOrEqual(MAX_ANSWER_CHARS);
         expect(d.split('.').length).toBeLessThanOrEqual(2);
         if (d !== '') expect(Number.isFinite(answerOf(d))).toBe(true);
+      }),
+      opts,
+    );
+  });
+});
+
+describe('Warm up fullscreen properties (RBAR-85, ADR-0015, ADR-0001)', () => {
+  // The console's Ramp: the station rule's plan of a Working set read in `u` (ADR-0015
+  // as amended), on any rig, from the default template or an ascending one.
+  const stepsArb: fc.Arbitrary<RampStep[]> = fc
+    .tuple(fc.integer({ min: 0, max: 1 }), fc.uniqueArray(fc.integer({ min: 1, max: 99 }), { maxLength: 4 }))
+    .map(([bars, pcts]) => [
+      ...Array.from({ length: bars }, (): RampStep => ({ kind: 'bar' })),
+      ...[...pcts].sort((x, y) => x - y).map((pct): RampStep => ({ kind: 'pct', pct })),
+    ]);
+  const caseArb = fc.record({
+    rt: rigTargetArb,
+    u: unitArb,
+    steps: fc.oneof(stepsArb, fc.constant([...DEFAULT_RAMP])),
+    // A selection anywhere, including off either end (both views clamp).
+    sel: fc.integer({ min: -2, max: 8 }),
+  });
+  const rampOpts = { seed: SEED, numRuns: 100 };
+  const rowsFor = (rig: Rig, t: number, u: Unit, steps: readonly RampStep[]) =>
+    planEasyRamp(t, steps, { barKg: rig.barKg, collarKg: rig.collarKg, inventory: rig.inventory }, {
+      ceilingKg: displayCeilingKg(t, u),
+    }).rows;
+
+  it('Next in fullscreen matches Next in the console: same live state, same row, same load (RBAR-85, ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps, sel }) => {
+        const rows = rowsFor(rig, t, u, steps);
+        const pu = plateSetFor(rig.set).unit;
+        const fs = warmupFullscreenView(rows, sel, u, pu);
+        const con = warmupView(rows, sel, u, pu);
+        // The same row is loaded.
+        expect(fs.index).toBe(con.selected);
+        // The oracle: Next is live on every row but the Working set (the Ramp's last
+        // row, ADR-0015), and it loads the following row.
+        const last = rows.length - 1;
+        expect(fs.next.live).toBe(fs.index < last);
+        expect(fs.next.live).toBe(!con.next.disabled);
+        if (!fs.next.live) {
+          expect(fs.next.to).toBeNull();
+          expect(fs.next.label).toBeNull();
+          return;
+        }
+        expect(fs.next.to).toBe(con.selected + 1);
+        // After Next, the card and the console load the same Side.
+        const after = warmupFullscreenView(rows, fs.next.to!, u, pu);
+        const conAfter = warmupView(rows, con.selected + 1, u, pu);
+        expect(after.index).toBe(conAfter.selected);
+        expect(rows[after.index].side).toEqual(rows[conAfter.selected].side);
+        // The Next zone names the set it loads.
+        expect(fs.next.label).toBe(after.label);
+      }),
+      rampOpts,
+    );
+  });
+
+  it("the card reads the console's row: the set name is its stair name and Total, the moves line its add caption (RBAR-85, ADR-0015)", () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps, sel }) => {
+        const rows = rowsFor(rig, t, u, steps);
+        const pu = plateSetFor(rig.set).unit;
+        const fs = warmupFullscreenView(rows, sel, u, pu);
+        const con = warmupView(rows, sel, u, pu);
+        const step = con.steps[con.selected];
+        expect(fs.label).toBe(`${step.name} - ${step.totalNum} ${u}`);
+        expect(fs.moves).toBe(con.addCaption);
+        expect(fs.count).toBe(rows.length);
+      }),
+      rampOpts,
+    );
+  });
+
+  it('a swipe walks one set and stops at the ends: left is Next, right steps back, both as the arrow keys do (RBAR-85)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 9 }).chain((n) => fc.tuple(fc.constant(n), fc.integer({ min: 0, max: n - 1 }))), ([n, i]) => {
+        expect(swipeIndex(i, 'left', n)).toBe(Math.min(n - 1, i + 1));
+        expect(swipeIndex(i, 'right', n)).toBe(Math.max(0, i - 1));
+        expect(swipeIndex(i, 'left', n)).toBe(walkIndex(i, 'ArrowRight', n));
+        expect(swipeIndex(i, 'right', n)).toBe(walkIndex(i, 'ArrowLeft', n));
+        if (i < n - 1) expect(swipeIndex(swipeIndex(i, 'left', n), 'right', n)).toBe(i);
+      }),
+      opts,
+    );
+  });
+
+  it('a swipe forward lands where Next does, and stays put on the Working set (RBAR-85, ADR-0015)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rt: { rig, t }, u, steps, sel }) => {
+        const rows = rowsFor(rig, t, u, steps);
+        const fs = warmupFullscreenView(rows, sel, u, plateSetFor(rig.set).unit);
+        expect(swipeIndex(fs.index, 'left', fs.count)).toBe(fs.next.to ?? fs.index);
+      }),
+      rampOpts,
+    );
+  });
+
+  it('only a mostly sideways drag of at least SWIPE_MIN_PX is a swipe, named by its sign (RBAR-85)', () => {
+    const px = fc.double({ min: -400, max: 400, noNaN: true });
+    fc.assert(
+      fc.property(px, px, (dx, dy) => {
+        const d = swipeDirection(dx, dy);
+        const is = Math.abs(dx) >= SWIPE_MIN_PX && Math.abs(dx) > Math.abs(dy);
+        expect(d === null).toBe(!is);
+        if (d !== null) expect(d).toBe(dx < 0 ? 'left' : 'right');
       }),
       opts,
     );

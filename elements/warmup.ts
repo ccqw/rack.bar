@@ -10,7 +10,7 @@
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
-import { walkIndex } from '../lib/warmup.ts';
+import { nextIndex, walkIndex } from '../lib/warmup.ts';
 import type { WarmupView } from '../lib/warmup.ts';
 
 // The stairs' height (normal and short-screen tier, ADR-0013) and the fixed parts of a
@@ -131,7 +131,8 @@ class RackWarmup extends HTMLElement {
     });
     this.nextBtn.addEventListener('click', () => {
       const v = this._view;
-      if (v && v.selected < v.steps.length - 1) this.select(v.selected + 1);
+      const to = v ? nextIndex(v.selected, v.steps.length) : null;
+      if (to !== null) this.select(to);
     });
     this.render();
   }
