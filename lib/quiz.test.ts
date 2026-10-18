@@ -6,7 +6,13 @@ import {
   HISTORY_LEN,
   answerOf,
   breakdownText,
+  buildPalette,
+  buildQuestion,
+  buildTap,
+  builtBreakdownTerms,
+  checkBuild,
   collarsOffered,
+  fewestNote,
   diagnose,
   isRight,
   mistakes,
@@ -235,5 +241,103 @@ describe('parseQuizSaved', () => {
     const s = parseQuizSaved(raw);
     expect(s.settings).toEqual({ ...DEFAULT_QUIZ_SETTINGS, numbers: true });
     expect(s.record.best).toBe(4);
+  });
+});
+
+describe('build the bar (RBAR-101)', () => {
+  const sum = (side: readonly Plate[]): string => side.map(plateFace).join(' + ');
+
+  it('a Build question is seeded, and its list is not the Read list', () => {
+    const list = (f: typeof quizQuestion) =>
+      Array.from({ length: 8 }, (_, i) => f(3, i, COMP, DEFAULT_QUIZ_SETTINGS)!.totalShown);
+    expect(list(buildQuestion)).toEqual(list(buildQuestion));
+    expect(list(buildQuestion)).not.toEqual(list(quizQuestion));
+  });
+
+  it('scores by the Total: the fewest-Plate Side and any other Side that makes it are right', () => {
+    const x = q([kg(25), kg(15)], COMP); // 100 kg
+    const fewest = checkBuild(x, [kg(25), kg(15)]);
+    expect(fewest.right).toBe(true);
+    expect(fewest.moreThanFewest).toBe(false);
+    expect(fewestNote(fewest)).toBe('');
+    const same = checkBuild(x, [kg(20), kg(20)]);
+    expect(same.right).toBe(true);
+    expect(same.moreThanFewest).toBe(false);
+    const more = checkBuild(x, [kg(10), kg(20), kg(10)]);
+    expect(more.right).toBe(true);
+    expect(sum(more.side)).toBe('20 + 10 + 10');
+    expect(more.moreThanFewest).toBe(true);
+    expect(fewestNote(more)).toBe('Fewest plates: 25 + 15');
+  });
+
+  it('a wrong Side gets how far off it is and the breakdown of what was built', () => {
+    const x = q([kg(25), kg(15)], COMP);
+    const r = checkBuild(x, [kg(25), kg(10)]);
+    expect(r.right).toBe(false);
+    expect(r.totalShown).toBe(90);
+    expect(r.off).toBe(-10);
+    expect(r.why).toBe('10 kg under');
+    expect(fewestNote(r)).toBe('');
+    expect(builtBreakdownTerms(x, r, '20 kg')).toEqual(['= 35', 'x 2', '+ 20 kg bar', '= 90 kg']);
+    expect(checkBuild(x, [kg(25), kg(15), kg(2.5)]).why).toBe('5 kg over');
+    expect(checkBuild(x, []).why).toBe('80 kg under');
+  });
+
+  it('names the build mistakes: the Bar, the Collars, both Sides on one', () => {
+    const x = q([kg(25), kg(15)], COMP);
+    expect(checkBuild(x, [kg(25), kg(25)]).why).toBe('Forgot the Bar');
+    expect(checkBuild(x, [kg(25), kg(25), kg(25), kg(5)]).why).toBe('Loaded both sides on one');
+    const c = q([kg(25), kg(15)], COMP_COLLARS, 2.5); // 105 kg
+    expect(checkBuild(c, [kg(25), kg(25)]).why).toBe('Forgot the Bar');
+    expect(checkBuild(c, [kg(25), kg(15), kg(2.5)]).why).toBe('Forgot the collars');
+    const r = checkBuild(c, [kg(25), kg(10)]);
+    expect(builtBreakdownTerms(c, r, '20 kg')).toEqual([
+      '= 35',
+      'x 2',
+      '+ 20 kg bar',
+      '+ 2 x 2.5 kg collars',
+      '= 95 kg',
+    ]);
+  });
+
+  it('scores lb in lb, from the stamps', () => {
+    const x = q([lb('45'), lb('25')], TRAINING); // 185 lb
+    expect(checkBuild(x, [lb('35'), lb('35')]).right).toBe(true);
+    const more = checkBuild(x, [lb('25'), lb('25'), lb('10'), lb('10')]);
+    expect(more.right).toBe(true);
+    expect(fewestNote(more)).toBe('Fewest plates: 45 + 25');
+    const wrong = checkBuild(x, [lb('45'), lb('35')]);
+    expect(wrong.totalShown).toBe(205);
+    expect(wrong.why).toBe('20 lb over');
+  });
+
+  it('a tap honours the Plate limits and the Sleeve, and keeps the Side heaviest first', () => {
+    const inv = withLimits(ELEIKO_KG, { '25': 1 });
+    const p25 = inv.find((p) => p.kg === 25)!;
+    let side = buildTap([], kg(10));
+    side = buildTap(side, p25);
+    side = buildTap(side, p25);
+    expect(sum(side)).toBe('25 + 10');
+    let full: readonly Plate[] = [];
+    for (let i = 0; i < 40; i++) full = buildTap(full, kg(25));
+    expect(full.length).toBeGreaterThan(0);
+    expect(full.length).toBeLessThan(40);
+    expect(buildTap(full, kg(25))).toEqual(full);
+    const none = withLimits(ELEIKO_KG, { '20': 0 }).find((p) => p.kg === 20)!;
+    expect(buildTap([], none)).toEqual([]);
+  });
+
+  it('the palette drops change Plates when the gear has them off, unless they are all the lifter has', () => {
+    const off: QuizSettings = { ...DEFAULT_QUIZ_SETTINGS, change: false };
+    for (const p of buildPalette(COMP, off)) expect(p.maxPerSide === 0).toBe(p.kg < 5);
+    expect(buildPalette(COMP, DEFAULT_QUIZ_SETTINGS)).toBe(COMP.inventory);
+    const onlyChange = withLimits(
+      ELEIKO_KG,
+      Object.fromEntries(ELEIKO_KG.filter((p) => p.kg >= 5).map((p) => [plateFace(p), 0])),
+    );
+    const rig: QuizRig = { ...COMP, inventory: onlyChange };
+    expect(buildPalette(rig, off)).toBe(onlyChange);
+    const x = buildQuestion(1, 0, rig, off)!;
+    expect(checkBuild(x, x.side).right).toBe(true);
   });
 });

@@ -12,7 +12,8 @@
 //     Collars appear only when Setup has them on, only on the kg set, and never on a
 //     bare Bar (a question always has a Plate).
 //   - Answers are read in the plate set's own Unit: kg on Competition, lb on Training.
-import { canonicalSide } from './sideloads.ts';
+import { canonicalSide, hasUsablePlates } from './sideloads.ts';
+import { addPlate } from './encode.ts';
 import { plateFace, withLimits } from './plates.ts';
 import type { InventoryEntry, Plate } from './plates.ts';
 import { PLATE_SETS } from './platesets.ts';
@@ -317,18 +318,171 @@ export function diagnose(q: Question, answer: number): string {
  * `barName` is the Bar as Setup names it ("20 kg", "45 lb").
  */
 export function breakdownTerms(q: Question, barName: string): string[] {
+  return termsFor(q.sideShown, q.collarKg, q.totalShown, q.unit, barName);
+}
+
+// The breakdown's terms for any Side: its sum, doubled, the Bar, the Collars, the Total.
+function termsFor(
+  sideShown: number,
+  collarKg: number,
+  totalShown: number,
+  unit: Unit,
+  barName: string,
+): string[] {
   return [
-    `= ${q.sideShown}`,
+    `= ${sideShown}`,
     'x 2',
     `+ ${barName} bar`,
-    ...(q.collarKg > 0 ? [`+ 2 x ${r2(q.collarKg)} kg collars`] : []),
-    `= ${q.totalShown} ${q.unit}`,
+    ...(collarKg > 0 ? [`+ 2 x ${r2(collarKg)} kg collars`] : []),
+    `= ${totalShown} ${unit}`,
   ];
 }
 
 /** The breakdown as one line: "= 37.5 x 2 + 20 kg bar + 2 x 2.5 kg collars = 100 kg". */
 export function breakdownText(q: Question, barName: string): string {
   return breakdownTerms(q, barName).join(' ');
+}
+
+// ----- build the bar (RBAR-101, slice 2) -----
+//
+// The reverse drill: the quiz shows a Question's Total as the Target, the lifter taps
+// Plates onto one Side, then Checks. A Build question is a Question like any other
+// (drawn the same way, so its Target is a Total the Plates on hand load within the
+// Sleeve, the Plate limits and the gear), from its own seeded list so flipping modes
+// does not replay the Totals just read. Scoring is by the Total, not the stack: any
+// Side that makes the Target is right (CONTEXT.md, Way), and a right Side with more
+// Plates than the solver's gets a "fewest plates" note (ADR-0003 as amended by RBAR-69).
+
+/** Which drill the quiz runs: read a loaded Bar, or build one to a Target. */
+export type QuizMode = 'read' | 'build';
+export const QUIZ_MODES: readonly QuizMode[] = ['read', 'build'];
+
+// Mixed into the seed for Build questions, so the Build list is not the Read list.
+const BUILD_SALT = 0x5eedb11d;
+
+/**
+ * Build question `index` of the list `seed` makes: a Question whose `totalShown` is the
+ * Target and whose `side` is the solver's fewest-Plate Side for it. Same rules as
+ * quizQuestion (the gear, the Plate limits, the Collars, the one-Plate fallback); null
+ * only when the lifter has no Plates at all.
+ */
+export function buildQuestion(
+  seed: number,
+  index: number,
+  rig: QuizRig,
+  settings: QuizSettings,
+): Question | null {
+  return quizQuestion((seed ^ BUILD_SALT) | 0, index, rig, settings);
+}
+
+/**
+ * The Plates the Build palette offers: the lifter's Inventory with their Plate limits,
+ * minus the change Plates when the gear has them off (unless change Plates are all the
+ * lifter has, as quizQuestion's fallback allows). Every Build Target loads from it.
+ */
+export function buildPalette(rig: QuizRig, settings: QuizSettings): readonly InventoryEntry[] {
+  const drawn = drawFrom(rig, settings.change);
+  return hasUsablePlates(drawn) ? drawn : rig.inventory;
+}
+
+/**
+ * One tap on the Build palette: the Side with `plate` added, heaviest first, or an
+ * unchanged copy when the Plate would not fit the Sleeve (ADR-0012) or that size's
+ * Plate limit is already on it (ADR-0016; a size limited to none never goes on). The
+ * input is never mutated.
+ */
+export function buildTap(side: readonly Plate[], plate: InventoryEntry): readonly Plate[] {
+  const on = side.filter((p) => plateFace(p) === plateFace(plate)).length;
+  if (on >= (plate.maxPerSide ?? Infinity)) return [...side];
+  return addPlate(side, plate);
+}
+
+/** What a Check finds: the lifter's Side against the Target. */
+export interface BuildResult {
+  readonly right: boolean;
+  /** The lifter's Side, heaviest first. */
+  readonly side: readonly Plate[];
+  /** Its Side Load in the question's Unit (faces, exact). */
+  readonly sideShown: number;
+  /** The Total it makes (Bar + 2 x Collar + 2 x Side), in kg and as shown. */
+  readonly totalKg: number;
+  readonly totalShown: number;
+  /** Total minus Target, in the question's Unit, as shown (0 when right). */
+  readonly off: number;
+  /** The solver's fewest-Plate Side for the Target (the question's Side). */
+  readonly fewest: readonly Plate[];
+  /** Right, but with more Plates than `fewest`. */
+  readonly moreThanFewest: boolean;
+  /** For a wrong Side, the named mistake or how far off it is; '' when right. */
+  readonly why: string;
+}
+
+// Totals in kg agree to well under any Plate: absorbs float drift, nothing more.
+const TOTAL_EPS = 1e-6;
+
+/**
+ * Check a built Side against a Build question: right when Bar + 2 x Collar + 2 x Side
+ * equals the Target (any stack that makes it counts), with the fewest-Plates comparison
+ * and, for a wrong Side, why it missed (buildDiagnose).
+ */
+export function checkBuild(q: Question, built: readonly Plate[]): BuildResult {
+  const side = [...built].sort((a, b) => b.kg - a.kg);
+  const sideKg = side.reduce((s, p) => s + p.kg, 0);
+  const totalKg = q.barKg + 2 * q.collarKg + 2 * sideKg;
+  const right = Math.abs(totalKg - q.totalKg) < TOTAL_EPS;
+  const totalShown = shownValue(kgToUnit(totalKg, q.unit), q.unit);
+  const sideShown = faceSum(side);
+  return {
+    right,
+    side,
+    sideShown,
+    totalKg,
+    totalShown,
+    off: right ? 0 : r2(totalShown - q.totalShown),
+    fewest: q.side,
+    moreThanFewest: right && side.length > q.side.length,
+    why: right ? '' : buildDiagnose(q, sideShown),
+  };
+}
+
+/**
+ * Why a built Side (its sum `sideShown`, in the question's Unit) misses the Target, in
+ * a few words: "Forgot the Bar" (twice the Side, plus Collars, is the Target), "Forgot
+ * the collars", "Loaded both sides on one" (the Side is the whole Target less the Bar
+ * and Collars), else how far the Total is off ("5 kg over", "2.5 kg under"). '' when
+ * the Total is the Target.
+ */
+export function buildDiagnose(q: Question, sideShown: number): string {
+  const u = q.unit;
+  const tol = u === 'lb' ? 0.5 : 0.005;
+  const bar = kgToUnit(q.barKg, u);
+  const col = kgToUnit(q.collarKg, u);
+  const target = q.totalShown;
+  const d = r2(shownValue(bar + 2 * col + 2 * sideShown, u) - target);
+  if (Math.abs(d) <= tol) return '';
+  const named: (readonly [number, string])[] = [
+    [(target - 2 * col) / 2, 'Forgot the Bar'],
+    ...(q.collarKg > 0 ? [[(target - bar) / 2, 'Forgot the collars'] as const] : []),
+    [target - bar - 2 * col, 'Loaded both sides on one'],
+  ];
+  const hit = named.find(([side]) => side > 0 && Math.abs(side - sideShown) <= tol);
+  if (hit) return hit[1];
+  return `${Math.abs(d)} ${u} ${d > 0 ? 'over' : 'under'}`;
+}
+
+/** The note for a right Side with extra Plates: "Fewest plates: 25 + 10"; else ''. */
+export function fewestNote(r: BuildResult): string {
+  if (!r.moreThanFewest) return '';
+  return `Fewest plates: ${r.fewest.map((p) => faceText(Number(plateFace(p)))).join(' + ')}`;
+}
+
+/**
+ * The wrong-answer breakdown of what was built, in the slice 1 style, as the terms the
+ * line wraps between: ["= 35", "x 2", "+ 20 kg bar", "= 90 kg"]. The shell sets it
+ * against the Target (and `r.why`).
+ */
+export function builtBreakdownTerms(q: Question, r: BuildResult, barName: string): string[] {
+  return termsFor(r.sideShown, q.collarKg, r.totalShown, q.unit, barName);
 }
 
 // ----- the keypad -----

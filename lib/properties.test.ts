@@ -109,6 +109,12 @@ import type { PlatesOnHand } from './platesonhand.ts';
 import {
   COLLARS_MODES,
   MAX_PLATES_CHOICES,
+  buildPalette,
+  buildQuestion,
+  buildTap,
+  builtBreakdownTerms,
+  checkBuild,
+  fewestNote,
   diagnose,
   isRight,
   mistakes,
@@ -120,7 +126,7 @@ import {
   answerOf,
   MAX_ANSWER_CHARS,
 } from './quiz.ts';
-import type { QuizRig, QuizSettings } from './quiz.ts';
+import type { Question, QuizRig, QuizSettings } from './quiz.ts';
 
 const SEED = 62;
 const RUNS = 300;
@@ -2510,6 +2516,119 @@ describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-00
         if (d !== '') expect(Number.isFinite(answerOf(d))).toBe(true);
       }),
       opts,
+    );
+  });
+
+  // ----- build the bar (RBAR-101) -----
+
+  // The Side sum a Build question's Target asks for: (Target - Bar - 2 x Collar) / 2.
+  const targetSideKg = (q: Question): number => (q.totalKg - q.barKg - 2 * q.collarKg) / 2;
+  // Tap every Plate of `side` onto an empty Side from the palette, as the lifter would.
+  const tapAll = (side: readonly Plate[], pal: readonly InventoryEntry[]): readonly Plate[] =>
+    side.reduce<readonly Plate[]>(
+      (s, p) => buildTap(s, pal.find((e) => plateFace(e) === plateFace(p))!),
+      [],
+    );
+
+  it('a Build Target is reachable: the palette, within the Sleeve and the Plate limits, taps on its fewest-Plate Side, which the oracle agrees is fewest (RBAR-101, ADR-0003, ADR-0012, ADR-0016)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {
+        const qr = quizRig(rig, caps);
+        const q = buildQuestion(seed, index, qr, settings);
+        if (!q) {
+          expect(qr.inventory.every((p) => p.maxPerSide === 0)).toBe(true);
+          return;
+        }
+        const pal = buildPalette(qr, settings);
+        // Every Plate of the Side is on the palette, and tapping them on builds it.
+        expect(tapAll(q.side, pal).map(plateFace)).toEqual(q.side.map(plateFace));
+        expect(checkBuild(q, q.side).right).toBe(true);
+        expect(checkBuild(q, q.side).moreThanFewest).toBe(false);
+        const units = Math.round(targetSideKg(q) / GRID_KG[rig.set]);
+        const pick = oracleFor(pal, rig.set).pick(units);
+        expect(pick).not.toBeNull();
+        expect(q.side.length).toBe(pick!.length);
+      }),
+      quizOpts,
+    );
+  });
+
+  it('a Build question keeps to the gear: at most its Plates per side, Collars by the same rule as Read, seeded (RBAR-101, ADR-0008)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {
+        const qr = quizRig(rig, caps);
+        const q = buildQuestion(seed, index, qr, settings);
+        if (!q) return;
+        expect(q).toEqual(buildQuestion(seed, index, qr, settings));
+        expect(q.side.length).toBeLessThanOrEqual(settings.maxPlates);
+        const offered = rig.collarKg > 0 && PLATE_SETS[rig.set].unit === 'kg';
+        if (!offered || settings.collars === 'off') expect(q.collarKg).toBe(0);
+        if (offered && settings.collars === 'always') expect(q.collarKg).toBe(rig.collarKg);
+        expect(q.totalKg).toBeCloseTo(rig.barKg + 2 * q.collarKg + 2 * sideLoadKg(q.side), 9);
+      }),
+      quizOpts,
+    );
+  });
+
+  it('any Side that makes the Target is right, whatever its stack; only one with more Plates than the fewest gets the note (RBAR-101, ADR-0003 as amended by RBAR-69)', () => {
+    fc.assert(
+      fc.property(caseArb, ({ rig, caps, settings, seed, index }) => {
+        const qr = quizRig(rig, caps);
+        const q = buildQuestion(seed, index, qr, settings);
+        if (!q) return;
+        const pal = buildPalette(qr, settings);
+        let n = 0;
+        for (const way of sideLoads(targetSideKg(q), pal)) {
+          if (n++ >= 6) break;
+          const r = checkBuild(q, way);
+          expect(r.right).toBe(true);
+          expect(r.why).toBe('');
+          expect(r.off).toBe(0);
+          expect(way.length).toBeGreaterThanOrEqual(q.side.length);
+          expect(r.moreThanFewest).toBe(way.length > q.side.length);
+          expect(fewestNote(r) !== '').toBe(r.moreThanFewest);
+        }
+        expect(n).toBeGreaterThan(0);
+      }),
+      quizOpts,
+    );
+  });
+
+  it('a built Side is right exactly when Bar + 2 x Collar + 2 x Side is the Target; a wrong one is off by Total - Target and says why (RBAR-101, ADR-0002, ADR-0008)', () => {
+    const tapsArb = caseArb.chain((c) =>
+      fc.record({ c: fc.constant(c), picks: fc.array(fc.nat(), { maxLength: 8 }) }),
+    );
+    fc.assert(
+      fc.property(tapsArb, ({ c: { rig, caps, settings, seed, index }, picks }) => {
+        const qr = quizRig(rig, caps);
+        const q = buildQuestion(seed, index, qr, settings);
+        if (!q) return;
+        const pal = buildPalette(qr, settings).filter((p) => p.maxPerSide !== 0);
+        const built = picks.reduce<readonly Plate[]>((s, i) => buildTap(s, pal[i % pal.length]), []);
+        // Taps never pass the Sleeve or a Plate limit.
+        expect(sideWidthMm(built)).toBeLessThanOrEqual(SLEEVE_MM + EPS);
+        for (const p of pal) {
+          const on = built.filter((x) => plateFace(x) === plateFace(p)).length;
+          expect(on).toBeLessThanOrEqual(p.maxPerSide ?? Infinity);
+        }
+        const r = checkBuild(q, built);
+        const totalKg = q.barKg + 2 * q.collarKg + 2 * sideLoadKg(built);
+        // Independently of the kg comparison: the Total as shown is the Target as shown.
+        expect(r.right).toBe(shownIn(totalKg, q.unit) === q.totalShown);
+        expect(r.totalShown).toBe(shownIn(totalKg, q.unit));
+        if (r.right) {
+          expect(r.why).toBe('');
+        } else {
+          expect(r.off).toBeCloseTo(r.totalShown - q.totalShown, 9);
+          expect(r.off).not.toBe(0);
+          expect(r.why).not.toBe('');
+          expect(r.moreThanFewest).toBe(false);
+          const terms = builtBreakdownTerms(q, r, 'bar');
+          expect(terms[0]).toBe(`= ${r.sideShown}`);
+          expect(terms[terms.length - 1]).toBe(`= ${r.totalShown} ${q.unit}`);
+        }
+      }),
+      quizOpts,
     );
   });
 });
