@@ -29,7 +29,7 @@ import { LONG_PRESS_MS } from './recents.ts';
 import { decodeWithin } from '../lib/decode.ts';
 import { waysFor } from '../lib/ways.ts';
 import { addPlate, encode, removePlate } from '../lib/encode.ts';
-import { DEFAULT_BAR_KG, DEFAULT_COLLAR_KG, atSleeveCapacity, barWithCollars, plateFace, sideWidthMm } from '../lib/plates.ts';
+import { DEFAULT_BAR_KG, DEFAULT_COLLAR_KG, atSleeveCapacity, barWithCollars, sideWidthMm } from '../lib/plates.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import {
   parseRecents,
@@ -52,7 +52,7 @@ import { format, shownIn, displayCeilingKg, draftToKg, stepFor } from '../lib/un
 import type { Unit } from '../lib/units.ts';
 import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import type { Decoded, Loadout } from '../lib/decode.ts';
-import { linkUrl } from '../lib/link.ts';
+import { linkUrl, restackForLink } from '../lib/link.ts';
 import type { LinkState } from '../lib/link.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import { planEasyRamp } from '../lib/moves.ts';
@@ -1322,21 +1322,17 @@ class RackConsole extends HTMLElement {
   // with a big Plate outside a lighter one (ADR-0015 as amended) travels as the same
   // Plates restacked, never as "No link".
   private shareLink(): string | null {
-    // Each Plate is matched to its set's base Inventory entry by value (face and kg),
-    // not identity: a Plates on Hand limit (RBAR-72) loads a `withLimits` copy of its
-    // size, which the link must still carry. Only a Plate the set lacks (not expected)
-    // drops out; then the Side goes as is and serializeLink refuses it ("No link").
-    const inventory = plateSetFor(this._plateSetKey).inventory;
-    const stacked = inventory.flatMap((p) =>
-      this.side.filter((s) => s.kg === p.kg && plateFace(s) === plateFace(p)).map(() => p),
-    );
+    // Restacked against the set's base Inventory by value (restackForLink). A Plate the
+    // set lacks (not expected: a set switch drops the Side, ADR-0010) restacks to null;
+    // then the Side goes as is and serializeLink refuses it ("No link").
+    const stacked = restackForLink(this.side, plateSetFor(this._plateSetKey).inventory);
     const load = {
       set: this._plateSetKey,
       barKg: this._barKg,
       // serializeLink validates the Collar against the offered options.
       collarKg: this.loadCollarKg() as LinkState['collarKg'],
       unit: this.activeUnit(),
-      side: stacked.length === this.side.length ? stacked : this.side,
+      side: stacked ?? this.side,
     };
     if (this.mode === 'encode') return linkUrl({ ...load, mode: 'encode' });
     const row = this.warmRow();

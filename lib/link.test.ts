@@ -3,10 +3,11 @@
 // invariants live in lib/properties.test.ts; these pin the concrete examples.
 import { describe, it, expect } from 'vitest';
 import {
-  serializeLink, parseLink, linkUrl, readingFits, MAX_LINK_LENGTH, MAX_TARGET_KG,
+  serializeLink, parseLink, linkUrl, readingFits, restackForLink, MAX_LINK_LENGTH,
+  MAX_TARGET_KG,
 } from './link.ts';
 import type { LinkState } from './link.ts';
-import { ELEIKO_KG, IRON_LB } from './plates.ts';
+import { ELEIKO_KG, IRON_LB, plateFace, withLimits } from './plates.ts';
 import type { Plate } from './plates.ts';
 import { lbToKg, shownIn } from './units.ts';
 import { SHARE_LINK } from './summary.ts';
@@ -426,5 +427,38 @@ describe('Another way loads round-trip (RBAR-66)', () => {
       targetKg: Number(lbToKg(165).toFixed(2)),
     };
     expect(parse(serializeLink(s)!)).toEqual(s);
+  });
+});
+
+describe('restackForLink: the link\'s one Side order (RBAR-78)', () => {
+  const kg = (n: number) => ELEIKO_KG.find((p) => p.kg === n)!;
+
+  it('restacks a big Plate outside a lighter one heaviest-first, as Inventory entries', () => {
+    const out = restackForLink([kg(10), kg(25), kg(2.5), kg(25)], ELEIKO_KG);
+    expect(out!.map((p) => p.kg)).toEqual([25, 25, 10, 2.5]);
+    expect(out!.every((p) => ELEIKO_KG.includes(p))).toBe(true);
+  });
+
+  it('matches a Plates on Hand copy by value, not identity (RBAR-72)', () => {
+    const limited = withLimits(ELEIKO_KG, { [plateFace(kg(10))]: 1 });
+    const ten = limited.find((p) => p.kg === 10)!;
+    expect(ten).not.toBe(kg(10));
+    expect(restackForLink([ten, kg(20)], ELEIKO_KG)!.map((p) => p.kg)).toEqual([20, 10]);
+  });
+
+  it('keeps every Plate: the restack is the same multiset as the Side', () => {
+    const side = [kg(5), kg(5), kg(25), kg(0.5), kg(15)];
+    const out = restackForLink(side, ELEIKO_KG)!;
+    expect(out).toHaveLength(side.length);
+    expect(out.map((p) => p.kg).sort()).toEqual(side.map((p) => p.kg).sort());
+  });
+
+  it('is null when any Plate is not in the set, never a Side with it dropped', () => {
+    expect(restackForLink([kg(25), IRON_LB[0]], ELEIKO_KG)).toBeNull();
+    expect(restackForLink([IRON_LB[0]], ELEIKO_KG)).toBeNull();
+  });
+
+  it('a bare Bar restacks to a bare Bar', () => {
+    expect(restackForLink([], ELEIKO_KG)).toEqual([]);
   });
 });

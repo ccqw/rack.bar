@@ -218,6 +218,25 @@ export function linkUrl(state: LinkState): string | null {
 }
 
 /**
+ * A Side restacked into the link's one Side order (RBAR-78): each Plate replaced by
+ * the set Inventory entry with its face and kg, in Inventory (heaviest-first) order.
+ * Matching by value, not identity, keeps a Plates on Hand `withLimits` copy (RBAR-72)
+ * linkable. Null when any Plate has no matching entry, so the caller sends the Side
+ * as is and serializeLink refuses it ("No link") rather than a link with a Plate
+ * silently dropped.
+ */
+export function restackForLink(
+  side: readonly Plate[],
+  inventory: readonly Plate[],
+): Plate[] | null {
+  const ranks = side.map((s) =>
+    inventory.findIndex((p) => p.kg === s.kg && plateFace(p) === plateFace(s)),
+  );
+  if (ranks.some((r) => r < 0)) return null;
+  return ranks.sort((a, b) => a - b).map((r) => inventory[r]);
+}
+
+/**
  * Split the raw fragment on `&` and `=` FIRST, then percent-decode each known value
  * (a messenger may send `,` as `%2C`). Splitting before decoding means an encoded
  * `%26` / `%3D` can never become a separator, so no value can smuggle in another key.
