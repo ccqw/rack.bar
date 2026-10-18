@@ -16,6 +16,3 @@ export const GEAR_GLYPH =
 // Back to the calculator: a left chevron (viewBox 0 0 16 16).
 export const BACK_GLYPH = '<path d="M10 3L5 8l5 5"></path>';
 
-// The keypad's delete key (viewBox 0 0 20 16).
-export const DEL_GLYPH =
-  '<path d="M6 2h11v12H6L1.5 8z"></path><path d="M9.5 5.5l5 5M14.5 5.5l-5 5"></path>';

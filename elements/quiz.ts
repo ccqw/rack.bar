@@ -19,7 +19,8 @@ import { DISC_FILL } from './discfill.ts';
 import { SHORT_SCREEN } from './fit.ts';
 import { readPersisted, writePersisted } from './persist.ts';
 import { SETUP_LINK, loadRig } from './rig.ts';
-import { BACK_GLYPH, DEL_GLYPH, GEAR_GLYPH } from './quizglyphs.ts';
+import { BACK_GLYPH, GEAR_GLYPH } from './quizglyphs.ts';
+import { DEL_ICON } from './delglyph.ts';
 import { DISC_INK, darkInk, plateLabel } from '../lib/sleevefit.ts';
 import { PLATE_SETS } from '../lib/platesets.ts';
 import { barLabel, barsFor } from '../lib/custombars.ts';
@@ -231,7 +232,7 @@ class RackQuiz extends HTMLElement {
   private render(): void {
     const keys = KEYS.map(([k, label]) =>
       k === 'del'
-        ? `<button type="button" class="k fn" data-key="del" aria-label="Delete"><svg width="20" height="16" viewBox="0 0 20 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${DEL_GLYPH}</svg></button>`
+        ? `<button type="button" class="k fn" data-key="del" aria-label="Delete">${DEL_ICON}</button>`
         : `<button type="button" class="k" data-key="${k}">${label}</button>`,
     );
     // Row by row: 1 2 3 del / 4 5 6 [go] / 7 8 9 / . 0 Show; go spans the last three.
