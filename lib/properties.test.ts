@@ -25,7 +25,14 @@ import {
   isOfferedCollar,
 } from './plates.ts';
 import type { Plate } from './plates.ts';
-import { SLEEVE_PAD_PX, sleeveLayout } from './sleevefit.ts';
+import {
+  BUMPER_MM,
+  MAX_SCALE,
+  SLEEVE_PAD_PX,
+  grownMaxScale,
+  sleeveFit,
+  sleeveLayout,
+} from './sleevefit.ts';
 import {
   draftToKg,
   displayCeilingKg,
@@ -1922,6 +1929,82 @@ describe('Sleeve layout properties (ADR-0004, ADR-0013; shared with the share pi
         for (const r of ratios) expect(r).toBeCloseTo(ratios[0]!, 9);
         for (const d of discs) expect(d.h).toBeLessThanOrEqual(host.h - SLEEVE_PAD_PX + 1e-6);
       }),
+      opts,
+    );
+  });
+});
+
+// The Home Screen app's bigger Bar (RBAR-99, ADR-0013 as amended): sleeveFit's zoom cap
+// may rise above the handoff's MAX_SCALE (grownMaxScale), but the width fit and the
+// height fit still bound it. The oracle is a width-only fit at a cap no row reaches.
+describe('Bigger Bar in the Home Screen app (RBAR-99, ADR-0013 as amended)', () => {
+  const fitArb = fc.record({
+    w: fc.integer({ min: 200, max: 520 }),
+    h: fc.oneof(fc.constant(0), fc.integer({ min: 84, max: 600 })),
+    collars: fc.boolean(),
+    m1: fc.double({ min: MAX_SCALE, max: 2, noNaN: true }),
+    m2: fc.double({ min: MAX_SCALE, max: 2, noNaN: true }),
+  });
+  // Binary-search slack: fitRow halves its interval 24 times under each cap.
+  const EPS = 1e-5;
+
+  it('a grown Bar never draws past the width fit or the host height (ADR-0013, RBAR-99)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, fitArb, ({ rig, t }, f) => {
+        const { side } = decode(t, rig.baselineKg, rig.inventory).primary;
+        const fit = sleeveFit(side, f.w, f.h, f.collars, f.m1);
+        const widthOnly = sleeveFit(side, f.w, 0, f.collars, 4);
+        expect(fit.scale).toBeLessThanOrEqual(widthOnly.scale + EPS);
+        expect(fit.scale).toBeLessThanOrEqual(f.m1 + EPS);
+        if (f.h > 0) {
+          expect(fit.scale * BUMPER_MM).toBeLessThanOrEqual(Math.max(0, f.h - SLEEVE_PAD_PX) + EPS);
+        }
+      }),
+      opts,
+    );
+  });
+
+  it('a higher zoom cap never draws a smaller Bar: monotone in maxScale (ADR-0013, RBAR-99)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, fitArb, ({ rig, t }, f) => {
+        const { side } = decode(t, rig.baselineKg, rig.inventory).primary;
+        const [lo, hi] = f.m1 <= f.m2 ? [f.m1, f.m2] : [f.m2, f.m1];
+        const a = sleeveFit(side, f.w, f.h, f.collars, lo);
+        const b = sleeveFit(side, f.w, f.h, f.collars, hi);
+        expect(a.scale).toBeLessThanOrEqual(b.scale + EPS);
+      }),
+      opts,
+    );
+  });
+
+  it('grow 0 draws exactly the handoff Bar: a browser tab is unchanged (ADR-0013, RBAR-99)', () => {
+    fc.assert(
+      fc.property(rigTargetArb, fitArb, ({ rig, t }, f) => {
+        const { side } = decode(t, rig.baselineKg, rig.inventory).primary;
+        expect(sleeveFit(side, f.w, f.h, f.collars, grownMaxScale(f.w, 0))).toEqual(
+          sleeveFit(side, f.w, f.h, f.collars),
+        );
+      }),
+      opts,
+    );
+  });
+
+  it('the grown cap is never below the handoff zoom, and grow 0 is exactly it (ADR-0013, RBAR-99)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 1000 }),
+        fc.double({ min: -1, max: 2, noNaN: true }),
+        (w, g) => {
+          expect(grownMaxScale(w, g)).toBeGreaterThanOrEqual(MAX_SCALE);
+          expect(grownMaxScale(w, 0)).toBe(MAX_SCALE);
+          expect(grownMaxScale(w, Number.NaN)).toBe(MAX_SCALE);
+          // A bumper at the grown cap stands grow x the width, or the handoff's 168px.
+          expect(grownMaxScale(w, g) * BUMPER_MM).toBeCloseTo(
+            Math.max(MAX_SCALE * BUMPER_MM, Math.max(0, g) * w),
+            6,
+          );
+        },
+      ),
       opts,
     );
   });

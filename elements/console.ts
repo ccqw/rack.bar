@@ -19,7 +19,7 @@
 import { MINUS_ICON, PLUS_ICON } from './entry.ts';
 import './palette.ts';
 import './loaded.ts';
-import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX } from './sleeve.ts';
+import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from './sleeve.ts';
 import './recents.ts';
 import './share.ts';
 import './fullscreen.ts';
@@ -439,7 +439,9 @@ class RackConsole extends HTMLElement {
            stay readable) and a cap (the handoff's SLEEVE_BLOCK_PX, label row included), and
            the sleeve fills it under the label row; the sleeve fits its discs to that
            height. A short phone gets a shorter Bar picture; a tall one gets the full
-           handoff block, never more -- spare height falls below the column. */
+           handoff block, never more (in a browser tab) -- spare height falls below the
+           column. The Home Screen app draws a bigger Bar and puts the rest under it
+           (RBAR-99). */
         /* RBAR-75 (ADR-0013 amended): the label row is in flow inside the 204px block
            and the icons overlap the sleeve (.icons below), so the cap is the handoff's
            block itself and the floor is the label row + gap + SLEEVE_MIN_PX. */
@@ -448,9 +450,27 @@ class RackConsole extends HTMLElement {
           display: flex; flex-direction: column; gap: ${VIZ_GAP_PX}px;
           flex: 1 1 0;
           min-height: ${VIZ_PAD_PX + LABEL_PX + VIZ_GAP_PX + SLEEVE_MIN_PX}px;
-          max-height: ${SLEEVE_BLOCK_PX}px;
+          /* RBAR-99 (ADR-0013 amended): in the Home Screen app the block has no cap
+             (--rack-bar-block-max is none there, tokens.css): it takes the column's spare
+             height and its sleeve, capped below, draws the bigger Bar at the top of it,
+             with what is left under the sleeve. A browser tab keeps the handoff's block. */
+          max-height: var(--rack-bar-block-max, ${SLEEVE_BLOCK_PX}px);
+          /* The sleeve's cap below is a share of this block's width (cqw). Only the label
+             row, the icons and the sleeve live here: nothing position: fixed, which an
+             inline-size container would re-anchor. */
+          container-type: inline-size;
         }
-        .viz rack-sleeve { flex: 1 1 0; min-height: 0; }
+        /* RBAR-99: the sleeve's cap is its pad + a bumper of --rack-bar-grow x its width
+           (0.65 in the Home Screen app), the bumper <rack-sleeve>'s grownMaxScale allows;
+           never below the handoff's sleeve (the block less the label row). It reads the
+           grow as --rack-sleeve-grow, set only here, so the quiz's and the fullscreen
+           card's sleeves keep the handoff zoom. */
+        .viz rack-sleeve {
+          flex: 1 1 0; min-height: 0;
+          max-height: max(${SLEEVE_BLOCK_PX - VIZ_PAD_PX - LABEL_PX - VIZ_GAP_PX}px,
+            calc(${SLEEVE_PAD_PX}px + var(--rack-bar-grow, 0) * 100cqw));
+          --rack-sleeve-grow: var(--rack-bar-grow, 0);
+        }
         /* Another way (RBAR-66): with more than one way to make the Total, the bar is a
            button that steps to the next one. No hint text; a press darkens the block
            (prototype H .sleeve.tappable:active). No callout or selection on a hold --

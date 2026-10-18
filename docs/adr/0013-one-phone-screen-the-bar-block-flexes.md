@@ -109,3 +109,71 @@ at 375x548. By Plates and Warm up are unchanged (By Plates 162px / 107px). Every
 still has `over 0`. At 320 wide, the status line closes up its gap and pill pads so the
 longest miss ("You asked 1000 kg" beside "630 KG SHORT") stays inside the column.
 fit-check now reports any overrun as LINE CLIPPED.
+
+## Amendment: the Home Screen app fills the screen (RBAR-99)
+
+From the Home Screen, an iPhone showed an empty strip about 1/6 of the screen tall
+under the controls. Standalone has no Safari toolbars, so a 393x852 iPhone gives the page
+852px less the insets (59px status bar, 34px home indicator), about 100px more than the
+Must size. The column was built for 659px: the bar block reached its 204px cap and,
+per "spare height falls below the column", the rest became the strip.
+
+- **Safari is unchanged.** In a browser tab `body` stays exactly `100svh`, and
+  `--rack-bar-air` (tokens.css) is `0px`, so the spare still falls below the column.
+- **In standalone** (`@media (display-mode: standalone)`) `body` is `100dvh`. With no
+  toolbars to collapse, svh's reason for existing does not apply, and dvh is the
+  height the page has. The body keeps its safe-area padding, so the controls clear the
+  home indicator.
+- **The spare goes under the bar block.** In standalone `--rack-bar-air` is `auto`, and
+  the bar block (and the quiz's bar block) takes it as `margin-bottom`. Auto margins
+  only get what flexing leaves, so the bar block still grows to its cap first. The
+  header, the mode toggle and the Bar keep the browser tab's positions, the controls
+  sit on the bottom inset (thumb reach), and the keypad, tiles and stairs keep their
+  size. Below the cap nothing changes.
+- **fit-check** adds `393x852 standalone` (insets through CDP
+  `Emulation.setSafeAreaInsetsOverride`; the standalone rules are copied to the top
+  level, as Chromium can't emulate `display-mode`) and reports `strip n`, the unused
+  height above the bottom inset. Measured: strip 0 in every calculator state (it was
+  222px By Weight with no Recents, 80px By Plates, 53px Warm up), and the quiz's own
+  12px bottom pad (it was 124px). The four Safari viewports are unchanged.
+
+A real check needs the iPhone Home Screen app: Chromium can't confirm what iOS gives
+`100dvh` and the insets in standalone.
+
+### The Bar draws bigger in the Home Screen app (RBAR-99, the owner's pick)
+
+On the phone, the first cut left the Bar at the handoff's 168px bumper with a big gap
+under it (164px in By Weight at 112 kg, 80px By Plates, 53px Warm up). The owner
+compared three variants (bigger; same size centred; bigger and centred) and picked the
+bigger Bar, in the Home Screen app only. This amends "a tall host never zooms past the
+handoff's 168px bumper" and "it does not go into a bigger Bar" for standalone.
+
+- **The rule.** A bumper may stand up to `--rack-bar-grow` x the sleeve's width. The
+  token is `0` in a browser tab and `0.65` in standalone (tokens.css). The zoom cap is
+  `grownMaxScale(hostW, grow)` in lib/sleevefit.ts: `max(MAX_SCALE, grow x hostW /
+  450 mm)`, passed to `sleeveFit` as its `maxScale`. The height fit (a bumper stands
+  `SLEEVE_PAD_PX` under the host) and the width fit (a heavy load zooms out to fit the
+  sleeve) still apply under it, so a loaded sleeve draws exactly as wide as before.
+- **The sleeve's cap grows to match**: `max(178px, 8px + grow x 100cqw)` (the sleeve's
+  pad + the bumper; 178px is the handoff's block less the label row), with the bar
+  block (`.viz`) as the size container. In standalone the bar block itself has no cap
+  (`--rack-bar-block-max: none`), so it takes the spare height and the sleeve draws the
+  bigger Bar at its top. With grow 0 and the block's 204px fallback, a browser tab is
+  unchanged at every viewport.
+- **Only the bar block is a query container.** An inline-size container re-anchors
+  `position: fixed` descendants, and the column holds fixed sheets (the Warm up
+  keypad); the bar block holds only the label row, the icons and the sleeve.
+- **Opt-in per sleeve.** `<rack-sleeve>` reads `--rack-sleeve-grow`, which only the
+  console sets (from `--rack-bar-grow`). The quiz and the fullscreen card keep the
+  handoff zoom.
+- **What is left goes under the Bar.** No centring: the Bar's top stays where the
+  browser tab puts it in every mode.
+
+Measured at 393x852 standalone (By Weight 112 kg / By Plates / Warm up Working set):
+sleeve 235 / 235 / 231px (the drawn block 261 / 261 / 257px), bumper 227 / 227 / 223px
+(was 168), leftover under the Bar 107 / 23 / 0px, strip 0, over 0; the Bar never moves
+between modes. The four Safari viewports' fit-check lines are identical to main's.
+
+A desktop-installed app also matches `display-mode: standalone`. There the column is at
+most 520px wide, so a bumper may reach about 338px; the height and width fits still
+bound it, which is the rule as intended (the Bar scales with the room it has).

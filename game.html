@@ -24,7 +24,7 @@
     * { box-sizing: border-box; }
     html, body { margin: 0; }
     html { touch-action: manipulation; }
-    /* One phone screen (ADR-0013): exactly the small viewport, a fixed column. */
+    /* One phone screen (ADR-0013): in a browser tab exactly the small viewport, a fixed column. */
     body {
       background: var(--rack-bg);
       color: var(--rack-fg);
@@ -34,6 +34,10 @@
       padding: env(safe-area-inset-top) env(safe-area-inset-right)
                env(safe-area-inset-bottom) env(safe-area-inset-left);
       overflow-x: hidden;
+    }
+    /* The Home Screen app fills the whole screen (RBAR-99, as index.html). */
+    @media (display-mode: standalone) {
+      body { height: 100dvh; }
     }
   </style>
 </head>

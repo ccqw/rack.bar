@@ -161,19 +161,34 @@ export function darkInk(color: Plate['color']): boolean {
  * is MAX_SCALE, lowered so a bumper stands SLEEVE_PAD_PX shorter than the host (an
  * unmeasured height, 0, leaves it at MAX_SCALE); the discs get the width left after the
  * chrome, the drawn Collar (if any) and the gaps between discs. `<rack-sleeve>` and the
- * share picture both fit through this.
+ * share picture both fit through this. `maxScale` raises the zoom cap above MAX_SCALE
+ * (the Home Screen app's bigger bar, RBAR-99: see grownMaxScale); the height and width
+ * fits still apply under it.
  */
 export function sleeveFit(
   plates: readonly Plate[],
   hostW: number,
   hostH: number,
   collars = false,
+  maxScale = MAX_SCALE,
 ): RowFit {
   const cap =
-    hostH > 0 ? Math.min(MAX_SCALE, Math.max(0, hostH - SLEEVE_PAD_PX) / BUMPER_MM) : MAX_SCALE;
+    hostH > 0 ? Math.min(maxScale, Math.max(0, hostH - SLEEVE_PAD_PX) / BUMPER_MM) : maxScale;
   const discGaps = DISC_GAP_PX * Math.max(0, plates.length - 1);
   const collar = collarDrawn(plates, collars) ? COLLAR_GAP_PX + COLLAR_PX : 0;
   return fitRow(plates, hostW - CHROME_PX - collar - discGaps, cap);
+}
+
+/**
+ * The zoom cap for a sleeve `hostW` px wide that may grow (RBAR-99, ADR-0013 amended):
+ * a bumper may stand up to `grow` x the host's width, and never below the handoff's full
+ * zoom (MAX_SCALE). `grow` is the --rack-bar-grow token: 0 in a browser tab (so the cap
+ * stays MAX_SCALE), 0.65 in the Home Screen app. A non-finite or negative `grow` counts
+ * as 0.
+ */
+export function grownMaxScale(hostW: number, grow: number): number {
+  const g = Number.isFinite(grow) && grow > 0 ? grow : 0;
+  return Math.max(MAX_SCALE, (g * Math.max(0, hostW)) / BUMPER_MM);
 }
 
 /**

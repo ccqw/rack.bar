@@ -145,3 +145,71 @@ describe('favicon source', () => {
     expect(sizes).toEqual([16, 32, 48]);
   });
 });
+
+// RBAR-99: the Home Screen app has no Safari toolbars, so the page owns the whole
+// screen. In a browser tab the body stays exactly 100svh (ADR-0013: the layout never
+// jumps as the toolbars hide); in standalone it fills the dynamic viewport, and the
+// spare height goes under the bar block (--rack-bar-air) instead of into an empty
+// strip under the controls. CSS text, since happy-dom cannot match display-mode or lay
+// out; scripts/fit-check.js measures it at an emulated standalone size.
+describe('Home Screen app height (RBAR-99)', () => {
+  /** The body of every `@media (display-mode: standalone) { ... }` block in `css`. */
+  const standalone = (css: string) => {
+    const out: string[] = [];
+    for (const m of css.matchAll(/@media\s*\(display-mode:\s*standalone\)\s*\{/g)) {
+      let depth = 1;
+      let i = m.index! + m[0].length;
+      const start = i;
+      for (; depth > 0 && i < css.length; i++) {
+        if (css[i] === '{') depth++;
+        else if (css[i] === '}') depth--;
+      }
+      out.push(css.slice(start, i - 1));
+    }
+    return out;
+  };
+  const without = (css: string, parts: string[]) =>
+    parts.reduce((s, p) => s.replace(p, ''), css);
+
+  for (const page of ['index.html', 'game.html']) {
+    it(`${page}: fills 100dvh in standalone, keeps 100svh in a browser tab`, () => {
+      const html = read(page);
+      const sa = standalone(html);
+      expect(sa.join('\n')).toMatch(/body\s*\{[^}]*[^-]height:\s*100dvh/);
+      // The base rule (outside the standalone block) stays the small viewport.
+      const base = without(html, sa);
+      expect(base).toMatch(/body\s*\{[^}]*[^-]height:\s*100svh/);
+      expect(base).not.toMatch(/100dvh/);
+      // Equal specificity: the standalone rule only wins if it comes after the base one.
+      expect(html.indexOf('100dvh')).toBeGreaterThan(html.indexOf('100svh'));
+      // Still padded by the insets, so the controls clear the home indicator.
+      expect(html).toMatch(/env\(safe-area-inset-bottom\)/);
+    });
+  }
+
+  it('tokens.css: no air under the bar block in a tab, auto in standalone', () => {
+    const sa = standalone(tokens);
+    expect(without(tokens, sa)).toMatch(/--rack-bar-air:\s*0px;/);
+    expect(sa.join('\n')).toMatch(/:root\s*\{[^}]*--rack-bar-air:\s*auto;/);
+    // Equal specificity: the standalone value only wins if it comes after the default.
+    expect(tokens.indexOf('--rack-bar-air: auto')).toBeGreaterThan(
+      tokens.indexOf('--rack-bar-air: 0px'),
+    );
+  });
+
+  // The owner's pick (variant A): the Bar draws bigger in the Home Screen app only. A
+  // browser tab keeps grow 0, so the handoff's 204px block and 168px bumper (ADR-0013).
+  it('tokens.css: the bigger Bar (--rack-bar-grow) is standalone-only', () => {
+    const sa = standalone(tokens);
+    const base = without(tokens, sa);
+    expect(base).toMatch(/--rack-bar-grow:\s*0;/);
+    expect(base).not.toMatch(/--rack-bar-grow:\s*0\.\d/);
+    expect(sa.join('\n')).toMatch(/:root\s*\{[^}]*--rack-bar-grow:\s*0\.65;/);
+    expect(tokens.indexOf('--rack-bar-grow: 0.65')).toBeGreaterThan(
+      tokens.indexOf('--rack-bar-grow: 0;'),
+    );
+    // The uncapped bar block too: unset in a tab (the console's 204px fallback).
+    expect(sa.join('\n')).toMatch(/:root\s*\{[^}]*--rack-bar-block-max:\s*none;/);
+    expect(base).not.toMatch(/--rack-bar-block-max:/);
+  });
+});

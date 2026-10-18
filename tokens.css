@@ -156,6 +156,19 @@
   --rack-radius-tile: 11px;      /* a selector tile */
   --rack-radius-sheet: 24px;     /* a bottom sheet's top corners */
 
+  /* Layout. The air under the quiz's bar block (RBAR-99): the margin below it, which
+     takes only the height left once that block is at its cap. 0 in a browser tab
+     (ADR-0013: spare height falls below the column); `auto` in the Home Screen app,
+     below. (The console's bar block has no cap there: it takes the spare itself.) */
+  --rack-bar-air: 0px;
+  /* How big the Bar may draw (RBAR-99): a bumper may stand up to this share of the
+     sleeve's width, and the console's sleeve cap grows to hold it (never below the
+     handoff's 168px bumper). 0 in a browser tab: exactly the handoff's size. */
+  --rack-bar-grow: 0;
+  /* The bar block's height cap (RBAR-99) is left unset here: the console falls back to
+     the handoff's 204px block. The Home Screen app sets it to none, below, so the block
+     takes the spare height and its sleeve's own cap draws the bigger Bar. */
+
   /* Scrims (handoff "Setup sheet" / "Share card"). The share modal dims harder
      (.72) than a bottom sheet (.55). */
   --rack-scrim: rgba(5, 6, 7, 0.55);        /* setup / bottom sheets */
@@ -187,4 +200,13 @@
      the ones that wanted the ring use --rack-border-active directly. */
   --rack-line-strong: var(--rack-border-strong);
   --rack-radius: var(--rack-radius-card);
+}
+
+/* The Home Screen app (RBAR-99): no Safari toolbars, so the page owns the whole
+   screen and a tall phone has height to spare. The Bar draws bigger first (a bumper
+   up to 0.65 x the sleeve's width), and what is left goes under the Bar, not
+   into a strip under the controls. The body's own standalone height is in
+   index.html / game.html. */
+@media (display-mode: standalone) {
+  :root { --rack-bar-air: auto; --rack-bar-grow: 0.65; --rack-bar-block-max: none; }
 }

@@ -42,7 +42,8 @@
       background: var(--rack-bg);
       color: var(--rack-fg);
       font-family: var(--rack-font);
-      /* RBAR-67: exactly the small viewport (toolbars showing), a ceiling not a floor --
+      /* RBAR-67: in a browser tab, exactly the small viewport (toolbars showing; the Home
+         Screen app is below), a ceiling not a floor --
          the app column shrinks its bar block to fit rather than growing the page.
          box-sizing (above) keeps the safe-area padding inside this height. */
       height: 100svh;
@@ -53,6 +54,14 @@
     }
     /* No horizontal scroll at a phone width: the app is a single column. */
     body { overflow-x: hidden; }
+    /* RBAR-99: the Home Screen app has no toolbars to collapse, so svh's reason (a
+       layout that never jumps as Safari's toolbars hide) does not apply; fill the
+       dynamic viewport, the whole screen. The safe-area padding above stays inside
+       it, so the controls still clear the home indicator. tokens.css gives the spare
+       height to a bigger Bar and the room under it. */
+    @media (display-mode: standalone) {
+      body { height: 100dvh; }
+    }
   </style>
 </head>
 <body>

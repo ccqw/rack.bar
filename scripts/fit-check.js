@@ -43,15 +43,84 @@
 //   375x548 -- iPhone SE in Safari (the Nice)
 //   430x739 -- Pro Max in Safari (the Should)
 //   320x548 -- the narrowest supported width (horizontal-scroll guard)
+//
+// Since RBAR-99 the walk adds the Home Screen app (no Safari toolbars, the full screen):
+//
+//   393x852 standalone -- iPhone 15/16 from the Home Screen, 59px status-bar inset on
+//                         top and the 34px home indicator below
+//
+// Chromium can't emulate (display-mode: standalone) (CDP Emulation.setEmulatedMedia
+// ignores it), so a standalone page copies every `@media (display-mode: standalone)`
+// rule in the document's stylesheets to the top level once tokens.css and the page's
+// style have loaded: the real rules, not a copy kept here. The insets come from CDP
+// Emulation.setSafeAreaInsetsOverride, so env(safe-area-inset-*) pads the body as on
+// the phone; a Chromium without it takes the insets off the viewport height instead.
+// Standalone lines add `strip n`: the empty height between the column's last block and
+// the bottom inset (0 = the controls sit on the home indicator's inset, nothing unused).
+// They read STANDALONE NOT EMULATED if fewer than the two rules (tokens.css + the page)
+// were copied. Either one (a calculator strip above 0, or no emulation) adds a FAIL line.
 async (shared) => {
   const ORIGIN = 'http://localhost:5198';
-  const page = await shared.context().newPage();
   const SIZES = [
     [393, 659],
     [375, 548],
     [430, 739],
     [320, 548],
+    [393, 852, { top: 59, bottom: 34 }],
   ];
+  // One tab per kind of size: a standalone size gets a fresh tab with the rule copy
+  // (an init script) and the inset override, so the Safari sizes never see either.
+  let page = null;
+  let pageKind = null;
+  const sized = async ([w, h, insets]) => {
+    const kind = insets ? 'standalone' : 'tab';
+    if (kind !== pageKind) {
+      if (page) await page.close();
+      page = await shared.context().newPage();
+      pageKind = kind;
+      if (insets) {
+        await page.addInitScript(() =>
+          addEventListener('DOMContentLoaded', () => {
+            let n = 0;
+            for (const sheet of document.styleSheets) {
+              for (const r of [...sheet.cssRules]) {
+                if (r instanceof CSSMediaRule && /display-mode:\s*standalone/.test(r.conditionText)) {
+                  for (const inner of [...r.cssRules]) sheet.insertRule(inner.cssText, sheet.cssRules.length);
+                  n++;
+                }
+              }
+            }
+            window.__standaloneRules = n;
+          }),
+        );
+        try {
+          const cdp = await shared.context().newCDPSession(page);
+          await cdp.send('Emulation.setSafeAreaInsetsOverride', {
+            insets: { top: insets.top, bottom: insets.bottom, left: 0, right: 0 },
+          });
+          insetsInHeight = false;
+        } catch {
+          insetsInHeight = true;
+        }
+      }
+    }
+    const off = insets && insetsInHeight ? insets.top + insets.bottom : 0;
+    await page.setViewportSize({ width: w, height: h - off });
+  };
+  let insetsInHeight = false;
+  const label = ([w, h, insets]) =>
+    `${w}x${h}${insets ? ` standalone${insetsInHeight ? ' (insets off the height)' : ''}` : ''}`;
+  // In a page: the empty height between the last shown block of `blocks` and the body's
+  // bottom padding (the home-indicator inset). Passed into page.evaluate as source.
+  const STRIP = `(blocks) => {
+    const b = document.body.getBoundingClientRect();
+    const floor = b.bottom - parseFloat(getComputedStyle(document.body).paddingBottom);
+    const last = [...blocks]
+      .map((k) => k.getBoundingClientRect())
+      .filter((r) => r.height > 0)
+      .reduce((m, r) => Math.max(m, r.bottom), -Infinity);
+    return Math.round(floor - last);
+  }`;
   // Recent Targets, canonical kg: a round-up Target (100.3 -> 100 short, "Round up ->
   // 101"), an exact one on Comp (142), and an over-capacity one
   // ("Bar at capacity").
@@ -67,8 +136,9 @@ async (shared) => {
       [fn, arg],
     );
   const measure = () =>
-    page.evaluate(() => {
+    page.evaluate((stripSrc) => {
       const d = document.documentElement;
+      const stripOf = new Function('return ' + stripSrc)();
       const con = document.querySelector('rack-app').shadowRoot.querySelector('rack-console')
         .shadowRoot;
       // Exactly Share + fullscreen: an empty match must not pass the hit-test vacuously.
@@ -151,12 +221,14 @@ async (shared) => {
           .querySelector('rack-app')
           .shadowRoot.querySelector('rack-console')
           .shadowRoot.querySelector('rack-sleeve').clientHeight,
+        strip: stripOf(con.querySelector('.stack').children),
+        saRules: window.__standaloneRules ?? 0,
       };
-    });
+    }, STRIP);
 
   const rows = [];
-  for (const [w, h] of SIZES) {
-    await page.setViewportSize({ width: w, height: h });
+  for (const size of SIZES) {
+    await sized(size);
     for (const plateSet of ['comp', 'training']) {
       for (const unit of ['kg', 'lb']) {
         const reset = async (recents) => {
@@ -174,7 +246,7 @@ async (shared) => {
           await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
         };
         const record = async (state) =>
-          rows.push({ size: `${w}x${h}`, plateSet, unit, state, ...(await measure()) });
+          rows.push({ size: label(size), sa: !!size[2], plateSet, unit, state, ...(await measure()) });
         // Tap the Recent chip holding this kg Target (chips carry their canonical kg).
         const chip = (kg) =>
           inConsole(
@@ -310,8 +382,9 @@ async (shared) => {
   // visible viewports, the bar block being the one block that gives.
   const quizRows = [];
   const quizMeasure = () =>
-    page.evaluate(() => {
+    page.evaluate((stripSrc) => {
       const d = document.documentElement;
+      const stripOf = new Function('return ' + stripSrc)();
       const q = document.querySelector('rack-quiz').shadowRoot;
       const host = document.querySelector('rack-quiz').getBoundingClientRect();
       const math = q.querySelector('[data-math]');
@@ -334,10 +407,12 @@ async (shared) => {
         sheetH: panel ? Math.round(panel.getBoundingClientRect().height) : 0,
         sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
         sheetScroll: panel ? panel.scrollHeight - panel.clientHeight : 0,
+        strip: stripOf([...q.children].filter((k) => k !== gear)),
+        saRules: window.__standaloneRules ?? 0,
       };
-    });
-  for (const [w, h] of SIZES) {
-    await page.setViewportSize({ width: w, height: h });
+    }, STRIP);
+  for (const size of SIZES) {
+    await sized(size);
     for (const plateSet of ['comp', 'training']) {
       for (const collar of ['0', '2.5']) {
         await page.goto(ORIGIN + '/game.html');
@@ -356,7 +431,7 @@ async (shared) => {
         await page.reload();
         await page.waitForFunction(() => !!document.querySelector('rack-quiz')?.question);
         const record = async (state) =>
-          quizRows.push({ key: `${w}x${h} quiz: ${state}`, ...(await quizMeasure()) });
+          quizRows.push({ key: `${label(size)} quiz: ${state}`, sa: !!size[2], ...(await quizMeasure()) });
         const inQuiz = (src) =>
           page.evaluate((s) => {
             const el = document.querySelector('rack-quiz');
@@ -388,8 +463,12 @@ async (shared) => {
         mathClip: Math.max(r.mathClip, prev?.mathClip ?? 0),
         sheetScroll: Math.max(r.sheetScroll, prev?.sheetScroll ?? 0),
         hscroll: Math.max(r.hscroll, prev?.hscroll ?? 0),
+        strip: Math.max(r.strip, prev?.strip ?? -Infinity),
+        saRules: Math.min(r.saRules, prev?.saRules ?? Infinity),
       });
     } else {
+      prev.strip = Math.max(prev.strip, r.strip);
+      prev.saRules = Math.min(prev.saRules, r.saRules);
       prev.mathClip = Math.max(prev.mathClip, r.mathClip);
       prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
       prev.hscroll = Math.max(prev.hscroll, r.hscroll);
@@ -413,8 +492,12 @@ async (shared) => {
         pillLines: Math.max(r.pillLines, prev?.pillLines ?? 0),
         pillCut: Math.max(r.pillCut, prev?.pillCut ?? 0),
         quizHidden: r.quizHidden || (prev?.quizHidden ?? false),
+        strip: Math.max(r.strip, prev?.strip ?? -Infinity),
+        saRules: Math.min(r.saRules, prev?.saRules ?? Infinity),
       });
     } else {
+      prev.strip = Math.max(prev.strip, r.strip);
+      prev.saRules = Math.min(prev.saRules, r.saRules);
       prev.ruOver = Math.max(prev.ruOver, r.ruOver);
       if (!r.iconsHit) prev.iconsHit = false;
       if (r.iconsMissing) prev.iconsMissing = true;
@@ -428,8 +511,12 @@ async (shared) => {
     }
   }
   // The calculator lines first, then the quiz lines (a stable sort keeps each in order).
+  // Standalone lines (RBAR-99) add the strip under the column, and say so when the
+  // standalone rules were not copied (the line would be measuring the tab layout).
+  const saTail = (r) =>
+    r.sa ? `, strip ${r.strip}px${r.saRules < 2 ? ' STANDALONE NOT EMULATED' : ''}` : '';
   const lines = [...worst.entries()].sort(([, a], [, b]) => (a.quiz ? 1 : 0) - (b.quiz ? 1 : 0)).map(([key, r]) =>
-    r.quiz
+    (r.quiz
       ? `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
         `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
         `${r.mathClip > 0 ? ` MATH CLIPPED ${r.mathClip}` : ''}` +
@@ -451,7 +538,7 @@ async (shared) => {
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
-        : ''),
+        : '')) + saTail(r),
   );
   // The Setup sheet must fit without scrolling inside at every viewport, a None..All
   // row open included (RBAR-72, ADR-0013): any inner scroll fails the run.
@@ -462,5 +549,12 @@ async (shared) => {
     .filter(([, r]) => !r.quiz && (r.pillLines !== 1 || r.quizHidden))
     .map(([k]) => k);
   if (header.length) lines.push(`FAIL: the header pill wraps or the quiz door hides at ${header.join('; ')}`);
+  // The Home Screen app leaves no unused strip under the calculator's controls (RBAR-99;
+  // the quiz keeps its own bottom pad), and a standalone line must have measured the
+  // standalone rules, not the tab layout.
+  const unemulated = [...worst.entries()].filter(([, r]) => r.sa && r.saRules < 2).map(([k]) => k);
+  if (unemulated.length) lines.push(`FAIL: standalone not emulated at ${unemulated.join('; ')}`);
+  const strips = [...worst.entries()].filter(([, r]) => r.sa && !r.quiz && r.strip > 0).map(([k]) => k);
+  if (strips.length) lines.push(`FAIL: an empty strip under the controls at ${strips.join('; ')}`);
   return lines;
 }

@@ -26,6 +26,7 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `tokens.css` — design tokens (`--rack-*`)
 - `scripts/fit-check.js` -- the phone-fit layout check (ADR-0013): a Playwright snippet
   run against the dev server that asserts no vertical scroll at the visible Safari viewports
+  (and, since RBAR-99, no unused strip in the emulated Home Screen app)
 - `assets/icons/` -- the icon masters (RBAR-71): `rack-bar-icon-dark.svg` feeds the
   Home Screen / manifest PNGs; `rack-bar-favicon-jumbo-{dark,light}.svg` (Caitlin's
   simplified tiny-size cut) feed `favicon.svg` (dark, light under the media query) and
