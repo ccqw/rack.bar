@@ -72,6 +72,9 @@ describe('warmupFullscreenView', () => {
     expect(v.label).toBe('Work - 225 lb');
     expect(v.moves).toMatch(/ lb$/);
   });
+  it('an empty Ramp is a caller error', () => {
+    expect(() => warmupFullscreenView([], 0, 'kg', 'kg')).toThrow(RangeError);
+  });
   it('a one-row Ramp (only the Working set) has no live Next', () => {
     const rows = planEasyRamp(115, [], COMP).rows;
     expect(warmupFullscreenView(rows, 0, 'kg', 'kg').next.live).toBe(false);
@@ -87,6 +90,9 @@ describe('swipeDirection: a horizontal drag past the threshold', () => {
     expect(swipeDirection(SWIPE_MIN_PX - 1, 0)).toBeNull();
     expect(swipeDirection(60, 80)).toBeNull();
     expect(swipeDirection(Number.NaN, 0)).toBeNull();
+    expect(swipeDirection(60, Number.POSITIVE_INFINITY)).toBeNull();
+    expect(swipeDirection(60, -60)).toBeNull(); // a diagonal tie is not sideways
+
   });
 });
 
