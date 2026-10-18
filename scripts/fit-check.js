@@ -33,6 +33,10 @@
 // reads PILL WRAPS n and adds a FAIL line; a quiz door with no box in the header reads
 // QUIZ HIDDEN (and fails); a label cut short by its ellipsis reads "pill cut n px"
 // (allowed -- the full text is kept wherever it fits).
+// Since RBAR-84 every state runs with five saved maxes stored (Setup's Maxes row shows),
+// and the By Weight walk adds a Target typed as a percent of one: the keypad open with
+// its lift row, the "82.5% Squat = 115.5 kg" chip on a miss (LINE CLIPPED counts it), and
+// the Maxes sheet open on the keypad's add form and on Setup's list (SHEET SCROLLS).
 // The quiz page (game.html) is walked too, as "quiz:" lines: a question, a right answer,
 // a wrong answer with its named mistake and breakdown, and the gear sheet open, on both
 // plate sets with Setup's collars off and on, at Plates per side up to 6. Each line has
@@ -89,7 +93,8 @@ async (shared) => {
       // The Another way sheet (RBAR-66) is measured the same way when it is the open one;
       // it scrolls inside itself, so `inner` is how far its own list would scroll.
       const ways = con.querySelector('rack-ways');
-      const open = !setup.hidden ? setup : !ways.hidden ? ways : null;
+      const maxes = document.querySelector('rack-app').shadowRoot.querySelector('rack-maxes');
+      const open = !maxes.hidden ? maxes : !setup.hidden ? setup : !ways.hidden ? ways : null;
       const panel = open ? open.shadowRoot.querySelector('[data-panel]') : null;
       // The round-up row (RBAR-66 adds Another way beside the round-up): its shown items
       // plus gaps must fit its width on one line, or the row would wrap or clip.
@@ -166,6 +171,13 @@ async (shared) => {
               localStorage.clear();
               localStorage.setItem('rackbar.plateSet', set);
               localStorage.setItem('rackbar.unit', u);
+              localStorage.setItem('rackbar.maxes', JSON.stringify([
+                { name: 'Squat', value: 140, unit: 'kg' },
+                { name: 'Bench', value: 85, unit: 'kg' },
+                { name: 'Deadlift', value: 170, unit: 'kg' },
+                { name: 'Front squat', value: 120, unit: 'kg' },
+                { name: 'Clean', value: 100, unit: 'kg' },
+              ]));
               if (r) localStorage.setItem('rackbar.recents', JSON.stringify(r));
             },
             [plateSet, unit, recents],
@@ -210,6 +222,28 @@ async (shared) => {
         );
         await chip(1000);
         await record('weight: at capacity');
+        // A percent of a saved max (RBAR-84): pick Squat in the keypad's lift row and
+        // type 82.5 (115.5 kg, a miss on both sets), then the Maxes sheet's add form.
+        const inEntry = (src) =>
+          inConsole(`const e = con.querySelector('rack-entry').shadowRoot; ${src}`);
+        await inConsole(`con.querySelector('[data-total-tap]').click()`);
+        await inEntry(
+          `e.querySelector('[data-lift="Squat"]').click();` +
+            `for (const k of ['8','2','.','5']) e.querySelector('[data-key="' + k + '"]').click()`,
+        );
+        await record('weight: keypad on 82.5% of a max');
+        await inEntry(`e.querySelector('[data-lift-add]').click()`);
+        await page.evaluate(() => {
+          const m = document.querySelector('rack-app').shadowRoot.querySelector('rack-maxes');
+          m.shadowRoot.querySelector('[data-act="custom"]').click();
+        });
+        await record('maxes: add form');
+        await page.evaluate(() => {
+          const m = document.querySelector('rack-app').shadowRoot.querySelector('rack-maxes');
+          m.shadowRoot.querySelector('[data-act="cancel"]').click();
+        });
+        await inEntry(`e.querySelector('[data-done]').click()`);
+        await record('weight: 82.5% of a max');
         await inConsole(`con.querySelector('[data-mode="encode"]').click()`);
         await record('plates: empty');
         await inConsole(
@@ -300,6 +334,10 @@ async (shared) => {
         // Opening a row scrolls it into view inside the sheet (RBAR-72 review).
         await inApp(`setup.querySelector('[data-face]').click()`);
         await record('setup: size row open');
+        // The Maxes row gives way to an open size row; closed again, it opens the list.
+        await inApp(`setup.querySelector('[data-face]').click()`);
+        await inApp(`setup.querySelector('[data-maxes-row]').click()`);
+        await record('maxes: list over Setup');
       }
     }
   }

@@ -145,6 +145,13 @@ further than that is a **drifted** set; its stair shows its real percentage, "~8
 (ADR-0016 as amended). A set on the bare Bar never counts as drifted.
 _Avoid_: ramp-up set, light set, feeder set.
 
+**Max**:
+A lifter's saved one-rep max for a named lift ("Squat 140 kg"), kept on the device, at
+most six. It keeps the number and Unit it was typed in. A Target can be entered as a
+percentage of one ("80% Squat" is 112 kg); Decode then lands at or under it as usual
+(ADR-0020). The UI says "Maxes" and "Add a lift".
+_Avoid_: PR, 1RM (as terms), personal best, record.
+
 **Ramp**:
 The ordered list of Warm-up sets that builds to a Working set, with the Working set
 as its last row. Totals never decrease down a Ramp. The default is Caitlin's

@@ -50,6 +50,8 @@ import type { Plate } from '../lib/plates.ts';
 import { ALL_PLATES, PAIR_CHOICES, hasLimits, pairsLabel, pairsOf } from '../lib/platesonhand.ts';
 import type { PlatesOnHand } from '../lib/platesonhand.ts';
 import type { Unit } from '../lib/units.ts';
+import { maxShown } from '../lib/maxes.ts';
+import type { Max } from '../lib/maxes.ts';
 import { LONG_PRESS_MS, MOVE_SLOP_PX, UNDO_MS } from './recents.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
@@ -143,6 +145,32 @@ class RackSetup extends HTMLElement {
   private onhandFor: PlateSetKey | null = null;
   private onhandTilesEl!: HTMLElement;
   private pairsRowEl!: HTMLElement;
+  // Saved maxes (RBAR-84, ADR-0020): the app feeds the list and the Primary unit; the
+  // Maxes row sums them up and opens the Maxes sheet (`maxesopen`).
+  private _maxes: readonly Max[] = [];
+  private _maxesUnit: Unit = 'kg';
+  private maxesSumEl!: HTMLElement;
+
+  set maxes(list: readonly Max[]) {
+    this._maxes = list;
+    this.renderMaxesRow();
+  }
+  get maxes(): readonly Max[] {
+    return this._maxes;
+  }
+
+  set maxesUnit(u: Unit) {
+    this._maxesUnit = u;
+    this.renderMaxesRow();
+  }
+
+  // "Squat 140 - Bench 85 - ..." in the Primary unit, middots as escapes (ASCII source).
+  private renderMaxesRow(): void {
+    if (!this.maxesSumEl) return;
+    this.maxesSumEl.textContent = this._maxes
+      .map((m) => `${m.name} ${maxShown(m, this._maxesUnit)}`)
+      .join(' \u00B7 ');
+  }
   private pairsResetEl!: HTMLButtonElement;
 
   // The "+" entry: open or not, and the Unit it reads the typed weight in.
@@ -555,6 +583,27 @@ class RackSetup extends HTMLElement {
           color: var(--rack-bg); background: var(--rack-accent); border-color: var(--rack-accent);
         }
         .pairs button:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
+        /* The Maxes row (RBAR-84, ADR-0020): one compact row under the plates that
+           sums the saved maxes up and opens the Maxes sheet. The prototype's 40px, with
+           an invisible layer that makes the tap target 44px. It gives way to an open
+           None..All row, so the sheet still fits without scrolling (ADR-0013). */
+        .maxrow {
+          position: relative;
+          display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px;
+          margin-top: 14px; padding: 0 12px; text-align: left; cursor: pointer;
+          color: var(--rack-text-dim); background: transparent;
+          border: 1px solid var(--rack-border-muted); border-radius: var(--rack-radius-tile);
+        }
+        .maxrow .section-label { margin: 0; flex: none; }
+        .maxrow .sum {
+          flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          font-family: var(--rack-font-num); font-size: 12px; font-weight: 600;
+          color: var(--rack-text-secondary);
+        }
+        .maxrow svg { flex: none; display: block; }
+        .maxrow::after { content: ''; position: absolute; inset: -2px 0; }
+        .pairs:not([hidden]) + .maxrow { display: none; }
+        .maxrow:focus-visible { outline: 2px solid var(--rack-accent); outline-offset: 2px; }
         /* A short phone (the SE in Safari, 548px tall): the sheet tightens its spacing so
            every section, an open None..All row included, fits with no inner scroll
            (ADR-0013 as amended for RBAR-72). Every tap target stays 44px or taller; the
@@ -570,6 +619,7 @@ class RackSetup extends HTMLElement {
           .onhand { gap: 4px; }
           .size { min-height: 44px; padding: 6px 0 5px; }
           .pairs { margin-top: 6px; }
+          .maxrow { margin-top: 4px; }
         }
       </style>
       <div class="scrim" data-scrim>
@@ -605,6 +655,11 @@ class RackSetup extends HTMLElement {
           </div>
           <div class="onhand" data-onhand-tiles role="group" aria-labelledby="onhand-heading"></div>
           <div class="pairs" id="pairs-row" data-pairs-row role="group" hidden></div>
+          <button type="button" class="maxrow" data-maxes-row aria-haspopup="dialog"
+            ><span class="section-label">Maxes</span><span class="sum" data-maxes-sum></span
+            ><svg width="8" height="12" viewBox="0 0 8 12" fill="none" aria-hidden="true"><path
+              d="M1.5 1.5L6 6l-4.5 4.5" stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
       </div>
     `;
@@ -617,6 +672,11 @@ class RackSetup extends HTMLElement {
     this.onhandTilesEl = this.root.querySelector('[data-onhand-tiles]')!;
     this.pairsRowEl = this.root.querySelector('[data-pairs-row]')!;
     this.pairsResetEl = this.root.querySelector('[data-pairs-reset]')!;
+    this.maxesSumEl = this.root.querySelector('[data-maxes-sum]')!;
+    this.renderMaxesRow();
+    this.root.querySelector('[data-maxes-row]')!.addEventListener('click', () =>
+      this.dispatchEvent(new CustomEvent('maxesopen', { bubbles: true, composed: true })),
+    );
     this.wireBarRow();
     this.wireOnhand();
 

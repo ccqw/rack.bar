@@ -20,6 +20,9 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `elements/` -- imperative shell: Web Components. `app.ts` (`<rack-app>`) is the app shell
   and composition root (ADR-0007): header + Setup pill, `<rack-console>`, `<rack-setup>`,
   and the rig config it persists and feeds down
+- Saved maxes (RBAR-84, ADR-0020): the pure registry and "% of max -> Target" in
+  `lib/maxes.ts`; `elements/maxes.ts` is the Maxes sheet and the `rackbar.maxes` key;
+  `<rack-app>` owns the list, the keypad's lift row lives in `elements/entry.ts`
 - `game.html` -- the Loadout quiz page (RBAR-92): `elements/quiz.ts` + `quizgear.ts` over
   the pure, seeded `lib/quiz.ts`; reads Setup's rig through `elements/rig.ts` and keeps
   its settings and streak under `rackbar.quiz`
