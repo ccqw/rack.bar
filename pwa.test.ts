@@ -63,10 +63,10 @@ describe('index.html install wiring', () => {
   it('carries the standalone and iOS Home Screen metas', () => {
     expect(meta('mobile-web-app-capable')).toBe('yes');
     expect(meta('apple-mobile-web-app-capable')).toBe('yes');
-    expect(meta('apple-mobile-web-app-status-bar-style')).toBe('black-translucent');
+    expect(meta('apple-mobile-web-app-status-bar-style')).toBe('black');
     expect(meta('apple-mobile-web-app-title')).toBe('rack.bar');
-    // black-translucent puts the page under the status bar: the body must still
-    // pad by the top safe area or the header would sit under the clock.
+    // An opaque status bar (RBAR-98); the body still pads by the top safe area so a
+    // switch back to black-translucent can't put the header under the clock.
     expect(read('index.html')).toMatch(/padding:\s*env\(safe-area-inset-top\)/);
   });
 
