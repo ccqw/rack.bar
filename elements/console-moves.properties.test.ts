@@ -16,7 +16,7 @@ import { PLATE_SETS } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import {
   SEED, on, fresh, q, sr, type, step, heroTap, done, roundUp, modeBtn, rigDraftCaseArb,
-  rigArb, unitArb, draftArb, captionText, facesOnScreen, followCaption, sideOnScreen,
+  rigArb, unitArb, draftArb, captionText, facesOnScreen, followCaption, sideOnScreen, stairs,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
 
@@ -130,19 +130,32 @@ describe('<rack-console> By Weight Plate moves caption (RBAR-83, ADR-0015)', () 
     );
   });
 
-  it('the caption never carries across modes: back in By Weight, the carried load shows none (RBAR-83, ADR-0005)', () => {
+  it('the caption never carries across modes: back in By Weight (which decodes the one Target, RBAR-87), the load shows none, and the next move is measured from it (RBAR-83, ADR-0005)', () => {
     fc.assert(
-      fc.property(rigDraftCaseArb, fc.constantFrom('encode', 'warmup'), ([rig, u, draft], m) => {
-        const el = on(rig, u);
-        heroTap(el).click();
-        type(el, draft);
-        done(el);
-        step(el, 'inc');
-        modeBtn(el, m).click();
-        modeBtn(el, 'decode').click();
-        expect(captionText(el)).toBeNull();
-      }),
-      { seed: SEED, numRuns: 20 },
+      fc.property(
+        rigDraftCaseArb, fc.constantFrom('encode', 'warmup'), fc.nat(4),
+        ([rig, u, draft], m, row) => {
+          const el = on(rig, u);
+          heroTap(el).click();
+          type(el, draft);
+          done(el);
+          step(el, 'inc');
+          modeBtn(el, m).click();
+          // In Warm up, load another Ramp row first: By Weight must not caption from it.
+          const st = stairs(el);
+          if (m === 'warmup' && st.length > 0) st[row % st.length].click();
+          modeBtn(el, 'decode').click();
+          expect(captionText(el)).toBeNull();
+          const before = facesOnScreen(rig, el);
+          step(el, 'inc');
+          const after = facesOnScreen(rig, el);
+          const cap = captionText(el);
+          const changed = JSON.stringify(before) !== JSON.stringify(after);
+          expect(cap !== null).toBe(before.length > 0 && after.length > 0 && changed);
+          if (cap !== null) expect(followCaption(before, cap)).toEqual(after);
+        },
+      ),
+      { seed: SEED, numRuns: 30 },
     );
   });
 });
