@@ -27,6 +27,13 @@
 // keypad open on a split Target. Since RBAR-72 slice 3 the walk adds Warm up under
 // Plate limits with a drifted stair ("~83%"), and each state measures how far the
 // widest stair name runs past its column (STAIR NAME CLIPPED n).
+// Since RBAR-92 the main header carries the Loadout quiz door left of the Setup pill;
+// each state measures how far the header row's items run past it (HEADER CLIPPED n).
+// The quiz page (game.html) is walked too, as "quiz:" lines: a question, a right answer,
+// a wrong answer with its named mistake and breakdown, and the gear sheet open, on both
+// plate sets with Setup's collars off and on, at Plates per side up to 6. Each line has
+// the bar block's height, how far the breakdown line runs past the column (MATH CLIPPED
+// n) and how far the gear sheet would scroll inside (SHEET SCROLLS n).
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
 //   375x548 -- iPhone SE in Safari (the Nice)
@@ -101,7 +108,15 @@ async (shared) => {
       const nameClip = [
         ...con.querySelector('rack-warmup').shadowRoot.querySelectorAll('.st .nm'),
       ].reduce((m, n) => Math.max(m, n.scrollWidth - n.clientWidth), 0);
+      // The header row (RBAR-92 adds the quiz door): how far its items run past it.
+      const head = document.querySelector('rack-app').shadowRoot.querySelector('header');
+      const hr = head.getBoundingClientRect();
+      const headClip = [...head.children].reduce((m, k) => {
+        const r = k.getBoundingClientRect();
+        return Math.max(m, Math.ceil(hr.left + 22 - r.left), Math.ceil(r.right - (hr.right - 22)));
+      }, 0);
       return {
+        headClip,
         ruOver,
         lineClip,
         nameClip,
@@ -271,10 +286,99 @@ async (shared) => {
       }
     }
   }
-  await page.close();
   // One line per viewport + state, worst case across the plate sets and units:
   // "393x659 weight: fresh -- scroll 659/659 over 0, sleeve 150px" (over 0 = it fits).
   const worst = new Map();
+  // The Loadout quiz (RBAR-92, game.html): the flashcard column must fit the same
+  // visible viewports, the bar block being the one block that gives.
+  const quizRows = [];
+  const quizMeasure = () =>
+    page.evaluate(() => {
+      const d = document.documentElement;
+      const q = document.querySelector('rack-quiz').shadowRoot;
+      const host = document.querySelector('rack-quiz').getBoundingClientRect();
+      const math = q.querySelector('[data-math]');
+      let mathClip = 0;
+      if (math) {
+        for (const k of math.children) {
+          const r = k.getBoundingClientRect();
+          mathClip = Math.max(mathClip, Math.ceil(host.left + 20 - r.left), Math.ceil(r.right - (host.right - 20)));
+        }
+      }
+      const gear = q.querySelector('rack-quiz-gear');
+      const panel = gear.hidden ? null : gear.shadowRoot.querySelector('[data-panel]');
+      return {
+        over: Math.max(0, d.scrollHeight - window.innerHeight),
+        scrollH: d.scrollHeight,
+        innerH: window.innerHeight,
+        hscroll: Math.max(0, d.scrollWidth - window.innerWidth),
+        sleeve: q.querySelector('rack-sleeve').clientHeight,
+        mathClip,
+        sheetH: panel ? Math.round(panel.getBoundingClientRect().height) : 0,
+        sheetOver: panel ? Math.max(0, -Math.floor(panel.getBoundingClientRect().top)) : 0,
+        sheetScroll: panel ? panel.scrollHeight - panel.clientHeight : 0,
+      };
+    });
+  for (const [w, h] of SIZES) {
+    await page.setViewportSize({ width: w, height: h });
+    for (const plateSet of ['comp', 'training']) {
+      for (const collar of ['0', '2.5']) {
+        await page.goto(ORIGIN + '/game.html');
+        await page.evaluate(
+          ([set, c]) => {
+            localStorage.clear();
+            localStorage.setItem('rackbar.plateSet', set);
+            localStorage.setItem('rackbar.collarKg', c);
+            localStorage.setItem(
+              'rackbar.quiz',
+              JSON.stringify({ settings: { maxPlates: 6, collars: 'always' } }),
+            );
+          },
+          [plateSet, collar],
+        );
+        await page.reload();
+        await page.waitForFunction(() => !!document.querySelector('rack-quiz')?.question);
+        const record = async (state) =>
+          quizRows.push({ key: `${w}x${h} quiz: ${state}`, ...(await quizMeasure()) });
+        const inQuiz = (src) =>
+          page.evaluate((s) => {
+            const el = document.querySelector('rack-quiz');
+            return new Function('el', 'q', s)(el, el.shadowRoot);
+          }, src);
+        const type = (v) =>
+          inQuiz(
+            `for (const c of ${JSON.stringify(String(v))}) q.querySelector('[data-key="' + c + '"]').click();` +
+              `q.querySelector('[data-go]').click()`,
+          );
+        await record('question');
+        await type(await inQuiz('return el.question.totalShown'));
+        await record('right answer');
+        await page.waitForTimeout(900);
+        // Forgetting the Bar: the named mistake plus the longest breakdown (collars on).
+        await type(await inQuiz('return 2 * (el.question.sideShown + el.question.collarKg)'));
+        await record('wrong answer + breakdown');
+        await inQuiz(`q.querySelector('[data-gear]').click()`);
+        await record('gear open');
+      }
+    }
+  }
+  for (const r of quizRows) {
+    const prev = worst.get(r.key);
+    if (!prev || r.over > prev.over || (r.over === prev.over && r.sleeve < prev.sleeve)) {
+      worst.set(r.key, {
+        ...r,
+        quiz: true,
+        mathClip: Math.max(r.mathClip, prev?.mathClip ?? 0),
+        sheetScroll: Math.max(r.sheetScroll, prev?.sheetScroll ?? 0),
+        hscroll: Math.max(r.hscroll, prev?.hscroll ?? 0),
+      });
+    } else {
+      prev.mathClip = Math.max(prev.mathClip, r.mathClip);
+      prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
+      prev.hscroll = Math.max(prev.hscroll, r.hscroll);
+    }
+  }
+  await page.close();
   for (const r of rows) {
     const key = `${r.size} ${r.state}`;
     const prev = worst.get(key);
@@ -288,6 +392,7 @@ async (shared) => {
         ruOver: Math.max(r.ruOver, prev?.ruOver ?? 0),
         lineClip: Math.max(r.lineClip, prev?.lineClip ?? 0),
         nameClip: Math.max(r.nameClip, prev?.nameClip ?? 0),
+        headClip: Math.max(r.headClip, prev?.headClip ?? 0),
       });
     } else {
       prev.ruOver = Math.max(prev.ruOver, r.ruOver);
@@ -296,16 +401,27 @@ async (shared) => {
       prev.sheetScroll = Math.max(prev.sheetScroll, r.sheetScroll);
       prev.lineClip = Math.max(prev.lineClip, r.lineClip);
       prev.nameClip = Math.max(prev.nameClip, r.nameClip);
+      prev.headClip = Math.max(prev.headClip, r.headClip);
     }
   }
-  const lines = [...worst.entries()].map(
-    ([key, r]) =>
+  // The calculator lines first, then the quiz lines (a stable sort keeps each in order).
+  const lines = [...worst.entries()].sort(([, a], [, b]) => (a.quiz ? 1 : 0) - (b.quiz ? 1 : 0)).map(([key, r]) =>
+    r.quiz
+      ? `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
+        `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
+        `${r.mathClip > 0 ? ` MATH CLIPPED ${r.mathClip}` : ''}` +
+        (r.sheetH
+          ? `, sheet ${r.sheetH}px over ${r.sheetOver}` +
+            `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
+          : '')
+      :
       `${key} -- scroll ${r.scrollH}/${r.innerH} over ${r.over}` +
       `${r.hscroll ? ` HSCROLL ${r.hscroll}` : ''}, sleeve ${r.sleeve}px` +
       `${r.iconsMissing ? ' ICONS MISSING' : r.iconsHit ? '' : ' ICONS BLOCKED'}` +
       `${r.ruOver ? ` ROUND-UP ROW OVER ${r.ruOver}px` : ''}` +
       `${r.lineClip > 0 ? ` LINE CLIPPED ${r.lineClip}` : ''}` +
       `${r.nameClip > 0 ? ` STAIR NAME CLIPPED ${r.nameClip}` : ''}` +
+      `${r.headClip > 0 ? ` HEADER CLIPPED ${r.headClip}` : ''}` +
       (r.sheetH
         ? `, sheet ${r.sheetH}px over ${r.sheetOver}, Bar row scrolls ${r.rowScroll}px` +
           `${r.sheetScroll ? ` SHEET SCROLLS ${r.sheetScroll}px` : ''}`
@@ -314,6 +430,6 @@ async (shared) => {
   // The Setup sheet must fit without scrolling inside at every viewport, a None..All
   // row open included (RBAR-72, ADR-0013): any inner scroll fails the run.
   const scrolling = [...worst.entries()].filter(([, r]) => r.sheetScroll > 0).map(([k]) => k);
-  if (scrolling.length) lines.push(`FAIL: the Setup sheet scrolls inside at ${scrolling.join('; ')}`);
+  if (scrolling.length) lines.push(`FAIL: a sheet scrolls inside at ${scrolling.join('; ')}`);
   return lines;
 }

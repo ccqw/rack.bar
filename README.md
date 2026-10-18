@@ -2,7 +2,7 @@
 
 A mobile-first tool for loading a barbell to a target weight in the gym. Tell it
 the total you want; it tells you exactly which plates go on each side. Kilograms
-first (Eleiko colors). A quiz/game mode that drills the same skill is planned.
+first (Eleiko colors). The Loadout quiz (`game.html`) drills reading a loaded bar.
 
 Backend-free static site, deployed to GitHub Pages at **rack.bar**.
 

@@ -143,7 +143,7 @@ class RackQuiz extends HTMLElement {
     };
     const bar = barsFor(set, stored.customBars).find((b) => b.kg === stored.barKg);
     this.barName = bar ? barLabel(bar) : format(stored.barKg, set.unit);
-    this.el.qn.textContent = `Loadout quiz · ${this.barName} bar`;
+    this.el.qn.innerHTML = `<span class="qp">Loadout quiz &middot; </span>${esc(this.barName)} bar`;
     this.gear.rig = {
       name: `${set.label}, ${this.barName} bar`,
       collarsOffered: collarsOffered(this.rig),
@@ -356,6 +356,10 @@ class RackQuiz extends HTMLElement {
         @media (prefers-reduced-motion: no-preference) {
           .big[data-phase="right"], .score[data-pop] b[data-streak] { animation: pulse .32s ease-out; }
           @keyframes pulse { from { transform: scale(1.12); } to { transform: none; } }
+        }
+        /* A narrow phone (320 wide): the row names just the Bar, so it is never cut. */
+        @media (max-width: 360px) {
+          .qp { display: none; }
         }
         /* The short-screen tier (ADR-0013): spacing and the keypad's key height only. */
         @media ${SHORT_SCREEN} {

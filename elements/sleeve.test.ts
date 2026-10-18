@@ -286,6 +286,19 @@ describe('<rack-sleeve>', () => {
       el.sideLoad = side(...Array(13).fill(0.5));
       for (const d of discs(el)) expect(d.dataset.numeral).toBeUndefined();
     });
+
+    it('numerals off (the Loadout quiz, RBAR-92) hides the kg numbers, keeps the iron stamps, and on brings them back', () => {
+      const el = mountSleeve() as Sleeve & { numerals: boolean };
+      expect(el.numerals).toBe(true);
+      el.sideLoad = side(25, 10, 5);
+      el.numerals = false;
+      for (const d of discs(el)) expect(d.dataset.numeral).toBeUndefined();
+      el.sideLoad = [IRON_LB[0], IRON_LB[2]];
+      expect(discs(el).map((d) => d.dataset.numeral)).toEqual(['11', '9']);
+      el.sideLoad = side(25, 10, 5);
+      el.numerals = true;
+      expect(discs(el).map((d) => d.dataset.numeral)).toEqual(['11', '9', '8']);
+    });
   });
 
   describe('block geometry + overflow guard (RBAR-41: 204px block, 168px cap, no overflow)', () => {

@@ -20,6 +20,9 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 - `elements/` -- imperative shell: Web Components. `app.ts` (`<rack-app>`) is the app shell
   and composition root (ADR-0007): header + Setup pill, `<rack-console>`, `<rack-setup>`,
   and the rig config it persists and feeds down
+- `game.html` -- the Loadout quiz page (RBAR-92): `elements/quiz.ts` + `quizgear.ts` over
+  the pure, seeded `lib/quiz.ts`; reads Setup's rig through `elements/rig.ts` and keeps
+  its settings and streak under `rackbar.quiz`
 - `tokens.css` — design tokens (`--rack-*`)
 - `scripts/fit-check.js` -- the phone-fit layout check (ADR-0013): a Playwright snippet
   run against the dev server that asserts no vertical scroll at the visible Safari viewports

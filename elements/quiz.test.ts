@@ -40,7 +40,7 @@ describe('<rack-quiz>', () => {
     const q = el.question!;
     expect(sleeveOf(root).sideLoad).toEqual(q.side);
     expect(text(root, '[data-big]')).toBe('?kg');
-    expect(text(root, '[data-qn]')).toBe('Loadout quiz · 20 kg bar');
+    expect(text(root, '[data-qn]')).toBe('Loadout quiz \u00B7 20 kg bar');
     expect(go(root).disabled).toBe(true);
   });
 
@@ -125,7 +125,7 @@ describe('<rack-quiz>', () => {
     localStorage.setItem('rackbar.barKg', String(lbToKg(45)));
     const { el, root } = mount();
     expect(el.question!.unit).toBe('lb');
-    expect(text(root, '[data-qn]')).toBe('Loadout quiz · 45 lb bar');
+    expect(text(root, '[data-qn]')).toBe('Loadout quiz \u00B7 45 lb bar');
     expect(el.question!.side.every((p) => p.color === 'iron')).toBe(true);
   });
 

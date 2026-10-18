@@ -56,7 +56,9 @@ features below. The handoff is the source of truth for v1 scope and look-and-fee
 ## Later (parked, in rough priority order)
 
 - **Game / quiz mode** -- the original second half: progressively harder drills on
-  the Decode/Encode skill, built on the calculator's components.
+  the Decode/Encode skill, built on the calculator's components. Slice 1 shipped as
+  the **Loadout quiz** (RBAR-92, `game.html`): read one loaded Side, type the Total.
+  Next: given a Target, tap the Plates (reuses By Plates).
 - **Limits indicator** -- a main-screen hint that Pairs of Plates on Hand are
   limiting the load (RBAR-77). Pairs of Plates on Hand itself shipped in v1 (RBAR-72).
 - **Arithmetic on entry** -- typing an expression in the entry field. (Its other
