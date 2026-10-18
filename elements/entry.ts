@@ -29,6 +29,7 @@ import { BUTTON_FX } from './buttonfx.ts';
 import { SHORT_SCREEN } from './fit.ts';
 import { SECTION_LABEL } from './sectionlabel.ts';
 import { ROLL_CSS, rollText } from './numroll.ts';
+import { DEL_ICON } from './delglyph.ts';
 
 // The keypad layout, row-major. 'del' deletes the last character, 'clear' empties.
 const KEYPAD_ROWS: readonly (readonly string[])[] = [
@@ -40,16 +41,6 @@ const KEYPAD_ROWS: readonly (readonly string[])[] = [
 
 // Spoken labels for the non-digit keys; digits announce as themselves.
 const KEY_ARIA: Record<string, string> = { del: 'Delete', '.': 'Decimal point' };
-
-// The delete key's face (RBAR-46): the handoff renders a backspace glyph, drawn here as
-// an inline SVG so the source stays ASCII. Decorative -- the button's aria-label
-// ("Delete") is the announcement, so the drawing is hidden from assistive tech.
-const DEL_ICON = `<svg width="22" height="16" viewBox="0 0 22 16" fill="none"
-    aria-hidden="true"><path d="M8 1.25h10.25a2.5 2.5 0 0 1 2.5 2.5v8.5a2.5 2.5 0 0
-    1-2.5 2.5H8a2.5 2.5 0 0 1-1.84-.81L1.9 9.35a2 2 0 0 1 0-2.7l4.26-4.59A2.5 2.5 0 0
-    1 8 1.25Z" stroke="currentColor" stroke-width="1.6"
-    stroke-linejoin="round"/><path d="M10.75 5.6l4.3 4.8m0-4.8l-4.3 4.8"
-    stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
 
 // The dedicated exact line's checkmark (RBAR-46, prototype L235 "[check] exact"): the
 // prototype's literal checkmark character, drawn as an inline SVG for the same
