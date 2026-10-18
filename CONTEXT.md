@@ -162,6 +162,14 @@ it any one set needs on a Side. The station rule plans a Ramp to need a small on
 (ADR-0015).
 _Avoid_: pile, stash, plate tree.
 
+**Rest**:
+The timed pause between sets. The lifter starts one from a preset (1:30, 2:00, 3:00,
+5:00), nudges it by 15 s, or (with "Start after Next" on) lets Warm up's Next start the
+last one; past zero it counts up as overtime ("+0:12") until restarted or cleared
+(ADR-0019). The UI says **"Rest
+timer"**.
+_Avoid_: break, interval, cooldown, recovery.
+
 ## Relationships
 
 - A **Bar** plus a symmetric **Side Load** on each **Side** produces a **Total**.

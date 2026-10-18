@@ -24,12 +24,20 @@
 //   sheet `close`           -> drop the pill's open state
 //   a share link (#v=1&...) -> on boot or `hashchange`: apply its rig and load for this
 //                              view only, persisting nothing (RBAR-50, ADR-0014)
+//   console `resttimer`     -> the stopwatch: open the Rest timer, or start the last Rest
+//                              (RBAR-94, ADR-0019)
+//   console `warmupnext`    -> Warm up's Next: start the Rest if "Start after Next" is on
+//   timer `restlive`        -> the dock came or went: reserve its height (the console's
+//                              bar block flexes, ADR-0013) and light the stopwatch
+//   timer `restfocus`       -> the screen closed with its opener gone: focus the stopwatch
 //
 // Each config concern persists shell-side under its own localStorage key (ADR-0007);
 // the core stays pure and only ever sees these as function arguments (ADR-0001/0002).
 import { persistedPrimaryUnit } from './console.ts';
 import type { LinkLoad } from './console.ts';
 import './setup.ts';
+import './rest.ts';
+import { DOCK_PX, DOCK_SHORT_PX } from './restdock.ts';
 import { SLIDERS_GLYPH } from './sliders.ts';
 import { GRAD_CAP_GLYPH } from './quizglyphs.ts';
 import { isOfferedCollar, DEFAULT_COLLAR_KG } from '../lib/plates.ts';
@@ -75,6 +83,11 @@ type Console = HTMLElement & {
   plateSet: string;
   platesOnHand: PlatesOnHand;
   applyLink(link: LinkLoad): void;
+};
+type Rest = HTMLElement & {
+  readonly live: boolean;
+  tap(opener: HTMLElement | null): void;
+  afterNext(): void;
 };
 type Setup = HTMLElement & {
   barKg: number;
@@ -139,6 +152,10 @@ class RackApp extends HTMLElement {
         :host {
           display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0;
         }
+        /* The Rest dock is fixed over the bottom (RBAR-94, ADR-0019): while it shows,
+           the column gives up its height, so the bar block flexes and nothing in the
+           column sits under the dock. body already pads the safe-area inset. */
+        :host([resting]) { padding-bottom: ${DOCK_PX}px; }
         /* The header and the console column share one 22px side inset, the
            prototype's column padding (L75; RBAR-74), so the wordmark and the Setup
            pill line up with the mode toggle's edges. */
@@ -208,6 +225,7 @@ class RackApp extends HTMLElement {
         @media ${SHORT_SCREEN} {
           header { padding-top: 6px; padding-bottom: 6px; }
           main { padding-top: 4px; }
+          :host([resting]) { padding-bottom: ${DOCK_SHORT_PX}px; }
         }
       </style>
       <header>
@@ -233,6 +251,7 @@ class RackApp extends HTMLElement {
       </header>
       <main><rack-console></rack-console></main>
       <rack-setup></rack-setup>
+      <rack-rest></rack-rest>
     `;
 
     this.console = this.root.querySelector('rack-console') as Console;
@@ -287,6 +306,26 @@ class RackApp extends HTMLElement {
     this.setup.addEventListener('close', () =>
       this.pill.setAttribute('aria-expanded', 'false'),
     );
+
+    // The Rest timer (RBAR-94, ADR-0019). Its doors are the console's stopwatch and
+    // Warm up's Next; while its dock shows, the app and the console carry `resting`.
+    const rest = this.root.querySelector('rack-rest') as Rest;
+    this.console.addEventListener('resttimer', (e) =>
+      rest.tap((e.composedPath()[0] as HTMLElement | undefined) ?? null),
+    );
+    this.console.addEventListener('warmupnext', () => rest.afterNext());
+    // The timer screen closed and the button that opened it is gone: the stopwatch.
+    rest.addEventListener('restfocus', () =>
+      this.console.shadowRoot?.querySelector<HTMLButtonElement>('[data-rest]')?.focus(),
+    );
+    const resting = (live: boolean): void => {
+      this.toggleAttribute('resting', live);
+      this.console.toggleAttribute('resting', live);
+    };
+    rest.addEventListener('restlive', (e) =>
+      resting((e as CustomEvent<{ live: boolean }>).detail.live),
+    );
+    resting(rest.live);
 
     // A link pasted into an already-open tab changes only the hash (no reload). Listen
     // before applying, so a throw in the boot-time apply cannot also cost the listener.

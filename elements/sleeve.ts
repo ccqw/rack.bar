@@ -24,6 +24,7 @@ import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
 import { DISC_FILL } from './discfill.ts';
 import {
+  BUMPER_MM,
   BARE_END_H_PX,
   BARE_END_PX,
   COLLAR_GAP_PX,
@@ -181,7 +182,13 @@ class RackSleeve extends HTMLElement {
           border-radius: 4px 0 0 4px; background: var(--rack-sleeve-shaft);
         }
         .collar { flex: none; background: var(--rack-sleeve-collar); }
-        .collar-inner { width: ${COLLAR_INNER_PX}px; height: ${COLLAR_INNER_H_PX}px; border-radius: 3px; }
+        /* Never taller than a bumper (RBAR-94): under the Rest dock the sleeve can be ~40px
+           tall, where a 450 mm bumper draws 32px and the fixed 34px collar would outgrow it. */
+        .collar-inner {
+          width: ${COLLAR_INNER_PX}px; border-radius: 3px;
+          height: min(${COLLAR_INNER_H_PX}px,
+            calc(var(--rack-mm-scale, ${FALLBACK_SCALE}) * ${BUMPER_MM}px * var(--rack-fit-shrink, 1)));
+        }
         .bare-end {
           flex: none; width: ${BARE_END_PX}px; height: ${BARE_END_H_PX}px;
           border-radius: 0 5px 5px 0; background: var(--rack-sleeve-shaft);

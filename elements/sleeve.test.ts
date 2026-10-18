@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import './sleeve.ts';
 import { SLEEVE_BLOCK_PX, SLEEVE_MIN_PX, SLEEVE_PAD_PX } from './sleeve.ts';
+import { SLEEVE_DOCKED_MIN_PX } from '../lib/sleevefit.ts';
 import { ELEIKO_KG, IRON_LB } from '../lib/plates.ts';
 import { CHROME_PX, COLLAR_GAP_PX, COLLAR_PX, DISC_GAP_PX, MIN_DISC_PX } from '../lib/sleevefit.ts';
 import type { Plate } from '../lib/plates.ts';
@@ -487,7 +488,8 @@ describe('<rack-sleeve>', () => {
 
     it('never draws a disc taller than the host across heights and loads', () => {
       const loads = [side(25), side(25, 20, 15, 10, 5, 2.5, 1, 0.5), side(...Array(6).fill(25))];
-      for (const h of [SLEEVE_MIN_PX, 110, 140, 170, SLEEVE_BLOCK_PX]) {
+      // RBAR-94: down to the docked floor and the measured docked hosts (45 / 48 px).
+      for (const h of [SLEEVE_DOCKED_MIN_PX, 45, 48, SLEEVE_MIN_PX, 110, 140, 170, SLEEVE_BLOCK_PX]) {
         for (const load of loads) {
           const el = sized(360, h, load);
           const shrink = Number(el.style.getPropertyValue('--rack-fit-shrink') || '1');
@@ -496,6 +498,15 @@ describe('<rack-sleeve>', () => {
           }
         }
       }
+    });
+
+    it('caps the inner collar at the drawn bumper height, so it never outgrows a Plate (RBAR-94)', () => {
+      const el = sized(360, SLEEVE_DOCKED_MIN_PX, side(25));
+      const css = el.shadowRoot!.querySelector('style')!.textContent!;
+      const rule = css.slice(css.indexOf('.collar-inner {'), css.indexOf('}', css.indexOf('.collar-inner {')));
+      expect(rule).toMatch(/height: min\(34px,\s*calc\(var\(--rack-mm-scale, [\d.]+\) \* 450px \* var\(--rack-fit-shrink, 1\)\)\)/);
+      // At the docked floor the bumper draws under the fixed 34px, so the cap binds.
+      expect(450 * scaleOf(el)).toBeLessThan(34);
     });
 
     it('scales the bare-Bar empty box with the discs instead of a fixed 120px', () => {

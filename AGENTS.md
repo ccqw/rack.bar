@@ -16,10 +16,11 @@ Kilograms first (Eleiko colors). TypeScript + Vite, no backend, GitHub Pages.
 
 - `lib/` -- functional core: pure plate math (`plates.ts`); the solver core is
   `decode`/`decodeWithin` (`decode.ts`), choosing its Plates through the exact search in
-  `sideloads.ts`
+  `sideloads.ts`; the Rest timer's state machine is `rest.ts` (ADR-0019)
 - `elements/` -- imperative shell: Web Components. `app.ts` (`<rack-app>`) is the app shell
   and composition root (ADR-0007): header + Setup pill, `<rack-console>`, `<rack-setup>`,
-  and the rig config it persists and feeds down
+  `<rack-rest>` (the Rest timer: `rest.ts`, `restdock.ts`, `restscreen.ts`, `restclock.ts`,
+  `chime.ts`), and the rig config it persists and feeds down
 - `game.html` -- the Loadout quiz page (RBAR-92): `elements/quiz.ts` + `quizgear.ts` over
   the pure, seeded `lib/quiz.ts`; reads Setup's rig through `elements/rig.ts` and keeps
   its settings and streak under `rackbar.quiz`

@@ -131,7 +131,10 @@ class RackWarmup extends HTMLElement {
     });
     this.nextBtn.addEventListener('click', () => {
       const v = this._view;
-      if (v && v.selected < v.steps.length - 1) this.select(v.selected + 1);
+      if (!v || v.selected >= v.steps.length - 1) return;
+      this.select(v.selected + 1);
+      // RBAR-94: Next means a set is done -- the Rest timer may start (ADR-0019).
+      this.dispatchEvent(new CustomEvent('warmupnext', { bubbles: true, composed: true }));
     });
     this.render();
   }
