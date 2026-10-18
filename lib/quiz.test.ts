@@ -232,9 +232,15 @@ describe('parseQuizSaved', () => {
   it('round-trips', () => {
     const s = {
       settings: { maxPlates: 6, change: false, collars: 'always', numbers: true } as const,
+      mode: 'build' as const,
       record: { streak: 3, best: 9, history: [true, false, true] },
     };
     expect(parseQuizSaved(serializeQuizSaved(s))).toEqual(s);
+  });
+  it('reads a value stored before Build the bar, or a bad mode, as Read (RBAR-101)', () => {
+    expect(parseQuizSaved(JSON.stringify({ v: 1, streak: 2 })).mode).toBe('read');
+    expect(parseQuizSaved(JSON.stringify({ mode: 'write', streak: 2 })).mode).toBe('read');
+    expect(parseQuizSaved(JSON.stringify({ mode: 'build' })).mode).toBe('build');
   });
   it('drops a bad field and keeps the rest', () => {
     const raw = JSON.stringify({ settings: { maxPlates: 5, numbers: true }, streak: 4, best: 2 });
@@ -276,11 +282,11 @@ describe('build the bar (RBAR-101)', () => {
     expect(r.right).toBe(false);
     expect(r.totalShown).toBe(90);
     expect(r.off).toBe(-10);
-    expect(r.why).toBe('10 kg under');
+    expect(r.why).toBe('10 kg short');
     expect(fewestNote(r)).toBe('');
     expect(builtBreakdownTerms(x, r, '20 kg')).toEqual(['= 35', 'x 2', '+ 20 kg bar', '= 90 kg']);
     expect(checkBuild(x, [kg(25), kg(15), kg(2.5)]).why).toBe('5 kg over');
-    expect(checkBuild(x, []).why).toBe('80 kg under');
+    expect(checkBuild(x, []).why).toBe('80 kg short');
   });
 
   it('names the build mistakes: the Bar, the Collars, both Sides on one', () => {

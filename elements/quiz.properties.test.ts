@@ -68,6 +68,100 @@ describe('Loadout quiz shell properties (RBAR-92)', () => {
     );
   });
 
+  // ----- Build the bar (RBAR-101) -----
+  const buildArb = fc.record({
+    c: caseArb,
+    // Palette taps by key index, with an Undo after some.
+    taps: fc.array(fc.record({ key: fc.nat(), undo: fc.boolean() }), { maxLength: 10 }),
+    // Pairs on hand per size (or unlimited), so the palette holds the limits.
+    caps: fc.array(fc.oneof(fc.integer({ min: 0, max: 2 }), fc.constant(-1)), {
+      minLength: 10,
+      maxLength: 10,
+    }),
+  });
+  function mountBuild(c: Case, caps: number[] | null): { el: Quiz; root: ShadowRoot } {
+    const set = PLATE_SETS[c.set];
+    localStorage.clear();
+    localStorage.setItem('rackbar.plateSet', c.set);
+    localStorage.setItem('rackbar.barKg', String(set.bars[c.barIndex % set.bars.length].kg));
+    localStorage.setItem('rackbar.collarKg', String(c.collarKg));
+    localStorage.setItem('rackbar.quiz', JSON.stringify({ mode: 'build', settings: { collars: c.collars } }));
+    if (caps) {
+      const limits = Object.fromEntries(
+        set.inventory
+          .map((p, i) => [p.label ?? String(p.kg), caps[i % caps.length]] as const)
+          .filter(([, n]) => n >= 0),
+      );
+      localStorage.setItem('rackbar.platesOnHand', JSON.stringify({ [c.set]: limits }));
+    }
+    document.body.innerHTML = '';
+    const el = document.createElement('rack-quiz') as Quiz;
+    el.setAttribute('seed', String(c.seed));
+    document.body.append(el);
+    return { el, root: el.shadowRoot! };
+  }
+  const paletteKeys = (root: ShadowRoot) => [
+    ...root.querySelector('rack-palette')!.shadowRoot!.querySelectorAll<HTMLButtonElement>('.key'),
+  ];
+
+  it("tapping the Target's fewest Side onto the palette and Checking scores right (RBAR-101, ADR-0003)", () => {
+    fc.assert(
+      fc.property(caseArb, (c) => {
+        const { el, root } = mountBuild(c, null);
+        const q = el.question!;
+        const keys = paletteKeys(root);
+        for (const p of q.side) keys.find((k) => k.dataset.kg === String(p.kg))!.click();
+        const sleeve = root.querySelector('rack-sleeve') as Sleeve;
+        expect(sleeve.sideLoad.map((p) => p.kg)).toEqual(q.side.map((p) => p.kg));
+        expect(sleeve.collars).toBe(q.collarKg > 0);
+        root.querySelector<HTMLButtonElement>('[data-check]')!.click();
+        expect(phase(root)).toBe('right');
+        expect(root.querySelector('[data-streak]')!.textContent).toBe('1');
+      }),
+      { seed: SEED, numRuns: 40 },
+    );
+  });
+
+  it('any Side tapped on the palette is right exactly when Bar + 2 x Collar + 2 x Side is the Target; the taps hold the Sleeve and the Plate limits (RBAR-101, ADR-0008, ADR-0012, ADR-0016)', () => {
+    fc.assert(
+      fc.property(buildArb, fc.boolean(), ({ c, taps, caps }, limited) => {
+        const { el, root } = mountBuild(c, limited ? caps : null);
+        const q = el.question!;
+        const sleeve = root.querySelector('rack-sleeve') as Sleeve;
+        for (const t of taps) {
+          const keys = paletteKeys(root);
+          keys[t.key % keys.length].click();
+          if (t.undo) root.querySelector<HTMLButtonElement>('[data-undo]')!.click();
+        }
+        const side = sleeve.sideLoad;
+        // Heaviest first, within the Sleeve, and never past a size's pairs on hand.
+        expect([...side].sort((a, b) => b.kg - a.kg)).toEqual(side);
+        expect(side.reduce((mm, p) => mm + p.widthMm, 0)).toBeLessThanOrEqual(415 + 1e-9);
+        const inv = (root.querySelector('rack-palette') as HTMLElement & {
+          inventory: readonly (Plate & { maxPerSide?: number })[];
+        }).inventory;
+        for (const p of inv) {
+          const on = side.filter((x) => x.kg === p.kg).length;
+          expect(on).toBeLessThanOrEqual(p.maxPerSide ?? Infinity);
+        }
+        const go = root.querySelector<HTMLButtonElement>('[data-check]')!;
+        if (side.length === 0) {
+          expect(go.disabled).toBe(true);
+          return;
+        }
+        go.click();
+        const totalKg = q.barKg + 2 * q.collarKg + 2 * side.reduce((s, p) => s + p.kg, 0);
+        const right = Math.abs(totalKg - q.totalKg) < 1e-6;
+        expect(phase(root)).toBe(right ? 'right' : 'wrong');
+        if (!right) {
+          expect(root.querySelector('[data-why]')!.textContent).not.toBe('');
+          expect(root.querySelector('[data-oneway]')).not.toBeNull();
+        }
+      }),
+      { seed: SEED, numRuns: 60 },
+    );
+  });
+
   it("the quiz bar draws the question's Side, and a Collar only when Setup has Collars on the kg set, never on a bare Bar (RBAR-92, ADR-0008)", () => {
     fc.assert(
       fc.property(caseArb, (c) => {

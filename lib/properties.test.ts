@@ -109,6 +109,7 @@ import type { PlatesOnHand } from './platesonhand.ts';
 import {
   COLLARS_MODES,
   MAX_PLATES_CHOICES,
+  QUIZ_MODES,
   buildPalette,
   buildQuestion,
   buildTap,
@@ -2499,6 +2500,7 @@ describe('Loadout quiz properties (RBAR-92, ADR-0002, ADR-0003, ADR-0008, ADR-00
         const s = parseQuizSaved(raw);
         expect(MAX_PLATES_CHOICES).toContain(s.settings.maxPlates);
         expect(COLLARS_MODES).toContain(s.settings.collars);
+        expect(QUIZ_MODES).toContain(s.mode);
         expect(s.record.best).toBeGreaterThanOrEqual(s.record.streak);
         expect(parseQuizSaved(serializeQuizSaved(s))).toEqual(s);
       }),

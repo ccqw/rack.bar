@@ -18,7 +18,12 @@
 // limits. A size limited to none is dimmed and its face struck through; a limited one
 // wears an "x1".."x4" badge. Neither ever disables a key -- the lifter may be loading
 // a bar the app does not know about, and only the sleeve refuses (ADR-0005, ADR-0012).
-import { ELEIKO_KG, plateFitsMm } from '../lib/plates.ts';
+//
+// The Loadout quiz's Build the bar (RBAR-101) sets `holdLimits`: there the Plates on
+// hand are the rules of the drill, so a size limited to none is disabled, and a limited
+// one is disabled once its pairs are all on the Side (`side` feeds the counts). Its Undo
+// and Clear sit in the head row through the `actions` slot.
+import { ELEIKO_KG, plateFace, plateFitsMm, sideWidthMm } from '../lib/plates.ts';
 import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import { BOX_SIZING } from './boxsizing.ts';
 import { BUTTON_FX } from './buttonfx.ts';
@@ -31,6 +36,30 @@ class RackPalette extends HTMLElement {
   private warn!: HTMLElement;
   private _inventory: readonly InventoryEntry[] = ELEIKO_KG;
   private _sideMm = 0;
+  private _side: readonly Plate[] = [];
+  private _holdLimits = false;
+
+  /**
+   * Hold the Plate limits (the quiz's Build the bar, RBAR-101): a key is disabled when
+   * its size is limited to none or all its pairs are on the Side. Off by default.
+   */
+  set holdLimits(on: boolean) {
+    this._holdLimits = on;
+    if (this.isConnected) this.syncFit();
+  }
+  get holdLimits(): boolean {
+    return this._holdLimits;
+  }
+
+  /** The Side being built: sets `sideMm` from it and the per-size counts `holdLimits`
+   * reads. A sync, not a re-render. */
+  set side(plates: readonly Plate[]) {
+    this._side = plates;
+    this.sideMm = sideWidthMm(plates);
+  }
+  get side(): readonly Plate[] {
+    return this._side;
+  }
 
   /** The denominations to offer (the active set's Inventory). Assigning re-renders. */
   set inventory(plates: readonly InventoryEntry[]) {
@@ -107,6 +136,7 @@ class RackPalette extends HTMLElement {
           color: var(--rack-accent);
         }
         .full[hidden] { display: none; }
+        .end { display: inline-flex; align-items: center; gap: 8px; }
         .full .dot {
           width: 5px; height: 5px; border-radius: 999px; flex: none;
           background: var(--rack-accent);
@@ -154,8 +184,11 @@ class RackPalette extends HTMLElement {
       </style>
       <div class="head">
         <h2 class="label">Add</h2>
-        <span class="full" data-sleeve-full hidden
-          ><span class="dot" aria-hidden="true"></span>Sleeve full</span>
+        <span class="end">
+          <span class="full" data-sleeve-full hidden
+            ><span class="dot" aria-hidden="true"></span>Sleeve full</span>
+          <slot name="actions"></slot>
+        </span>
       </div>
       <div class="keys">${keys}</div>
     `;
@@ -176,11 +209,19 @@ class RackPalette extends HTMLElement {
   private syncFit(): void {
     let anyFits = false;
     this.root.querySelectorAll<HTMLButtonElement>('.key').forEach((key, i) => {
-      const fits = plateFitsMm(this._sideMm, this._inventory[i]);
-      key.disabled = !fits;
+      const p = this._inventory[i];
+      const fits = plateFitsMm(this._sideMm, p);
+      key.disabled = !fits || (this._holdLimits && this.allOn(p));
       anyFits ||= fits;
     });
     this.warn.hidden = anyFits || this._inventory.length === 0;
+  }
+
+  // Whether every pair of `p`'s size is on the Side (a size limited to none: always).
+  private allOn(p: InventoryEntry): boolean {
+    const cap = p.maxPerSide ?? Infinity;
+    if (cap === Infinity) return false;
+    return this._side.filter((x) => plateFace(x) === plateFace(p)).length >= cap;
   }
 
   private emit(plate: Plate): void {

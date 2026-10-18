@@ -5,12 +5,23 @@
 // 42.5 x 2 + 20 kg bar = 105 kg"), then Next. A streak and the best streak sit in the
 // header; the last ten answers are dots under it.
 //
+// Slice 2 (RBAR-101) adds Build the bar, the reverse drill, behind a Read the bar /
+// Build the bar mode track under the header (the calculator's own mode track, design
+// option A). Build shows a Target; the lifter taps Plates on <rack-palette> onto the
+// same <rack-sleeve> Read draws (the Bar from the left, the Plates out to the right,
+// heaviest innermost), Undo or Clear, then Check. Any Side that makes the Target is
+// right; one with more Plates than the solver's gets a "Fewest plates" note and waits
+// for Next. A wrong Side names the miss and shows the breakdown of what was built
+// against the Target, and one way to make it. One streak serves both drills; the mode
+// persists with the quiz's saved value.
+//
 // The core is lib/quiz.ts (pure, seeded): this element only wires the DOM to it
 // (ADR-0001). The plate set, Bar, Collar and Plates on hand are the lifter's Setup,
 // read through elements/rig.ts; the quiz's own settings and its streak persist under
 // `rackbar.quiz` (ADR-0007). The column fits one phone screen (ADR-0013): only the
 // bar block flexes.
 import './sleeve.ts';
+import './palette.ts';
 import './quizgear.ts';
 import type { GearRig } from './quizgear.ts';
 import { BOX_SIZING } from './boxsizing.ts';
@@ -26,12 +37,19 @@ import { PLATE_SETS } from '../lib/platesets.ts';
 import { barLabel, barsFor } from '../lib/custombars.ts';
 import { inventoryOnHand } from '../lib/platesonhand.ts';
 import { format } from '../lib/units.ts';
-import type { Plate } from '../lib/plates.ts';
+import { plateFace } from '../lib/plates.ts';
+import type { InventoryEntry, Plate } from '../lib/plates.ts';
 import {
   HISTORY_LEN,
   answerOf,
   breakdownTerms,
+  buildPalette,
+  buildQuestion,
+  buildTap,
+  builtBreakdownTerms,
+  checkBuild,
   collarsOffered,
+  fewestNote,
   diagnose,
   isRight,
   parseQuizSaved,
@@ -40,7 +58,14 @@ import {
   serializeQuizSaved,
   typeKey,
 } from '../lib/quiz.ts';
-import type { Question, QuizRecord, QuizRig, QuizSettings } from '../lib/quiz.ts';
+import type {
+  BuildResult,
+  Question,
+  QuizMode,
+  QuizRecord,
+  QuizRig,
+  QuizSettings,
+} from '../lib/quiz.ts';
 
 /** The quiz's own stored value: its settings and its streak (lib/quiz.ts). */
 export const QUIZ_KEY = 'rackbar.quiz';
@@ -54,6 +79,13 @@ type Sleeve = HTMLElement & {
   collars: boolean;
   /** Show the engraved numbers on the discs (iron always shows its stamp). */
   numerals: boolean;
+  /** Tapping a disc removes its Plate (emits `removeplate`). */
+  interactive: boolean;
+};
+type Palette = HTMLElement & {
+  inventory: readonly InventoryEntry[];
+  side: readonly Plate[];
+  holdLimits: boolean;
 };
 type Gear = HTMLElement & {
   settings: QuizSettings;
@@ -94,8 +126,15 @@ class RackQuiz extends HTMLElement {
   private t0 = 0;
   private ms = 0;
   private advanceTimer: ReturnType<typeof setTimeout> | undefined;
+  private mode: QuizMode = 'read';
+  // Build the bar: the Plates in the order tapped (Undo takes the last), the Side they
+  // make (heaviest first, as the sleeve draws it), and the last Check's result.
+  private taps: Plate[] = [];
+  private built: readonly Plate[] = [];
+  private result: BuildResult | null = null;
 
   private sleeve!: Sleeve;
+  private palette!: Palette;
   private gear!: Gear;
   private el: Record<string, HTMLElement> = {};
 
@@ -106,6 +145,7 @@ class RackQuiz extends HTMLElement {
     this.seed = this.hasAttribute('seed') && Number.isFinite(fixed) ? fixed : randomSeed();
     const saved = parseQuizSaved(readPersisted(QUIZ_KEY));
     this.settings = saved.settings;
+    this.mode = saved.mode;
     this.record = saved.record;
     this.render();
     this.loadRig();
@@ -153,20 +193,80 @@ class RackQuiz extends HTMLElement {
     };
   }
 
+  /** The drill on screen (tests read it). */
+  get quizMode(): QuizMode {
+    return this.mode;
+  }
+
   private save(): void {
-    writePersisted(QUIZ_KEY, serializeQuizSaved({ settings: this.settings, record: this.record }));
+    writePersisted(
+      QUIZ_KEY,
+      serializeQuizSaved({ settings: this.settings, mode: this.mode, record: this.record }),
+    );
   }
 
   private newQuestion(): void {
     clearTimeout(this.advanceTimer);
-    this.q = quizQuestion(this.seed, this.index, this.rig, this.settings);
+    const build = this.mode === 'build';
+    this.q = (build ? buildQuestion : quizQuestion)(this.seed, this.index, this.rig, this.settings);
     this.draft = '';
     this.wrongDraft = '';
+    this.taps = [];
+    this.built = [];
+    this.result = null;
     this.phase = 'ask';
     this.t0 = performance.now();
-    this.sleeve.sideLoad = this.q?.side ?? [];
+    this.dataset.mode = this.mode;
+    if (build) {
+      const inv = buildPalette(this.rig, this.settings);
+      if (this.palette.inventory !== inv) this.palette.inventory = inv;
+    }
+    this.sleeve.interactive = build;
+    this.sleeve.sideLoad = build ? [] : (this.q?.side ?? []);
     this.sleeve.collars = (this.q?.collarKg ?? 0) > 0;
     this.update();
+  }
+
+  // Switch drills: the new one starts a fresh question; the streak carries over.
+  private setMode(mode: QuizMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.save();
+    this.newQuestion();
+  }
+
+  // ----- Build the bar: the Side the lifter is building -----
+
+  private setTaps(taps: Plate[]): void {
+    this.taps = taps;
+    this.built = [...taps].sort((a, b) => b.kg - a.kg);
+    this.sleeve.sideLoad = this.built;
+    this.update();
+  }
+
+  private tap(plate: InventoryEntry): void {
+    if (this.mode !== 'build' || this.phase !== 'ask' || !this.q) return;
+    const next = buildTap(this.built, plate);
+    if (next.length === this.built.length) return; // refused: the Sleeve or a limit
+    this.setTaps([...this.taps, plate]);
+  }
+
+  private undo(): void {
+    if (this.mode !== 'build' || this.phase !== 'ask' || this.taps.length === 0) return;
+    this.setTaps(this.taps.slice(0, -1));
+  }
+
+  private clear(): void {
+    if (this.mode !== 'build' || this.phase !== 'ask' || this.taps.length === 0) return;
+    this.setTaps([]);
+  }
+
+  // A tapped disc comes off: the latest tap of that size.
+  private takeOff(plate: Plate): void {
+    if (this.mode !== 'build' || this.phase !== 'ask') return;
+    const i = this.taps.map(plateFace).lastIndexOf(plateFace(plate));
+    if (i === -1) return;
+    this.setTaps([...this.taps.slice(0, i), ...this.taps.slice(i + 1)]);
   }
 
   private next(): void {
@@ -185,11 +285,12 @@ class RackQuiz extends HTMLElement {
   private check(show: boolean): boolean {
     const q = this.q;
     if (!q) return false;
-    if (this.phase === 'wrong') {
+    if (this.phase === 'wrong' || (this.phase === 'right' && this.result?.moreThanFewest)) {
       this.next();
       return true;
     }
     if (this.phase !== 'ask') return false;
+    if (this.mode === 'build') return this.checkBuilt();
     const answer = answerOf(this.draft);
     if (!show && answer === null) return false;
     this.ms = performance.now() - this.t0;
@@ -200,6 +301,24 @@ class RackQuiz extends HTMLElement {
     this.wrongDraft = show ? '' : this.draft;
     this.update();
     if (right) this.advanceTimer = setTimeout(() => this.next(), RIGHT_PAUSE_MS);
+    return true;
+  }
+
+  // Check the built Side. A plain right one moves on by itself; one with more Plates
+  // than the fewest waits for Next, so the note can be read.
+  private checkBuilt(): boolean {
+    const q = this.q;
+    if (!q || this.built.length === 0) return false;
+    this.ms = performance.now() - this.t0;
+    const r = checkBuild(q, this.built);
+    this.result = r;
+    this.record = scoreAnswer(this.record, r.right);
+    this.save();
+    this.phase = r.right ? 'right' : 'wrong';
+    this.update();
+    if (r.right && !r.moreThanFewest) {
+      this.advanceTimer = setTimeout(() => this.next(), RIGHT_PAUSE_MS);
+    }
     return true;
   }
 
@@ -215,7 +334,11 @@ class RackQuiz extends HTMLElement {
       if (this.check(false)) e.preventDefault();
       return;
     }
-    if (/^[0-9.]$/.test(e.key)) this.press(e.key);
+    if (this.mode === 'build') {
+      // Build: Backspace is Undo; there is nothing to type.
+      if (e.key !== 'Backspace') return;
+      this.undo();
+    } else if (/^[0-9.]$/.test(e.key)) this.press(e.key);
     else if (e.key === 'Backspace') this.press('del');
     else return;
     e.preventDefault();
@@ -364,6 +487,59 @@ class RackQuiz extends HTMLElement {
           background: var(--rack-raised); border-color: var(--rack-border-muted);
           color: var(--rack-text-disabled); cursor: default;
         }
+        /* The drill switch (RBAR-101, option A): the calculator's mode track, the
+           accent segment the active drill. */
+        .modes {
+          display: flex; padding: 4px; background: var(--rack-raised);
+          border: 1px solid var(--rack-border); border-radius: var(--rack-radius-pill);
+        }
+        .modes button {
+          flex: 1; font-size: 14px; font-weight: 600; color: var(--rack-text-dim);
+          background: transparent; border: none; border-radius: var(--rack-radius-pill);
+          padding: 11px 0;
+        }
+        .modes button[aria-pressed="true"] {
+          font-weight: 700; color: var(--rack-accent-ink); background: var(--rack-accent);
+        }
+        /* Each drill shows its own blocks. */
+        :host(:not([data-mode="build"])) .bo { display: none; }
+        :host([data-mode="build"]) .ro { display: none; }
+        /* Build: the Target over the bar. */
+        .tgt { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+        .tbig {
+          font-weight: 800; font-size: 40px; letter-spacing: -.025em; line-height: 1;
+          font-variant-numeric: tabular-nums; min-height: 40px;
+          display: flex; align-items: baseline; gap: 8px; white-space: nowrap;
+        }
+        .tbig .u { font-size: 20px; font-weight: 600; color: var(--rack-text-dim); letter-spacing: 0; }
+        .tbig s {
+          font-size: 24px; color: var(--rack-danger); text-decoration-thickness: 2px; font-weight: 700;
+        }
+        .tbig[data-phase="right"] { color: var(--rack-success); }
+        .coll { font: 600 11px var(--rack-font-num); color: var(--rack-text-dim); }
+        :host([data-mode="build"]) .fb:empty { display: none; }
+        .note {
+          display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center;
+          font: 600 11.5px var(--rack-font-num); color: var(--rack-text-secondary);
+        }
+        rack-palette[inert] { opacity: .45; }
+        .pill {
+          height: 28px; padding: 0 11px; border-radius: 999px;
+          border: 1px solid var(--rack-border-muted); background: transparent;
+          font: 600 10.5px var(--rack-font-num); letter-spacing: .1em; text-transform: uppercase;
+          color: var(--rack-text-secondary); display: inline-flex; align-items: center; gap: 6px;
+        }
+        .pill svg { display: block; }
+        .pill:disabled { color: var(--rack-text-disabled); cursor: default; }
+        .pills { display: inline-flex; gap: 6px; }
+        .check {
+          height: 50px; border-radius: 13px; border: 1px solid var(--rack-accent);
+          background: var(--rack-accent); color: var(--rack-accent-ink); font: 800 16px var(--rack-font);
+        }
+        .check:disabled {
+          background: var(--rack-raised); border-color: var(--rack-border-muted);
+          color: var(--rack-text-disabled); cursor: default;
+        }
         .sr {
           position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
           overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -383,6 +559,15 @@ class RackQuiz extends HTMLElement {
           .pad { --kh: 40px; gap: 6px; }
           .big { font-size: 40px; min-height: 40px; }
           .fb { min-height: 40px; }
+          .modes { padding: 1px; }
+          .modes button { padding: 9px 0; }
+          .check { height: 44px; }
+          .tbig { font-size: 34px; min-height: 34px; }
+          /* A wrong Build answer brings the breakdown and one way: the bar gives first,
+             and the Make label and the collars line step aside. */
+          :host([data-mode="build"]) .viz[data-phase="wrong"] { min-height: 64px; }
+          :host([data-mode="build"][data-phase="wrong"]) .tgt .lbl,
+          :host([data-mode="build"][data-phase="wrong"]) .coll { display: none; }
         }
       </style>
       <header class="hd">
@@ -404,9 +589,18 @@ class RackQuiz extends HTMLElement {
         </div>
       </header>
       <h1 class="sr">Loadout quiz</h1>
+      <div class="modes" role="group" aria-label="Drill">
+        <button type="button" data-qmode="read" aria-pressed="true">Read the bar</button>
+        <button type="button" data-qmode="build" aria-pressed="false">Build the bar</button>
+      </div>
       <div class="row">
         <span class="hist" data-hist aria-hidden="true">${'<i></i>'.repeat(HISTORY_LEN)}</span>
         <span class="qn" data-qn></span>
+      </div>
+      <div class="tgt bo">
+        <span class="lbl">Make</span>
+        <div class="tbig" data-target></div>
+        <span class="coll" data-coll></span>
       </div>
       <div class="viz" data-viz>
         <rack-sleeve></rack-sleeve>
@@ -414,10 +608,17 @@ class RackQuiz extends HTMLElement {
         <p class="empty" data-empty hidden>No Plates on hand.<br><a href="${SETUP_LINK}">Set them in Setup</a></p>
       </div>
       <div class="ans">
-        <div class="big" data-big></div>
+        <div class="big ro" data-big></div>
         <div class="fb" data-fb></div>
       </div>
-      <div class="pad" data-pad>${pad}</div>
+      <div class="pad ro" data-pad>${pad}</div>
+      <rack-palette class="bo">
+        <span class="pills" slot="actions">
+          <button type="button" class="pill" data-undo disabled>${UNDO_ICON}Undo</button>
+          <button type="button" class="pill" data-clear disabled>&times; Clear</button>
+        </span>
+      </rack-palette>
+      <button type="button" class="check bo" data-check disabled>Check</button>
       <p class="sr" role="status" data-announce></p>
       <rack-quiz-gear></rack-quiz-gear>
     `;
@@ -434,9 +635,28 @@ class RackQuiz extends HTMLElement {
       fb: $('[data-fb]'),
       go: $('[data-go]'),
       announce: $('[data-announce]'),
+      target: $('[data-target]'),
+      coll: $('[data-coll]'),
+      check: $('[data-check]'),
+      undo: $('[data-undo]'),
+      clear: $('[data-clear]'),
     };
     this.sleeve = this.root.querySelector('rack-sleeve') as Sleeve;
     this.gear = this.root.querySelector('rack-quiz-gear') as Gear;
+    this.palette = this.root.querySelector('rack-palette') as Palette;
+    this.palette.holdLimits = true;
+    this.palette.addEventListener('addplate', (e) =>
+      this.tap((e as CustomEvent<{ plate: InventoryEntry }>).detail.plate),
+    );
+    this.sleeve.addEventListener('removeplate', (e) =>
+      this.takeOff((e as CustomEvent<{ plate: Plate }>).detail.plate),
+    );
+    this.el.undo.addEventListener('click', () => this.undo());
+    this.el.clear.addEventListener('click', () => this.clear());
+    this.el.check.addEventListener('click', () => this.check(false));
+    this.root.querySelectorAll<HTMLButtonElement>('[data-qmode]').forEach((b) =>
+      b.addEventListener('click', () => this.setMode(b.dataset.qmode as QuizMode)),
+    );
     this.gear.settings = this.settings;
     this.root.querySelectorAll<HTMLButtonElement>('[data-key]').forEach((b) =>
       b.addEventListener('click', () => this.press(b.dataset.key!)),
@@ -473,7 +693,11 @@ class RackQuiz extends HTMLElement {
       else (dots[i] as HTMLElement).dataset.r = h ? '1' : '0';
     }
     el.viz.dataset.phase = phase;
+    this.dataset.phase = phase;
     el.empty.hidden = q !== null;
+    this.root.querySelectorAll<HTMLButtonElement>('[data-qmode]').forEach((b) =>
+      b.setAttribute('aria-pressed', String(b.dataset.qmode === this.mode)),
+    );
     // Numbers on the discs: the gear's choice, and always on a wrong answer (the
     // breakdown names the Plates; the bar should too).
     this.sleeve.numerals = this.settings.numbers || phase === 'wrong';
@@ -481,7 +705,17 @@ class RackQuiz extends HTMLElement {
     if (!q) {
       el.big.innerHTML = '';
       el.fb.innerHTML = '';
+      el.target.innerHTML = '';
+      el.coll.textContent = '';
       go.disabled = true;
+      (el.check as HTMLButtonElement).disabled = true;
+      (el.undo as HTMLButtonElement).disabled = true;
+      (el.clear as HTMLButtonElement).disabled = true;
+      this.palette.toggleAttribute('inert', true);
+      return;
+    }
+    if (this.mode === 'build') {
+      this.updateBuild(q);
       return;
     }
     const unit = `<span class="u">${q.unit}</span>`;
@@ -513,7 +747,56 @@ class RackQuiz extends HTMLElement {
       el.announce.textContent = `${why ? why + '. ' : ''}The Total is ${q.totalShown} ${q.unit}.`;
     }
   }
+
+  // Build the bar's screen: the Target (struck through by the built Total when wrong),
+  // the collars line, the palette and its Undo / Clear, the feedback and Check / Next.
+  private updateBuild(q: Question): void {
+    const { el, phase, result: r } = this;
+    const unit = `<span class="u">${q.unit}</span>`;
+    const ask = phase === 'ask';
+    el.target.dataset.phase = phase;
+    el.target.innerHTML =
+      phase === 'wrong' && r
+        ? `<s>${r.totalShown}</s>${q.totalShown}${unit}`
+        : `${q.totalShown}${unit}`;
+    el.coll.textContent = q.collarKg > 0 ? `with ${format(q.collarKg, 'kg')} collars` : 'no collars';
+    this.palette.side = this.built;
+    this.palette.toggleAttribute('inert', !ask);
+    const empty = this.built.length === 0;
+    (el.undo as HTMLButtonElement).disabled = !ask || empty;
+    (el.clear as HTMLButtonElement).disabled = !ask || empty;
+    const check = el.check as HTMLButtonElement;
+    if (ask || !r) {
+      el.fb.innerHTML = '';
+      check.textContent = 'Check';
+      check.disabled = empty;
+      el.announce.textContent = '';
+    } else if (r.right) {
+      const note = fewestNote(r);
+      el.fb.innerHTML =
+        `<span class="t"><b>Right</b> &middot; ${(this.ms / 1000).toFixed(1)} s</span>` +
+        (note ? `<span class="note" data-note>Fewest plates: ${chips(r.fewest)}</span>` : '');
+      check.textContent = note ? 'Next' : 'Check';
+      check.disabled = !note;
+      el.announce.textContent =
+        `Right, ${q.totalShown} ${q.unit}. Streak ${this.record.streak}.` + (note ? ` ${note}.` : '');
+    } else {
+      el.fb.innerHTML =
+        `<span class="why" data-why>${esc(r.why)}</span>` +
+        `<div class="math" data-math>${chips(r.side)}${builtBreakdownTerms(q, r, this.barName)
+          .map((t) => `<span>${esc(t)}</span>`)
+          .join('')}</div>` +
+        `<span class="note" data-oneway>One way: ${chips(r.fewest)}</span>`;
+      check.textContent = 'Next';
+      check.disabled = false;
+      el.announce.textContent = `${r.why}. You built ${r.totalShown} ${q.unit}; the Target is ${q.totalShown} ${q.unit}.`;
+    }
+  }
 }
+
+// The Undo pill's glyph: a hooked arrow back.
+const UNDO_ICON =
+  '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5 2 5l2.5 2.5"/><path d="M2 5h6.5a3.5 3.5 0 0 1 0 7H6"/></svg>';
 
 // The breakdown's Plate chips, heaviest first, in their plate colours.
 function chips(side: readonly Plate[]): string {

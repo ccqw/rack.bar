@@ -205,3 +205,36 @@ describe('<rack-palette> under Pairs of Plates on Hand (RBAR-72, ADR-0016)', () 
     expect(seen).toHaveBeenCalledWith(25);
   });
 });
+
+describe('<rack-palette> holding the Plate limits (the quiz, RBAR-101, ADR-0016)', () => {
+  type Held = Palette & { holdLimits: boolean; side: readonly Plate[] };
+  const inv = withLimits(ELEIKO_KG, { '25': 1, '15': 0 });
+  const key = (el: HTMLElement, kg: number) => keys(el).find((k) => k.dataset.kg === String(kg))!;
+
+  it('off by default: a none size stays tappable, as in By Plates', () => {
+    const el = mountPalette() as Held;
+    el.inventory = inv;
+    expect(key(el, 15).disabled).toBe(false);
+  });
+
+  it('on: a none size is disabled, and a limited one once its pairs are on the Side', () => {
+    const el = mountPalette() as Held;
+    el.inventory = inv;
+    el.holdLimits = true;
+    expect(key(el, 15).disabled).toBe(true);
+    expect(key(el, 25).disabled).toBe(false);
+    el.side = [inv[0]];
+    expect(key(el, 25).disabled).toBe(true);
+    expect(key(el, 20).disabled).toBe(false);
+    el.side = [];
+    expect(key(el, 25).disabled).toBe(false);
+  });
+
+  it('a limits-only lockout never reads as "Sleeve full"', () => {
+    const el = mountPalette() as Held;
+    el.inventory = withLimits(ELEIKO_KG, Object.fromEntries(ELEIKO_KG.map((p) => [String(p.kg), 0])));
+    el.holdLimits = true;
+    expect(keys(el).every((k) => k.disabled)).toBe(true);
+    expect(el.shadowRoot!.querySelector<HTMLElement>('[data-sleeve-full]')!.hidden).toBe(true);
+  });
+});

@@ -449,7 +449,7 @@ export function checkBuild(q: Question, built: readonly Plate[]): BuildResult {
  * Why a built Side (its sum `sideShown`, in the question's Unit) misses the Target, in
  * a few words: "Forgot the Bar" (twice the Side, plus Collars, is the Target), "Forgot
  * the collars", "Loaded both sides on one" (the Side is the whole Target less the Bar
- * and Collars), else how far the Total is off ("5 kg over", "2.5 kg under"). '' when
+ * and Collars), else how far the Total is off ("5 kg over", "2.5 kg short"). '' when
  * the Total is the Target.
  */
 export function buildDiagnose(q: Question, sideShown: number): string {
@@ -467,7 +467,7 @@ export function buildDiagnose(q: Question, sideShown: number): string {
   ];
   const hit = named.find(([side]) => side > 0 && Math.abs(side - sideShown) <= tol);
   if (hit) return hit[1];
-  return `${Math.abs(d)} ${u} ${d > 0 ? 'over' : 'under'}`;
+  return `${Math.abs(d)} ${u} ${d > 0 ? 'over' : 'short'}`;
 }
 
 /** The note for a right Side with extra Plates: "Fewest plates: 25 + 10"; else ''. */
@@ -536,19 +536,27 @@ export function scoreAnswer(rec: QuizRecord, right: boolean): QuizRecord {
 
 // ----- persistence (the shell stores this under rackbar.quiz, ADR-0007) -----
 
-/** What the quiz keeps between visits: its gear settings, the streak and the best. */
+/** What the quiz keeps between visits: its gear settings, the drill it was on (RBAR-101),
+ * the streak and the best. One streak serves both drills. */
 export interface QuizSaved {
   readonly settings: QuizSettings;
+  readonly mode: QuizMode;
   readonly record: QuizRecord;
 }
 
-export const DEFAULT_SAVED: QuizSaved = { settings: DEFAULT_QUIZ_SETTINGS, record: EMPTY_RECORD };
+export const DEFAULT_SAVED: QuizSaved = {
+  settings: DEFAULT_QUIZ_SETTINGS,
+  mode: 'read',
+  record: EMPTY_RECORD,
+};
 
-/** The stored value: `{"v":1,"settings":{...},"streak":3,"best":9,"history":[...]}`. */
+/** The stored value: `{"v":1,"settings":{...},"mode":"build","streak":3,"best":9,"history":[...]}`.
+ * A value stored before RBAR-101 has no mode and reads as Read. */
 export function serializeQuizSaved(s: QuizSaved): string {
   return JSON.stringify({
     v: 1,
     settings: s.settings,
+    mode: s.mode,
     streak: s.record.streak,
     best: s.record.best,
     history: s.record.history,
@@ -594,5 +602,8 @@ export function parseQuizSaved(raw: string | null): QuizSaved {
     Array.isArray(o.history) && o.history.every((h) => typeof h === 'boolean')
       ? (o.history as boolean[]).slice(-HISTORY_LEN)
       : [];
-  return { settings, record: { streak, best, history } };
+  const mode: QuizMode = (QUIZ_MODES as readonly unknown[]).includes(o.mode)
+    ? (o.mode as QuizMode)
+    : DEFAULT_SAVED.mode;
+  return { settings, mode, record: { streak, best, history } };
 }
