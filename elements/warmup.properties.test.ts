@@ -129,8 +129,8 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
         const p = rig.inventory.find((x) => Math.abs(x.kg - d.kg) < 1e-9)!;
         return p.label ?? String(p.kg);
       });
-    const apply = (side: string[], sub: string): string[] => {
-      const body = sub.replace(/ per side$/, '').replace(/ (kg|lb)$/, '');
+    const apply = (side: string[], cap: string): string[] => {
+      const body = cap.replace(/ (kg|lb)$/, '');
       const out = [...side];
       let off: string[] = [];
       let on: string[] = [];

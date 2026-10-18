@@ -176,6 +176,24 @@ describe('<rack-console> Warm up mode (RBAR-65 slice 2)', () => {
     expect(workDraft(el)).toBe('');
   });
 
+  it('after Next the announcer says what to change to load the new row (RBAR-95)', () => {
+    // The Next button names nothing, so the spoken line carries the moves.
+    const el = mountConsole();
+    modeBtn(el, 'warmup').click();
+    commitWorking(el, '140');
+    const said = () => q(sr(el), '[data-announce]').textContent;
+    expect(said()).toBe('20 kilograms, Bare bar');
+    nextBtn(el).click();
+    expect(said()).toBe('70 kilograms, 50% - exact, add 25 kilograms per side');
+    nextBtn(el).click();
+    expect(said()).toBe('100 kilograms, 71% of 140 kg, add 15 kilograms per side');
+    nextBtn(el).click();
+    nextBtn(el).click();
+    expect(said()).toBe('140 kilograms, 100% - exact, take off 2.5, then add 10 kilograms per side');
+    // The spoken moves match what the visible add caption says.
+    expect(vizAdd(el).textContent).toBe('off 2.5, on 10 kg');
+  });
+
   it('loads the selected row on the shared sleeve and Total, starting at the bare Bar', () => {
     const el = mountConsole();
     modeBtn(el, 'warmup').click();

@@ -269,6 +269,7 @@ describe('warmupView', () => {
   it('captions the selected row\'s add beside "per side" (none on the bare Bar)', () => {
     expect(warmupView(RAMP140, 0, 'kg', 'kg').addCaption).toBeNull();
     expect(warmupView(RAMP140, 1, 'kg', 'kg').addCaption).toBe('+25 kg');
+    expect(warmupView(RAMP140, 4, 'kg', 'kg').addCaption).toBe('off 0.5 + 2.5, on 10 kg');
   });
 
   it('captions nothing when the row repeats the previous Side', () => {
