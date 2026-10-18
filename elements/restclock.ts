@@ -134,9 +134,10 @@ export class RestClock extends EventTarget {
     this.set(clearRest(this.rest));
   }
 
-  /** Warm up's Next: start the remembered Rest, when "Start after Next" is on. */
+  /** Warm up's Next: start the remembered Rest, only when "Start after Next" is on
+   * (off by default). Off, Next leaves the timer exactly as it is. */
   afterNext(): void {
-    if (this._settings.autoStart) this.restart();
+    if (this._settings.startAfterNext) this.restart();
   }
 
   setChime(on: boolean): void {
@@ -145,8 +146,8 @@ export class RestClock extends EventTarget {
     this.setSettings({ ...this._settings, chime: on });
   }
 
-  setAutoStart(on: boolean): void {
-    this.setSettings({ ...this._settings, autoStart: on });
+  setStartAfterNext(on: boolean): void {
+    this.setSettings({ ...this._settings, startAfterNext: on });
   }
 
   previewChime(): void {

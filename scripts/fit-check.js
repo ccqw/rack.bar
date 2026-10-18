@@ -35,9 +35,10 @@
 // the bar block's height, how far the breakdown line runs past the column (MATH CLIPPED
 // n) and how far the gear sheet would scroll inside (SHEET SCROLLS n).
 // Since RBAR-94 the head row holds three icons (the stopwatch, Share, fullscreen), and the walk adds the Rest
-// dock states (ADR-0019): with the dock up, the app reserves its height and the bar
-// block flexes, so each dock state checks every visible block of the column ends above
-// the dock (DOCK COVERS <block>), and the timer screen states check the screen fits
+// dock states (ADR-0019): with the floating pill up, the app reserves its height and the
+// bar block flexes, so each dock state checks every visible block of the column ends
+// above the pill (DOCK COVERS <block>) and the pill fits the screen, expanded too (DOCK
+// COVERS pill-overflow-<n>px), and the timer screen states check the screen fits
 // without clipping, its ring inside its cell (SCREEN CLIPS n).
 //
 //   393x659 -- iPhone 15/16 in Safari (the Must)
@@ -141,6 +142,15 @@ async (shared) => {
             covers.push(e.tagName.toLowerCase() + (e.className ? '.' + e.className.split(' ')[0] : ''));
           }
         }
+        // The floating pill itself must fit: its buttons inside it, it inside the screen.
+        const pill = dockEl.shadowRoot.querySelector('[data-dock]');
+        const pr = pill.getBoundingClientRect();
+        const pillOver = Math.max(
+          pill.scrollWidth - pill.clientWidth,
+          Math.ceil(pr.right - window.innerWidth),
+          Math.ceil(-pr.left),
+        );
+        if (pillOver > 1) covers.push(`pill-overflow-${pillOver}px`);
       }
       const scrHost = rest.querySelector('rack-rest-screen');
       let scrClip = 0;
@@ -302,7 +312,7 @@ async (shared) => {
         // The Rest dock (RBAR-94, ADR-0019): a running Rest's dock over By Weight (loaded,
         // and the round-up + Another way row), By Plates loaded, and Warm up (the bare-Bar
         // row, the Working set, and the drifted row under Plate limits); then a finished
-        // dock (yellow, overtime) and the timer screen, running and in overtime.
+        // pill (grey, overtime) and the timer screen, running and in overtime.
         await reset(RECENTS, 'run');
         await chip(142);
         await record('dock: weight loaded');
@@ -321,6 +331,19 @@ async (shared) => {
         await page.waitForFunction(() => !!document.querySelector('rack-app')?.shadowRoot);
         await inConsole(`con.querySelector('[data-mode="warmup"]').click()`);
         await record('dock: warmup Bar row');
+        // The pill's dots open -15 / +15 / x: the widest pill.
+        const pillMore = () =>
+          page.evaluate(() =>
+            document
+              .querySelector('rack-app')
+              .shadowRoot.querySelector('rack-rest')
+              .shadowRoot.querySelector('rack-rest-dock')
+              .shadowRoot.querySelector('[data-more]')
+              .click(),
+          );
+        await pillMore();
+        await record('dock expanded: warmup Bar row');
+        await pillMore();
         await stair(4);
         await record('dock: warmup Working set');
         await page.evaluate(() => {
@@ -561,7 +584,6 @@ async (shared) => {
   // row open included (RBAR-72, ADR-0013): any inner scroll fails the run.
   const scrolling = [...worst.entries()].filter(([, r]) => r.sheetScroll > 0).map(([k]) => k);
   if (scrolling.length) lines.push(`FAIL: a sheet scrolls inside at ${scrolling.join('; ')}`);
-  if (scrolling.length) lines.push(`FAIL: the Setup sheet scrolls inside at ${scrolling.join('; ')}`);
   // The Rest dock must cover nothing in the column, and the timer screen must fit
   // (RBAR-94, ADR-0019): either fails the run.
   const covered = [...worst.entries()].filter(([, r]) => r.covers?.length).map(([k]) => k);

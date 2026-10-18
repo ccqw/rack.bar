@@ -14,6 +14,7 @@ import {
 } from './restclock.ts';
 import { STALE_PAUSE_MS } from '../lib/rest.ts';
 import type { Chime } from './chime.ts';
+import { CHIME_SESSION_TYPE, preferMixingSession } from './chime.ts';
 import { DOCK_PX, DOCK_SHORT_PX } from './restdock.ts';
 import { SLEEVE_DOCKED_MIN_PX } from '../lib/sleevefit.ts';
 import { stubWakeLock } from './wakelock.stub.ts';
@@ -56,8 +57,12 @@ const inScreen = <T extends Element = HTMLButtonElement>(app: HTMLElement, sel: 
   sr(screen(app)).querySelector<T & Element>(sel) as T;
 const stopwatch = (app: HTMLElement) =>
   sr(con(app)).querySelector<HTMLButtonElement>('[data-rest]')!;
-const dockTime = (app: HTMLElement) =>
-  inDock<HTMLElement>(app, dock(app).shadowRoot!.querySelector('[data-live]')!.hasAttribute('hidden') ? '[data-done] [data-time]' : '[data-live] [data-time]').textContent;
+const dockTime = (app: HTMLElement) => inDock<HTMLElement>(app, '[data-time]').textContent;
+// The pill's visible buttons, left to right, by their data-pill name.
+const pill = (app: HTMLElement) =>
+  [...sr(dock(app)).querySelectorAll<HTMLButtonElement>('[data-open], [data-pill]')]
+    .filter((b) => !b.hidden)
+    .map((b) => b.dataset.pill ?? 'time');
 const flashOn = (app: HTMLElement) =>
   sr(rest(app)).querySelector('[data-flash]')!.classList.contains('on');
 const later = (ms: number) => vi.advanceTimersByTime(ms);
@@ -169,7 +174,7 @@ describe('counting, from the clock not the ticks', () => {
 });
 
 describe('zero', () => {
-  it('flashes the screen edge, buzzes, then counts overtime on a yellow dock', () => {
+  it('flashes the screen edge, buzzes, then counts overtime on a grey pill with a check', () => {
     const app = mountApp();
     stopwatch(app).click();
     later(120_000);
@@ -177,6 +182,12 @@ describe('zero', () => {
     expect(vibrate).toHaveBeenCalledTimes(1);
     expect(vibrate).toHaveBeenCalledWith(ZERO_VIBRATION);
     expect(inDock<HTMLElement>(app, '[data-dock]').classList.contains('is-over')).toBe(true);
+    expect(pill(app)).toEqual(['time', 'restart', 'clear']);
+    expect(inDock<HTMLElement>(app, '[data-check]').hidden).toBe(false);
+    expect(inDock<SVGElement>(app, '[data-mini]').hasAttribute('hidden')).toBe(true);
+    expect(inDock(app, '[data-open]').textContent!.replace(/\s+/g, ' ').trim()).toBe(
+      'Rest over, +0:00, open timer',
+    );
     expect(inDock<HTMLElement>(app, '[data-announce]').textContent).toBe('Rest over');
     later(12_000);
     expect(dockTime(app)).toBe('+0:12');
@@ -184,12 +195,30 @@ describe('zero', () => {
     expect(vibrate).toHaveBeenCalledTimes(1); // once
   });
 
-  it('a finished dock restarts the last Rest on a tap; its x clears it', () => {
+  it('the edge flash rests at opacity 0: a forwards animation over a 0 base, never a lit class', () => {
+    const src = readFileSync(resolve(import.meta.dirname, 'rest.ts'), 'utf8');
+    expect(src).toMatch(/\.flash \{[^}]*opacity: 0;/);
+    expect(src).toContain('inset 0 0 0 3px var(--rack-accent)');
+    expect(src).not.toMatch(/\.flash\.on \{[^}]*opacity: 1/);
+    const anims = [...src.matchAll(/\.flash\.on \{ animation: (\w+) [^}]*\}/g)];
+    expect(anims.length).toBe(2);
+    for (const [rule, name] of anims) {
+      expect(rule).toContain('forwards');
+      const frames = src.match(new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n\\s*\\}`))![1];
+      expect(frames.trim()).toMatch(/100% \{ opacity: 0; \}$/);
+    }
+    // Three blinks: three keyframes at full opacity.
+    expect(src.match(/@keyframes edgeblink[\s\S]*?100%/)![0].match(/opacity: 1;/g)!.length).toBe(3);
+  });
+
+  it('a finished pill restarts the last Rest on a tap; its x clears it', () => {
     const app = mountApp();
     stopwatch(app).click();
-    inDock(app, '[data-preset="90"]').click();
+    stopwatch(app).click();
+    inScreen(app, '[data-preset="90"]').click();
+    inScreen(app, '[data-close]').click();
     later(100_000);
-    expect(inDock(app, '[data-again]').getAttribute('aria-label')).toBe('Rest over. Restart 1:30');
+    expect(inDock(app, '[data-again]').getAttribute('aria-label')).toBe('Restart 1:30');
     inDock(app, '[data-again]').click();
     expect(dockTime(app)).toBe('1:30');
     later(95_000);
@@ -232,6 +261,74 @@ describe('zero', () => {
     expect(dock(app).hidden).toBe(true);
     stopwatch(app).click();
     expect(dockTime(app)).toBe('1:30');
+  });
+});
+
+describe('the floating pill (option B)', () => {
+  it('counting: the time, pause right on the pill, and the dots; pause freezes the clock', () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    expect(pill(app)).toEqual(['time', 'pp', 'more']);
+    later(10_000);
+    const pp = inDock(app, '[data-pp]');
+    expect(pp.getAttribute('aria-label')).toBe('Pause');
+    pp.click();
+    expect(pp.getAttribute('aria-label')).toBe('Resume');
+    later(60_000);
+    expect(dockTime(app)).toBe('1:50');
+    pp.click();
+    later(5_000);
+    expect(dockTime(app)).toBe('1:45');
+  });
+
+  it('the mini ring is the only progress: no track bar on the pill', () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    later(30_000);
+    expect(sr(dock(app)).querySelector('.track')).toBeNull();
+    expect(sr(dock(app)).querySelectorAll('[data-r]').length).toBe(1);
+    expect(inDock<SVGElement>(app, '[data-r]').style.getPropertyValue('--r')).toBe('0.7500');
+  });
+
+  it('the dots expand -15 / +15 / x; the chevron folds them', () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    const more = inDock(app, '[data-more]');
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    more.click();
+    expect(more.getAttribute('aria-expanded')).toBe('true');
+    expect(more.getAttribute('aria-label')).toBe('Fewer controls');
+    expect(pill(app)).toEqual(['time', 'minus', 'plus', 'pp', 'clear', 'more']);
+    inDock(app, '[data-adjust="15"]').click();
+    expect(dockTime(app)).toBe('2:15');
+    inDock(app, '[data-adjust="-15"]').click();
+    inDock(app, '[data-adjust="-15"]').click();
+    expect(dockTime(app)).toBe('1:45');
+    more.click();
+    expect(pill(app)).toEqual(['time', 'pp', 'more']);
+    more.click();
+    inDock(app, '[data-clear]').click();
+    expect(dock(app).hidden).toBe(true);
+    // A fresh Rest comes up folded.
+    stopwatch(app).click();
+    expect(pill(app)).toEqual(['time', 'pp', 'more']);
+  });
+
+  it('an expanded pill folds at zero into the done pill', () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    inDock(app, '[data-more]').click();
+    later(121_000);
+    expect(pill(app)).toEqual(['time', 'restart', 'clear']);
+    inDock(app, '[data-again]').click();
+    expect(pill(app)).toEqual(['time', 'pp', 'more']);
+  });
+
+  it('tapping the time opens the Ring screen', () => {
+    const app = mountApp();
+    stopwatch(app).click();
+    inDock(app, '[data-open]').click();
+    expect(screen(app).hidden).toBe(false);
   });
 });
 
@@ -287,20 +384,101 @@ describe('the timer screen', () => {
     expect(inScreen(app, '[data-primary]').getAttribute('aria-label')).toBe('Start 2:00');
   });
 
-  it('in overtime the ring is full yellow, the primary restarts, and -15/+15 rest', () => {
+  it('at zero it goes quiet: a check, the overtime, and a round restart and done only', () => {
     const app = opened();
+    expect(inScreen<HTMLElement>(app, '[data-check]').hidden).toBe(true);
     later(125_000);
     expect(inScreen<HTMLElement>(app, '[data-scr]').classList.contains('is-over')).toBe(true);
+    expect(inScreen<HTMLElement>(app, '[data-check]').hidden).toBe(false);
     expect(inScreen<HTMLElement>(app, '[data-time]').textContent).toBe('+0:05');
     expect(inScreen<HTMLElement>(app, '[data-sub]').textContent).toBe('rest 2:00');
-    expect(inScreen(app, '[data-adjust="15"]').disabled).toBe(true);
-    inScreen(app, '[data-primary]').click();
+    const ctl = [...sr(screen(app)).querySelectorAll<HTMLButtonElement>('.ctl button')]
+      .filter((b) => !b.hidden)
+      .map((b) => b.getAttribute('aria-label'));
+    expect(ctl).toEqual(['Restart 2:00', 'Done, clear the rest timer']);
+    inScreen(app, '[data-again]').click();
     expect(inScreen<HTMLElement>(app, '[data-time]').textContent).toBe('2:00');
+    expect(inScreen(app, '[data-primary]').hidden).toBe(false);
+    expect(inScreen<HTMLElement>(app, '[data-check]').hidden).toBe(true);
+  });
+
+  it('focus on the pause at zero moves to the restart, not to nowhere', () => {
+    const app = opened();
+    inScreen(app, '[data-primary]').focus();
+    later(121_000);
+    expect(sr(screen(app)).activeElement).toBe(inScreen(app, '[data-again]'));
+  });
+
+  it('done clears the Rest and closes the screen', () => {
+    const app = opened();
+    later(125_000);
+    inScreen(app, '[data-done]').click();
+    expect(screen(app).hidden).toBe(true);
+    expect(dock(app).hidden).toBe(true);
+    expect(app.hasAttribute('resting')).toBe(false);
+    expect(sr(con(app)).activeElement).toBe(stopwatch(app));
+  });
+
+  it('has a grabber at the top as a swipe hint', () => {
+    const app = opened();
+    const col = inScreen<HTMLElement>(app, '.col');
+    expect(col.firstElementChild!.classList.contains('grab')).toBe(true);
+    expect(col.firstElementChild!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it("a tap outside the ring closes it; a tap on the ring doesn't", () => {
+    const app = opened();
+    const ring = inScreen<HTMLElement>(app, '.rg');
+    ring.getBoundingClientRect = () =>
+      ({ left: 70, top: 150, width: 248, height: 248, right: 318, bottom: 398, x: 70, y: 150 }) as DOMRect;
+    const tap = (el: Element, x: number, y: number) =>
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, clientX: x, clientY: y }));
+    tap(ring, 194, 274); // the center, on the digits
+    expect(screen(app).hidden).toBe(false);
+    tap(inScreen(app, '.mid'), 194, 274 + 124 + 10); // just below the ring
+    expect(screen(app).hidden).toBe(true);
+    stopwatch(app).click();
+    expect(screen(app).hidden).toBe(false);
+    tap(inScreen(app, '.tb .sp'), 200, 30); // the top bar's gap
+    expect(screen(app).hidden).toBe(true);
+  });
+
+  it('a tap outside the ring with the settings card up closes the card, not the screen', () => {
+    const app = opened();
+    inScreen(app, '[data-settings]').click();
+    inScreen<HTMLElement>(app, '.mid').dispatchEvent(
+      new MouseEvent('click', { bubbles: true, composed: true, clientX: 5, clientY: 5 }),
+    );
+    expect(screen(app).hidden).toBe(false);
+    inScreen(app, '[data-overlay]').click();
+    expect(inScreen<HTMLElement>(app, '[data-card]').hidden).toBe(true);
+    expect(screen(app).hidden).toBe(false);
+  });
+
+  it('a swipe down closes it; a short drag springs back', () => {
+    const app = opened();
+    const scr = inScreen<HTMLElement>(app, '[data-scr]');
+    const mid = inScreen<HTMLElement>(app, '.mid');
+    const drag = (dy: number) => {
+      mid.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true, clientY: 200 }));
+      mid.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, composed: true, clientY: 200 + dy }));
+      mid.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true, clientY: 200 + dy }));
+    };
+    drag(40);
+    expect(screen(app).hidden).toBe(false);
+    expect(scr.style.transform).toBe('');
+    // The click that ends a drag is not a tap outside the ring.
+    mid.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, clientX: 1, clientY: 1 }));
+    expect(screen(app).hidden).toBe(false);
+    later(1);
+    drag(120);
+    expect(screen(app).hidden).toBe(true);
+    expect(dock(app).hidden).toBe(false); // closing keeps the Rest
   });
 });
 
 describe('the settings card', () => {
-  it('defaults: Chime at zero off, Start after Next on; the toggles persist', () => {
+  it('defaults: Chime at zero off, Start after Next off; the toggles persist', () => {
     const app = mountApp();
     stopwatch(app).click();
     stopwatch(app).click();
@@ -310,12 +488,13 @@ describe('the settings card', () => {
     expect(gear.getAttribute('aria-expanded')).toBe('true');
     expect(inScreen<HTMLElement>(app, '[data-card]').hidden).toBe(false);
     expect(inScreen(app, '[data-chime]').getAttribute('aria-checked')).toBe('false');
-    expect(inScreen(app, '[data-auto]').getAttribute('aria-checked')).toBe('true');
+    expect(inScreen(app, '[data-auto]').getAttribute('aria-checked')).toBe('false');
     inScreen(app, '[data-chime]').click();
     inScreen(app, '[data-auto]').click();
+    expect(inScreen(app, '[data-auto]').getAttribute('aria-checked')).toBe('true');
     expect(JSON.parse(localStorage.getItem(REST_SETTINGS_STORAGE_KEY)!)).toEqual({
       chime: true,
-      autoStart: false,
+      startAfterNext: true,
     });
     // Escape closes the card first, then the screen.
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
@@ -334,7 +513,25 @@ describe("Warm up's Next starts the Rest (Start after Next)", () => {
   const next = (app: HTMLElement) =>
     sr(sr(con(app)).querySelector('rack-warmup')!).querySelector<HTMLButtonElement>('[data-next]')!;
 
-  it('on by default: Next starts the remembered Rest', () => {
+  it('off by default: Next leaves the timer alone, idle or counting', () => {
+    const app = warm();
+    next(app).click();
+    expect(dock(app).hidden).toBe(true);
+    stopwatch(app).click();
+    later(40_000);
+    next(app).click(); // no restart under a running Rest either
+    expect(dockTime(app)).toBe('1:20');
+  });
+
+  it("the preview's stored autoStart: true does not turn it on", () => {
+    localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ chime: false, autoStart: true }));
+    const app = warm();
+    next(app).click();
+    expect(dock(app).hidden).toBe(true);
+  });
+
+  it('on: Next starts the remembered Rest', () => {
+    localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ chime: false, startAfterNext: true }));
     const app = warm();
     next(app).click();
     expect(dock(app).hidden).toBe(false);
@@ -342,13 +539,6 @@ describe("Warm up's Next starts the Rest (Start after Next)", () => {
     later(40_000);
     next(app).click(); // the next set: a fresh Rest
     expect(dockTime(app)).toBe('2:00');
-  });
-
-  it('off: Next leaves the timer alone', () => {
-    localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ chime: false, autoStart: false }));
-    const app = warm();
-    next(app).click();
-    expect(dock(app).hidden).toBe(true);
   });
 
   it('a stair tap is not Next: it starts nothing', () => {
@@ -383,11 +573,11 @@ describe('the chime seam and the wake lock', () => {
   });
 
   it('with the chime on, any tap in the timer unlocks Web Audio (the first user gesture)', () => {
-    localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ chime: true, autoStart: true }));
+    localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ chime: true }));
     const chime = { unlock: vi.fn(), play: vi.fn() };
     const { app, clock } = clockWith(chime);
     clock.start(90);
-    sr(sr(app).querySelector('rack-rest-dock')!).querySelector<HTMLButtonElement>('[data-preset="120"]')!.click();
+    sr(sr(app).querySelector('rack-rest-dock')!).querySelector<HTMLButtonElement>('[data-pp]')!.click();
     expect(chime.unlock).toHaveBeenCalled();
   });
 
@@ -396,7 +586,7 @@ describe('the chime seam and the wake lock', () => {
     const { app, clock } = clockWith(chime);
     clock.start(90);
     const d = sr(sr(app).querySelector('rack-rest-dock')!);
-    d.querySelector<HTMLButtonElement>('[data-preset="120"]')!.click();
+    d.querySelector<HTMLButtonElement>('[data-pp]')!.click();
     d.querySelector<HTMLButtonElement>('[data-open]')!.click();
     expect(chime.unlock).not.toHaveBeenCalled();
     clock.setChime(true);
@@ -405,7 +595,7 @@ describe('the chime seam and the wake lock', () => {
 
   it('a zero noticed late (back from the background) is quiet: no flash, buzz or chime', () => {
     const chime = { unlock: vi.fn(), play: vi.fn() };
-    localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ chime: true, autoStart: true }));
+    localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ chime: true }));
     const { app, clock } = clockWith(chime);
     const zero = vi.fn();
     clock.addEventListener('zero', zero);
@@ -427,6 +617,27 @@ describe('the chime seam and the wake lock', () => {
     vi.setSystemTime(T0 + 90_000 + ALERT_GRACE_MS);
     clock.tick();
     expect(zero).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks iOS for a mixing audio session where navigator.audioSession exists, never forcing one', () => {
+    const nav = (session?: { type: string }) => ({ audioSession: session }) as unknown as Navigator;
+    const auto = { type: 'auto' };
+    preferMixingSession(nav(auto));
+    expect(CHIME_SESSION_TYPE).toBe('transient');
+    expect(auto.type).toBe('transient');
+    const chosen = { type: 'playback' };
+    preferMixingSession(nav(chosen));
+    expect(chosen.type).toBe('playback'); // a type already chosen is left alone
+    expect(() => preferMixingSession(nav())).not.toThrow(); // no API: nothing happens
+    const strict = {
+      get type() {
+        return 'auto';
+      },
+      set type(_v: string) {
+        throw new TypeError('unsupported');
+      },
+    };
+    expect(() => preferMixingSession(nav(strict))).not.toThrow();
   });
 
   it('holds the screen awake while a Rest runs or is paused, not in overtime or idle', async () => {
@@ -467,15 +678,16 @@ describe('the dock never covers the column (ADR-0019)', () => {
   const appSrc = readFileSync(resolve(root, 'elements/app.ts'), 'utf8');
   const conSrc = readFileSync(resolve(root, 'elements/console.ts'), 'utf8');
 
-  it('the app reserves the dock height while resting (60px, 54px on a short screen)', () => {
-    expect(DOCK_PX).toBe(60);
+  it('the app reserves the pill height while resting (66px, 54px on a short screen)', () => {
+    // The 52px pill + its 10px gap + 4px of air (48 + 6 on a short screen).
+    expect(DOCK_PX).toBe(66);
     expect(DOCK_SHORT_PX).toBe(54);
     expect(appSrc).toContain(':host([resting]) { padding-bottom: ${DOCK_PX}px; }');
     expect(appSrc).toContain(':host([resting]) { padding-bottom: ${DOCK_SHORT_PX}px; }');
   });
 
   it('the bar block may flex down to the docked floor while resting', () => {
-    expect(SLEEVE_DOCKED_MIN_PX).toBeGreaterThanOrEqual(40);
+    expect(SLEEVE_DOCKED_MIN_PX).toBeGreaterThanOrEqual(36);
     expect(conSrc).toMatch(/:host\(\[resting\]\) \.viz \{\s*min-height: \$\{VIZ_PAD_PX \+ LABEL_PX \+ VIZ_GAP_PX \+ SLEEVE_DOCKED_MIN_PX\}px;/);
   });
 

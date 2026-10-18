@@ -168,6 +168,9 @@
   --rack-shadow-modal: 0 30px 60px -20px rgba(0,0,0,.7);
   /* The Setup sheet casts a deeper lift than the keypad (prototype L252; RBAR-74). */
   --rack-shadow-setup: 0 -20px 50px -20px rgba(0,0,0,.7);
+  /* A small floating control over the page: the Rest timer's pill (RBAR-94 dock
+     prototype, option B "--shadow-pop"). */
+  --rack-shadow-pop: 0 18px 40px -12px rgba(0,0,0,.75);
 
   /* ----------------------------------------------------------------------------
      Legacy collapsed names. These predate the handoff scale and were each doing the

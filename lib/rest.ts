@@ -231,14 +231,19 @@ export function parseRest(raw: string | null): Rest | null {
 export type RestSettings = {
   /** "Chime at zero": a short two-note chime when the Rest ends. Off by default. */
   readonly chime: boolean;
-  /** "Start after Next": Warm up's Next starts the remembered Rest. On by default. */
-  readonly autoStart: boolean;
+  /**
+   * "Start after Next": Warm up's Next starts the remembered Rest. Off by default
+   * (phone test, RBAR-94: a Rest that restarted itself on every Next surprised the
+   * lifter). Stored as `startAfterNext`; a value stored under the old `autoStart` name
+   * (the on-by-default preview) is ignored, so every phone starts with it off.
+   */
+  readonly startAfterNext: boolean;
 };
 
-export const DEFAULT_REST_SETTINGS: RestSettings = { chime: false, autoStart: true };
+export const DEFAULT_REST_SETTINGS: RestSettings = { chime: false, startAfterNext: false };
 
 export function serializeRestSettings(s: RestSettings): string {
-  return JSON.stringify({ chime: s.chime, autoStart: s.autoStart });
+  return JSON.stringify({ chime: s.chime, startAfterNext: s.startAfterNext });
 }
 
 /** Stored settings, each field validated on its own; a missing or bad field is its default. */
@@ -249,9 +254,75 @@ export function parseRestSettings(raw: string | null): RestSettings {
     if (typeof o !== 'object' || o === null) return DEFAULT_REST_SETTINGS;
     return {
       chime: typeof o.chime === 'boolean' ? o.chime : DEFAULT_REST_SETTINGS.chime,
-      autoStart: typeof o.autoStart === 'boolean' ? o.autoStart : DEFAULT_REST_SETTINGS.autoStart,
+      startAfterNext:
+        typeof o.startAfterNext === 'boolean'
+          ? o.startAfterNext
+          : DEFAULT_REST_SETTINGS.startAfterNext,
     };
   } catch {
     return DEFAULT_REST_SETTINGS;
   }
+}
+
+// ---- the floating pill (the dock, Caitlin's option B) ----
+
+/**
+ * One control on the floating pill, left to right:
+ *  - time:    the mini ring and the clock (a check and the overtime once over); a tap
+ *             opens the timer screen
+ *  - minus / plus: -15 / +15 (only while the pill is expanded)
+ *  - pause / resume: right on the pill while the Rest counts
+ *  - restart: once over, start the remembered Rest again
+ *  - clear:   the x (expanded, or once over)
+ *  - more / less: the dots that expand -15 / +15 / x, and the chevron that folds them
+ */
+export type PillControl =
+  | 'time'
+  | 'minus'
+  | 'plus'
+  | 'pause'
+  | 'resume'
+  | 'restart'
+  | 'clear'
+  | 'more'
+  | 'less';
+
+/**
+ * The pill's controls for a reading's phase and whether the dots are expanded. Idle:
+ * no pill. Counting: the time, pause (or resume) and the dots; expanded, -15 / +15 sit
+ * between the time and pause and the x after it, and the dots become a chevron that
+ * folds them. Over: the time (a check and the overtime), restart and the x -- the
+ * expansion does not apply.
+ */
+export function pillControls(
+  phase: RestReading['phase'],
+  expanded: boolean,
+): readonly PillControl[] {
+  if (phase === 'idle') return [];
+  if (phase === 'over') return ['time', 'restart', 'clear'];
+  const pp: PillControl = phase === 'run' ? 'pause' : 'resume';
+  return expanded
+    ? ['time', 'minus', 'plus', pp, 'clear', 'less']
+    : ['time', pp, 'more'];
+}
+
+// ---- closing the timer screen by touch ----
+
+/** How far a downward drag must travel before it closes the timer screen. */
+export const SWIPE_CLOSE_PX = 90;
+/** A tap this close outside the ring's edge still counts as on the ring. */
+export const RING_SLOP_PX = 4;
+
+/**
+ * Whether a tap on the timer screen's background closes it: the tap lands outside the
+ * ring (its offset from the ring's center past the radius plus RING_SLOP_PX). A tap on
+ * the ring or the digits keeps the screen.
+ */
+export function tapClosesScreen(dx: number, dy: number, ringRadius: number): boolean {
+  return Math.hypot(dx, dy) >= ringRadius + RING_SLOP_PX;
+}
+
+/** Whether a drag that has travelled `dy` px (down is positive) closes the screen. */
+export function swipeClosesScreen(dy: number): boolean {
+  return dy > SWIPE_CLOSE_PX;
 }

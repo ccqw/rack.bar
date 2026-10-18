@@ -17,6 +17,11 @@ import {
   isLive,
   parseRest,
   parseRestSettings,
+  pillControls,
+  RING_SLOP_PX,
+  SWIPE_CLOSE_PX,
+  swipeClosesScreen,
+  tapClosesScreen,
   pauseRest,
   readRest,
   restartRest,
@@ -38,8 +43,8 @@ describe('the Rest presets and defaults (RBAR-94)', () => {
     expect(readRest(idleRest(), T).text).toBe('2:00');
   });
 
-  it('defaults the settings to chime off, start after Next on', () => {
-    expect(DEFAULT_REST_SETTINGS).toEqual({ chime: false, autoStart: true });
+  it('defaults the settings to chime off, start after Next off', () => {
+    expect(DEFAULT_REST_SETTINGS).toEqual({ chime: false, startAfterNext: false });
   });
 });
 
@@ -190,12 +195,60 @@ describe('persistence (ADR-0007 boundary)', () => {
   it('settings: each field validated alone, defaults for the rest', () => {
     expect(parseRestSettings(null)).toEqual(DEFAULT_REST_SETTINGS);
     expect(parseRestSettings('garbage')).toEqual(DEFAULT_REST_SETTINGS);
-    expect(parseRestSettings('{"chime":true}')).toEqual({ chime: true, autoStart: true });
-    expect(parseRestSettings('{"chime":"yes","autoStart":false}')).toEqual({
+    expect(parseRestSettings('{"chime":true}')).toEqual({ chime: true, startAfterNext: false });
+    expect(parseRestSettings('{"chime":"yes","startAfterNext":true}')).toEqual({
       chime: false,
-      autoStart: false,
+      startAfterNext: true,
     });
-    const x = { chime: true, autoStart: false };
-    expect(parseRestSettings(serializeRestSettings(x))).toEqual(x);
+    for (const x of [
+      { chime: true, startAfterNext: false },
+      { chime: false, startAfterNext: true },
+    ]) {
+      expect(parseRestSettings(serializeRestSettings(x))).toEqual(x);
+    }
+  });
+
+  it("ignores the preview's old on-by-default autoStart: Start after Next reads off", () => {
+    expect(parseRestSettings('{"chime":true,"autoStart":true}')).toEqual({
+      chime: true,
+      startAfterNext: false,
+    });
+  });
+});
+
+describe('the floating pill (option B)', () => {
+  it('idle: no pill', () => {
+    expect(pillControls('idle', false)).toEqual([]);
+    expect(pillControls('idle', true)).toEqual([]);
+  });
+
+  it('counting: the time, pause or resume right on the pill, and the dots', () => {
+    expect(pillControls('run', false)).toEqual(['time', 'pause', 'more']);
+    expect(pillControls('pause', false)).toEqual(['time', 'resume', 'more']);
+  });
+
+  it('expanded: -15 / +15 before pause, the x after it, a chevron to fold them', () => {
+    expect(pillControls('run', true)).toEqual(['time', 'minus', 'plus', 'pause', 'clear', 'less']);
+    expect(pillControls('pause', true)).toEqual(['time', 'minus', 'plus', 'resume', 'clear', 'less']);
+  });
+
+  it('over: the time (check + overtime), restart and the x, expanded or not', () => {
+    expect(pillControls('over', false)).toEqual(['time', 'restart', 'clear']);
+    expect(pillControls('over', true)).toEqual(['time', 'restart', 'clear']);
+  });
+});
+
+describe('closing the timer screen by touch', () => {
+  it('a tap outside the ring closes; on the ring (within the slop) it stays', () => {
+    expect(tapClosesScreen(0, 0, 124)).toBe(false);
+    expect(tapClosesScreen(124 + RING_SLOP_PX - 1, 0, 124)).toBe(false);
+    expect(tapClosesScreen(0, 124 + RING_SLOP_PX, 124)).toBe(true);
+    expect(tapClosesScreen(100, 100, 124)).toBe(true);
+  });
+
+  it('a drag down past the threshold closes; a short one snaps back', () => {
+    expect(swipeClosesScreen(SWIPE_CLOSE_PX)).toBe(false);
+    expect(swipeClosesScreen(SWIPE_CLOSE_PX + 1)).toBe(true);
+    expect(swipeClosesScreen(-200)).toBe(false);
   });
 });

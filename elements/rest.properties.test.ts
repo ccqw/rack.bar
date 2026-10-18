@@ -1,5 +1,6 @@
 // Property-based invariants for the Rest timer's shell (RBAR-94, ADR-0019), driven
-// through the REAL input paths -- the stopwatch, the dock (presets, restart, x), the
+// through the REAL input paths -- the stopwatch, the pill (pause, the dots, -15 / +15,
+// restart, x), the
 // timer screen (presets, -15/+15, pause, reset), Warm up's Next, time passing and a
 // reload -- on a fake clock, and judged from what is on screen. The core rules (time
 // from timestamps, pause holds time, the round trip) are in lib/properties.test.ts.
@@ -7,6 +8,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fc from 'fast-check';
 import './app.ts';
 import { SEED } from './properties.drivers.ts';
+import { pillControls } from '../lib/rest.ts';
+import { REST_SETTINGS_STORAGE_KEY } from './restclock.ts';
 
 const T0 = Date.UTC(2026, 9, 17, 18, 0, 0);
 beforeEach(() => {
@@ -36,9 +39,7 @@ const mount = (): App => {
 // What the dock shows: its visible row's clock text, or null when the dock is down.
 function dockText(a: App): string | null {
   if (dock(a).hidden) return null;
-  const d = sr(dock(a));
-  const row = d.querySelector<HTMLElement>('[data-live]')!.hidden ? '[data-done]' : '[data-live]';
-  return d.querySelector(`${row} [data-time]`)!.textContent;
+  return sr(dock(a)).querySelector('[data-time]')!.textContent;
 }
 const secs = (t: string) => {
   const [m, s] = t.replace('+', '').split(':').map(Number);
@@ -47,9 +48,7 @@ const secs = (t: string) => {
 
 type Act =
   | { k: 'stopwatch' }
-  | { k: 'dockPreset'; s: number }
-  | { k: 'dockAgain' }
-  | { k: 'dockClear' }
+  | { k: 'pill'; b: string }
   | { k: 'screen'; b: string }
   | { k: 'next' }
   | { k: 'wait'; ms: number }
@@ -57,9 +56,17 @@ type Act =
 
 const actArb: fc.Arbitrary<Act> = fc.oneof(
   fc.constant<Act>({ k: 'stopwatch' }),
-  fc.constantFrom(90, 120, 180, 300).map<Act>((s) => ({ k: 'dockPreset', s })),
-  fc.constant<Act>({ k: 'dockAgain' }),
-  fc.constant<Act>({ k: 'dockClear' }),
+  fc
+    .constantFrom(
+      '[data-pp]',
+      '[data-more]',
+      '[data-adjust="15"]',
+      '[data-adjust="-15"]',
+      '[data-again]',
+      '[data-clear]',
+      '[data-open]',
+    )
+    .map<Act>((b) => ({ k: 'pill', b })),
   fc
     .constantFrom(
       '[data-primary]',
@@ -69,6 +76,10 @@ const actArb: fc.Arbitrary<Act> = fc.oneof(
       '[data-preset="90"]',
       '[data-preset="300"]',
       '[data-close]',
+      '[data-again]',
+      '[data-done]',
+      '[data-settings]',
+      '[data-auto]',
     )
     .map<Act>((b) => ({ k: 'screen', b })),
   fc.constant<Act>({ k: 'next' }),
@@ -81,17 +92,18 @@ function run(a: App, act: Act): App {
     case 'stopwatch':
       btn(sr(con(a)), '[data-rest]')!.click();
       return a;
-    case 'dockPreset':
-      if (!dock(a).hidden) btn(sr(dock(a)), `[data-live]:not([hidden]) [data-preset="${act.s}"]`)?.click();
+    case 'pill': {
+      // Only what is on the pill can be tapped: a hidden button is not there.
+      const b = dock(a).hidden ? null : btn(sr(dock(a)), act.b);
+      if (b && !b.hidden) b.click();
       return a;
-    case 'dockAgain':
-      if (!dock(a).hidden) btn(sr(dock(a)), '[data-done]:not([hidden]) [data-again]')?.click();
-      return a;
-    case 'dockClear':
-      if (!dock(a).hidden) btn(sr(dock(a)), '[data-done]:not([hidden]) [data-clear]')?.click();
-      return a;
+    }
     case 'screen':
-      if (!screen(a).hidden) btn(sr(screen(a)), act.b)?.click();
+      if (!screen(a).hidden) {
+        const b = btn(sr(screen(a)), act.b);
+        // A hidden control (the settings card closed, the zero row) is not there.
+        if (b && !b.hidden && !b.closest('[hidden]')) b.click();
+      }
       return a;
     case 'next': {
       const wu = sr(con(a)).querySelector('rack-warmup')!;
@@ -163,7 +175,9 @@ describe('Rest timer shell properties (RBAR-94, ADR-0019)', () => {
           vi.setSystemTime(T0);
           const a = mount();
           btn(sr(con(a)), '[data-rest]')!.click();
-          btn(sr(dock(a)), `[data-preset="${preset}"]`)!.click();
+          btn(sr(con(a)), '[data-rest]')!.click();
+          btn(sr(screen(a)), `[data-preset="${preset}"]`)!.click();
+          btn(sr(screen(a)), '[data-close]')!.click();
           let prev = dockText(a)!;
           for (const ms of waits) {
             vi.advanceTimersByTime(ms);
@@ -176,6 +190,67 @@ describe('Rest timer shell properties (RBAR-94, ADR-0019)', () => {
             }
             prev = t;
           }
+        },
+      ),
+      { seed: SEED, numRuns: 40 },
+    );
+  });
+
+  it('the pill shows exactly the controls pillControls names for its phase and the dots (ADR-0019)', () => {
+    fc.assert(
+      fc.property(fc.array(actArb, { minLength: 1, maxLength: 14 }), (acts) => {
+        document.body.innerHTML = '';
+        localStorage.clear();
+        vi.setSystemTime(T0);
+        let a = mount();
+        for (const act of acts) {
+          a = run(a, act);
+          if (dock(a).hidden) continue;
+          const d = sr(dock(a));
+          const cls = d.querySelector<HTMLElement>('[data-dock]')!.classList;
+          const phase = (['run', 'pause', 'over'] as const).find((p) => cls.contains(`is-${p}`))!;
+          const expanded = d.querySelector('[data-more]')!.getAttribute('aria-expanded') === 'true';
+          const names = { pp: phase === 'pause' ? 'resume' : 'pause', more: expanded ? 'less' : 'more' };
+          const shown = [...d.querySelectorAll<HTMLButtonElement>('[data-open], [data-pill]')]
+            .filter((b) => !b.hidden)
+            .map((b) => {
+              const k = b.dataset.pill ?? 'time';
+              return k === 'pp' || k === 'more' ? names[k] : k;
+            });
+          expect(shown).toEqual(pillControls(phase, expanded));
+        }
+      }),
+      { seed: SEED, numRuns: 40 },
+    );
+  });
+
+  it('Next starts or restarts a Rest only when Start after Next is on (ADR-0019)', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom<boolean | undefined>(true, false, undefined),
+        fc.array(actArb, { maxLength: 10 }),
+        (stored, acts) => {
+          document.body.innerHTML = '';
+          localStorage.clear();
+          vi.setSystemTime(T0);
+          localStorage.setItem('rackbar.working', '140');
+          if (stored !== undefined) {
+            localStorage.setItem(REST_SETTINGS_STORAGE_KEY, JSON.stringify({ startAfterNext: stored }));
+          }
+          let a = mount();
+          btn(sr(con(a)), '[data-mode="warmup"]')!.click();
+          for (const act of acts) if (act.k !== 'reload' && act.k !== 'next') a = run(a, act);
+          // The setting may have been flipped on the screen; read what is stored now.
+          const on = JSON.parse(localStorage.getItem(REST_SETTINGS_STORAGE_KEY) ?? '{}').startAfterNext === true;
+          vi.advanceTimersByTime(1_000);
+          const before = dockText(a);
+          const wu = sr(con(a)).querySelector('rack-warmup')!;
+          const next = btn(sr(wu), '[data-next]');
+          fc.pre(next !== null && !next.disabled);
+          next!.click();
+          const after = dockText(a);
+          if (on) expect(after).not.toBeNull();
+          else expect(after).toBe(before);
         },
       ),
       { seed: SEED, numRuns: 40 },

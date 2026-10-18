@@ -112,7 +112,7 @@ fit-check now reports any overrun as LINE CLIPPED.
 
 ## Amendment: the Rest dock takes Bar pixels (RBAR-94)
 
-While the Rest timer's dock shows, `<rack-app>` reserves its height (60px, 54px on a short
-screen) and the bar block flexes into what is left, with a lower floor
-(`SLEEVE_DOCKED_MIN_PX`, 40px) for as long as the dock is up. See ADR-0019 for the
+While the Rest timer's dock (a floating pill since the phone test) shows, `<rack-app>`
+reserves its height (66px, 54px on a short screen) and the bar block flexes into what is
+left, with a lower floor (`SLEEVE_DOCKED_MIN_PX`, 36px) for as long as the dock is up. See ADR-0019 for the
 measurements and the trade-off.

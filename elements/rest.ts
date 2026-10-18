@@ -1,6 +1,6 @@
 // <rack-rest> -- the Rest timer (RBAR-94, ADR-0019): the RestClock plus its two views,
-// the bottom dock and the timer screen, and the yellow flash at the screen edge when a
-// Rest reaches zero. <rack-app> mounts one beside the console and wires two doors in:
+// the floating pill (the dock) and the timer screen, and the thin yellow line that
+// blinks at the screen edge when a Rest reaches zero. <rack-app> mounts one beside the console and wires two doors in:
 //
 //   tap()        -- the console's stopwatch button: open the screen while a Rest shows,
 //                   else start the remembered Rest (the dock comes up)
@@ -27,8 +27,10 @@ function shown(el: Element): boolean {
   return true;
 }
 
-// How long the edge flash runs: four half-second pulses (the prototype's tmflash x4).
-export const FLASH_MS = 2100;
+// How long the edge flash runs: three blinks, then a fade to nothing (the dock
+// prototype's edgeBlink, 2.4 s). The class comes off a little after, so the next zero
+// can restart it; the resting look between is opacity 0 either way.
+export const FLASH_MS = 2600;
 
 class RackRest extends HTMLElement {
   private root: ShadowRoot = this.attachShadow({ mode: 'open' });
@@ -57,17 +59,24 @@ class RackRest extends HTMLElement {
       this.root.innerHTML = `
         <style>
           :host { display: contents; }
-          /* At zero: the screen edge flashes yellow (prototype tm-flash), above everything
-             and through to the taps under it. */
+          /* At zero: a thin yellow line at the screen edge blinks three times and fades
+             to nothing (dock prototype edgeBlink), above everything and through to the
+             taps under it. It RESTS at opacity 0: the base rule is 0 and both animations
+             end at 0 and hold it (forwards), so nothing stays lit if a class lingers.
+             Reduced motion: one soft fade out instead of the blinks. */
           .flash {
             position: fixed; inset: 0; z-index: 90; pointer-events: none; opacity: 0;
-            box-shadow: inset 0 0 0 6px var(--rack-accent),
-                        inset 0 0 60px color-mix(in srgb, var(--rack-accent) 35%, transparent);
+            box-shadow: inset 0 0 0 3px var(--rack-accent),
+                        inset 0 0 36px color-mix(in srgb, var(--rack-accent) 22%, transparent);
           }
-          .flash.on { opacity: 1; }
+          .flash.on { animation: edgeonce 1.6s ease-out forwards; }
+          @keyframes edgeonce { 0% { opacity: .9; } 100% { opacity: 0; } }
           @media (prefers-reduced-motion: no-preference) {
-            .flash.on { animation: flash .5s ease-in-out 4 both; }
-            @keyframes flash { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+            .flash.on { animation: edgeblink 2.4s linear forwards; }
+            @keyframes edgeblink {
+              0% { opacity: 0; } 8% { opacity: 1; } 17% { opacity: .1; } 25% { opacity: 1; }
+              34% { opacity: .1; } 42% { opacity: 1; } 100% { opacity: 0; }
+            }
           }
         </style>
         <rack-rest-dock></rack-rest-dock>

@@ -129,7 +129,12 @@ import {
   adjustRest,
   idleRest,
   parseRest,
+  parseRestSettings,
   pauseRest,
+  pillControls,
+  RING_SLOP_PX,
+  serializeRestSettings,
+  tapClosesScreen,
   readRest,
   resumeRest,
   serializeRest,
@@ -2671,6 +2676,70 @@ describe('Rest timer properties (RBAR-94, ADR-0019)', () => {
       fc.property(fc.oneof(fc.string(), fc.json()), (raw) => {
         const r = parseRest(raw);
         if (r !== null) expect(parseRest(serializeRest(r))).toEqual(r);
+      }),
+      opts,
+    );
+  });
+
+  it('the pill: while a Rest counts, its pause sits right on it and -15 / +15 / x only behind the dots; over, a restart and the x (ADR-0019)', () => {
+    fc.assert(
+      fc.property(restArb, fc.integer({ min: 0, max: 4_000_000 }), fc.boolean(), ({ r, at }, dt, expanded) => {
+        const { phase } = readRest(r, at + dt);
+        const c = pillControls(phase, expanded);
+        if (phase === 'idle') {
+          expect(c).toEqual([]);
+          return;
+        }
+        expect(c[0]).toBe('time');
+        expect(new Set(c).size).toBe(c.length);
+        const has = (k: string) => (c as readonly string[]).includes(k);
+        if (phase === 'over') {
+          expect(c).toEqual(['time', 'restart', 'clear']);
+          return;
+        }
+        expect(has('pause')).toBe(phase === 'run');
+        expect(has('resume')).toBe(phase === 'pause');
+        expect(has('restart')).toBe(false);
+        for (const k of ['minus', 'plus', 'clear', 'less']) expect(has(k)).toBe(expanded);
+        expect(has('more')).toBe(!expanded);
+      }),
+      opts,
+    );
+  });
+
+  it('a tap closes the timer screen exactly when it lands outside the ring, in any direction (ADR-0019)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 40, max: 200 }),
+        fc.double({ min: 0, max: 2 * Math.PI, noNaN: true }),
+        fc.double({ min: 0, max: 400, noNaN: true }),
+        (radius, angle, dist) => {
+          const dx = dist * Math.cos(angle);
+          const dy = dist * Math.sin(angle);
+          fc.pre(Math.abs(dist - (radius + RING_SLOP_PX)) > 1e-6);
+          expect(tapClosesScreen(dx, dy, radius)).toBe(dist > radius + RING_SLOP_PX);
+        },
+      ),
+      opts,
+    );
+  });
+
+  it('Start after Next is on only when stored on; any stored settings read back exactly (ADR-0019, ADR-0007)', () => {
+    fc.assert(
+      fc.property(fc.oneof(fc.json(), fc.string(), fc.constant(null)), (raw) => {
+        const s = parseRestSettings(raw);
+        let stored: unknown = null;
+        try {
+          stored = raw === null ? null : JSON.parse(raw);
+        } catch {
+          stored = null;
+        }
+        const on =
+          typeof stored === 'object' &&
+          stored !== null &&
+          (stored as Record<string, unknown>).startAfterNext === true;
+        expect(s.startAfterNext).toBe(on);
+        expect(parseRestSettings(serializeRestSettings(s))).toEqual(s);
       }),
       opts,
     );

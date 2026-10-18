@@ -48,3 +48,7 @@ export const PAUSE_GLYPH = (size: number): string =>
   `<svg width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3.2" height="11" rx="1.1" fill="currentColor"></rect><rect x="9.3" y="2.5" width="3.2" height="11" rx="1.1" fill="currentColor"></rect></svg>`;
 export const PLAY_GLYPH = (size: number): string =>
   `<svg width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.6v10.8c0 .6.6.9 1.1.6l8.2-5.4c.4-.3.4-.9 0-1.2L5.6 2c-.5-.3-1.1 0-1.1.6z" fill="currentColor"></path></svg>`;
+export const CHECK_GLYPH = (size: number): string =>
+  svg(size, '<path d="M3.5 8.5l3 3 6-7" stroke-width="2.2"></path>');
+export const CHEVRON_LEFT_GLYPH = svg(16, '<path d="M10 3.5L5.5 8l4.5 4.5" stroke-width="2"></path>');
+export const DOTS_GLYPH = `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.5" cy="8" r="1.5" fill="currentColor"></circle><circle cx="8" cy="8" r="1.5" fill="currentColor"></circle><circle cx="12.5" cy="8" r="1.5" fill="currentColor"></circle></svg>`;
