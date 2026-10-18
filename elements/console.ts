@@ -58,7 +58,7 @@ import type { LinkState } from '../lib/link.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import { planEasyRamp } from '../lib/moves.ts';
 import type { Ramp, RampRow } from '../lib/plan.ts';
-import { parseWorking, warmStatus, warmupView } from '../lib/warmup.ts';
+import { deltaSpoken, parseWorking, rowDelta, warmStatus, warmupView } from '../lib/warmup.ts';
 import type { WarmupView } from '../lib/warmup.ts';
 
 type Sleeve = HTMLElement & {
@@ -1683,7 +1683,7 @@ class RackConsole extends HTMLElement {
       this.announce(note === null ? line : `${line}. ${note}`);
     } else if (this.mode === 'warmup' && this.ramp && this.working !== null) {
       this.renderAsked(null, unit);
-      this.renderWarmStatus(this.ramp, this.ramp.rows[this.warmIdx], this.working, unit);
+      this.renderWarmStatus(this.ramp, this.warmIdx, this.working, unit);
     } else {
       this.status.hidden = true;
       this.status.className = 'status'; // drop any prior state class/label while hidden
@@ -1833,8 +1833,11 @@ class RackConsole extends HTMLElement {
   // set that is not exact reads Decode's own pill (short / at capacity, ADR-0003). The
   // By Weight round-up row is not part of Warm up, so its occupants stay hidden. The
   // working-weight keypad's "On the bar" line reads the Working set, and the spoken line
-  // is the selected row's Total + its pill.
-  private renderWarmStatus(ramp: Ramp, row: RampRow, working: number, unit: Unit): void {
+  // is the selected row's Total + its pill + what to change to load it ("add 10 and 2.5
+  // kilograms per side"): since RBAR-95 the Next button names nothing, so after a Next
+  // the announcement is where a screen reader hears what to load.
+  private renderWarmStatus(ramp: Ramp, idx: number, working: number, unit: Unit): void {
+    const row = ramp.rows[idx];
     const workingTotal = ramp.working.primary.total;
     const atCap = this.sleeveBinds(ramp.working.over, working, displayCeilingKg(working, unit));
     const pill =
@@ -1850,7 +1853,10 @@ class RackConsole extends HTMLElement {
     this.barnote.textContent = '';
     this.entry.loadLine = null;
     this.workEntry.loadLine = onBarLine(workingTotal, working, unit, atCap);
-    this.announce(announceLine(shownIn(row.total, unit), unit, pill.label));
+    const change = deltaSpoken(rowDelta(ramp.rows, idx), plateSetFor(this._plateSetKey).unit);
+    this.announce(
+      announceLine(shownIn(row.total, unit), unit, change === null ? pill.label : `${pill.label}, ${change}`),
+    );
   }
 
   // The Total status pill (RBAR-28, handoff 4a), keyed off the DISPLAYED numbers

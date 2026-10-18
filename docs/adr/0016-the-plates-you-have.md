@@ -151,8 +151,9 @@ on the row when a set drifts from its percentage. The Working set stays exact or
    should ever show with no limits set. Removing the one bare-rig check in `drifted`
    reverses it. On the full sets, no Working Total of 40 kg or more drifts, in kg or lb.
 4. **The label** is the stair's name. A drifted stair reads its real percentage with a
-   tilde, "~83%", in place of "90%". The Next button names it the same way
-   ("Next: ~83% - 50 kg"). The status pill already reads the real percentage ("83% of 60 kg").
+   tilde, "~83%", in place of "90%". The Next button named it the same way
+   ("Next: ~83% - 50 kg") until RBAR-95, which made the button read just "Next" (see the
+   amendment below). The status pill already reads the real percentage ("83% of 60 kg").
    Screen readers hear "90 percent planned, about 83 percent loaded". No other copy.
 5. **The Working set** is the capped Decode as read, exact or under (ADR-0003). When the
    pairs on hand cannot reach the Target it reads "N kg short", from slice 2's
@@ -179,10 +180,22 @@ Tests:
   structural checks above but are not compared with the oracle, which is the same as
   for unlimited full sets.
 - **Shell.** `elements/onhand.properties.test.ts` drives Setup's tiles into Warm up in
-  kg and lb. It checks each stair's name, its spoken label, the Next label, and that
-  the pill reads "short" exactly when the Working set is short.
+  kg and lb. It checks each stair's name, its spoken label, and that the pill reads
+  "short" exactly when the Working set is short. (It checked the Next label too, until
+  RBAR-95 took the label off the button.)
 - **Phone fit.** `scripts/fit-check.js` adds a drifted-stair state. It fits at all four
   viewports with no name clipped. This is a manual check, not CI.
+
+## Amendment 2026-10-17: the Next button just says "Next" (RBAR-95)
+
+Caitlin's phone check found the Warm up Next button carried too much text: the next
+set's name ("Next: ~83% - 50 kg") and a "+X per side" / "same plates" line. The button
+now reads "Next" and nothing else, and on the Working set it stays "Next", disabled (it
+replaces "Working set loaded"). The tilde of decision 4 still shows on the stair, the
+status pill still reads the real percentage, and the add caption beside "per side"
+still says what to load. Screen readers hear the moves too: after a Next the
+announcement reads the row's Total, its pill, and the spoken moves ("70 kilograms, 50% -
+exact, add 25 kilograms per side"). `elements/warmup.test.ts` pins that announcement.
 
 ## Pending Caitlin's decision (not in this slice)
 

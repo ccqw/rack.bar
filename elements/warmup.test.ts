@@ -73,7 +73,7 @@ describe('<rack-warmup> stairs + Next (RBAR-65 slice 2)', () => {
     }
     const labels = steps(el).map((b) => b.getAttribute('aria-label'));
     expect(labels[2]).toBe('Set 3 of 5, 70 percent, 98 kilograms, add 10 and 2.5 and 1.5 kilograms per side');
-    expect(next(el).textContent).toBe('Next: 50% - 70 kg+25 kg per side');
+    expect(next(el).textContent).toBe('Next');
   });
 
   it('reports a stair tap as a warmupselect of that row', () => {
@@ -94,13 +94,14 @@ describe('<rack-warmup> stairs + Next (RBAR-65 slice 2)', () => {
     expect(picks).toEqual([3, 1, 0, 4]);
   });
 
-  it('Next selects the following row; it disables and reads "Working set loaded" on the Working set', () => {
+  it('Next selects the following row; on the Working set it still reads just "Next", disabled (RBAR-95)', () => {
     const { el, picks } = mountWarmup(VIEW140(1));
     next(el).click();
     expect(picks).toEqual([2]);
     el.view = VIEW140(4);
     expect(next(el).disabled).toBe(true);
-    expect(next(el).textContent).toBe('Working set loaded');
+    expect(next(el).textContent).toBe('Next');
+    expect(next(el).children).toHaveLength(0);
   });
 });
 
@@ -173,6 +174,24 @@ describe('<rack-console> Warm up mode (RBAR-65 slice 2)', () => {
     el = mountConsole();
     modeBtn(el, 'warmup').click();
     expect(workDraft(el)).toBe('');
+  });
+
+  it('after Next the announcer says what to change to load the new row (RBAR-95)', () => {
+    // The Next button names nothing, so the spoken line carries the moves.
+    const el = mountConsole();
+    modeBtn(el, 'warmup').click();
+    commitWorking(el, '140');
+    const said = () => q(sr(el), '[data-announce]').textContent;
+    expect(said()).toBe('20 kilograms, Bare bar');
+    nextBtn(el).click();
+    expect(said()).toBe('70 kilograms, 50% - exact, add 25 kilograms per side');
+    nextBtn(el).click();
+    expect(said()).toBe('100 kilograms, 71% of 140 kg, add 15 kilograms per side');
+    nextBtn(el).click();
+    nextBtn(el).click();
+    expect(said()).toBe('140 kilograms, 100% - exact, take off 2.5, then add 10 kilograms per side');
+    // The spoken moves match what the visible add caption says.
+    expect(vizAdd(el).textContent).toBe('off 2.5, on 10 kg');
   });
 
   it('loads the selected row on the shared sleeve and Total, starting at the bare Bar', () => {

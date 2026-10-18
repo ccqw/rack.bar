@@ -2,7 +2,7 @@
 // planned Ramp, as pure functions of its rows (ADR-0001). The planner (plan.ts,
 // ADR-0015) decides which Side each row loads; this module only says how a row READS:
 // its step name, the stairs' bar heights, what to add from the previous row, the status
-// pill, the Next button's copy, and the steps' accessible names. Every number carries
+// pill, whether Next is live, and the steps' accessible names. Every number carries
 // its unit (Caitlin's "no loose numerals" rule): Totals in the display Unit, Plate faces
 // in the set's stamped Unit.
 //
@@ -153,15 +153,10 @@ export interface StepView {
 export interface WarmupView {
   readonly steps: readonly StepView[];
   readonly selected: number;
-  /** The Next button: its main line, its small delta line, and whether it is live. */
-  readonly next: { readonly label: string; readonly sub: string; readonly disabled: boolean };
+  /** The Next button, which always reads "Next" (RBAR-95): whether it is live. */
+  readonly next: { readonly disabled: boolean };
   /** The accent add caption beside "per side" for the selected row, or null. */
   readonly addCaption: string | null;
-}
-
-/** The Next button's main line for row `row`: "Next: 90% - 120 kg", "Next: Work - 140 kg". */
-export function nextLabel(row: RampRow, unit: Unit): string {
-  return `Next: ${stepName(row)} - ${format(row.total, unit)}`;
 }
 
 function stepLabel(row: RampRow, i: number, n: number, unit: Unit, delta: string | null): string {
@@ -181,8 +176,8 @@ function stepLabel(row: RampRow, i: number, n: number, unit: Unit, delta: string
 /**
  * The whole Warm up view for `rows` with `selected` loaded, in display Unit `unit` with
  * Plates stamped in `plateUnit`. `selected` is clamped into the rows. The Next button
- * names the following row and what to add to get there; on the Working set it reads
- * "Working set loaded" and is disabled.
+ * just reads "Next" (RBAR-95: the stairs and the add caption already say what comes and
+ * what to load); it is disabled on the Working set.
  */
 export function warmupView(
   rows: readonly RampRow[],
@@ -201,15 +196,7 @@ export function warmupView(
     label: stepLabel(row, i, n, unit, deltaSpoken(rowDelta(rows, i), plateUnit)),
     working: row.kind === 'working',
   }));
-  const last = sel >= n - 1;
-  const nextDelta = last ? null : deltaText(rowDelta(rows, sel + 1), plateUnit);
-  const next = last
-    ? { label: 'Working set loaded', sub: '', disabled: true }
-    : {
-        label: nextLabel(rows[sel + 1], unit),
-        sub: nextDelta === null ? 'same plates' : `${nextDelta} per side`,
-        disabled: false,
-      };
+  const next = { disabled: sel >= n - 1 };
   const addCaption =
     rows[sel].kind === 'bar' ? null : deltaText(rowDelta(rows, sel), plateUnit);
   return { steps, selected: sel, next, addCaption };

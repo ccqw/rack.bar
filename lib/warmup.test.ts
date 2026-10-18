@@ -9,7 +9,6 @@ import {
   walkIndex,
   warmStatus,
   warmupView,
-  nextLabel,
   parseWorking,
 } from './warmup.ts';
 import { planRamp, DEFAULT_RAMP } from './plan.ts';
@@ -128,9 +127,9 @@ describe('stepName: a drifted row (RBAR-72 slice 3)', () => {
     expect(rows.map(stepName)).toEqual(['Bar', '50%', '70%', '~83%', 'Work']);
   });
 
-  it('carries the tilde into Next and says both percentages to a screen reader', () => {
+  it('carries the tilde onto the stair and says both percentages to a screen reader', () => {
     const v = warmupView(rows, 2, 'kg', 'kg');
-    expect(v.next.label).toBe('Next: ~83% - 50 kg');
+    expect(v.steps[3].name).toBe('~83%');
     expect(v.steps[3].label).toBe(
       'Set 4 of 5, 90 percent planned, about 83 percent loaded, 50 kilograms, add 5 kilograms per side',
     );
@@ -189,13 +188,14 @@ describe('drift at the exact band edge (RBAR-72 slice 3 review)', () => {
 });
 
 describe('a drifted row in pounds (RBAR-72 slice 3 review)', () => {
-  it('the Next label keeps the tilde and reads the Total in lb', () => {
+  it('the stair keeps the tilde and reads the Total in lb', () => {
     const NO_CHANGE: RampRig = {
       ...COMP,
       inventory: withLimits(ELEIKO_KG, { '2.5': 0, '2': 0, '1.5': 0, '1': 0, '0.5': 0 }),
     };
     const rows = planEasyRamp(60, DEFAULT_RAMP, NO_CHANGE).rows;
-    expect(warmupView(rows, 2, 'lb', 'kg').next.label).toBe('Next: ~83% - 110 lb');
+    const step = warmupView(rows, 2, 'lb', 'kg').steps[3];
+    expect([step.name, `${step.totalNum} ${step.totalUnit}`]).toEqual(['~83%', '110 lb']);
   });
 });
 
@@ -243,13 +243,6 @@ describe('warmStatus', () => {
   });
 });
 
-describe('nextLabel', () => {
-  it('names the next step and its Total with the unit', () => {
-    expect(nextLabel(RAMP140[3], 'kg')).toBe('Next: 90% - 126 kg');
-    expect(nextLabel(RAMP140[4], 'lb')).toBe('Next: Work - 309 lb');
-  });
-});
-
 describe('warmupView', () => {
   it('builds one stair per row with its unit-carrying Total, name, height and accessible name', () => {
     const v = warmupView(RAMP140, 2, 'kg', 'kg');
@@ -265,34 +258,25 @@ describe('warmupView', () => {
     );
   });
 
-  it('points Next at the following row with what to change', () => {
-    const v = warmupView(RAMP140, 1, 'kg', 'kg');
-    expect(v.next).toEqual({
-      label: 'Next: 70% - 98 kg',
-      sub: '+10 +2.5 +1.5 kg per side',
-      disabled: false,
-    });
-    expect(warmupView(RAMP140, 3, 'kg', 'kg').next.sub).toBe('off 0.5 + 2.5, on 10 kg per side');
+  it('keeps Next live, with no copy of its own, before the Working set (RBAR-95)', () => {
+    for (const i of [0, 1, 2, 3]) expect(warmupView(RAMP140, i, 'kg', 'kg').next).toEqual({ disabled: false });
   });
 
-  it('disables Next on the Working set', () => {
-    expect(warmupView(RAMP140, 4, 'kg', 'kg').next).toEqual({
-      label: 'Working set loaded',
-      sub: '',
-      disabled: true,
-    });
+  it('disables Next on the Working set (RBAR-95: it still reads just "Next")', () => {
+    expect(warmupView(RAMP140, 4, 'kg', 'kg').next).toEqual({ disabled: true });
   });
 
   it('captions the selected row\'s add beside "per side" (none on the bare Bar)', () => {
     expect(warmupView(RAMP140, 0, 'kg', 'kg').addCaption).toBeNull();
     expect(warmupView(RAMP140, 1, 'kg', 'kg').addCaption).toBe('+25 kg');
+    expect(warmupView(RAMP140, 4, 'kg', 'kg').addCaption).toBe('off 0.5 + 2.5, on 10 kg');
   });
 
-  it('says "same plates" when the next row repeats the Side', () => {
+  it('captions nothing when the row repeats the previous Side', () => {
     // 30 kg Working set: the 50% row lands on the bare Bar again (sameAsPrevious).
     const rows = planRamp(30, DEFAULT_RAMP, COMP).rows;
     expect(rows[1].sameAsPrevious).toBe(true);
-    expect(warmupView(rows, 0, 'kg', 'kg').next.sub).toBe('same plates');
+    expect(warmupView(rows, 1, 'kg', 'kg').addCaption).toBeNull();
   });
 
   it('clamps the selection into the rows', () => {
@@ -304,7 +288,7 @@ describe('warmupView', () => {
     const v = warmupView(RAMP140, 0, 'lb', 'kg');
     expect(v.steps[4].totalNum).toBe('309');
     expect(v.steps[4].totalUnit).toBe('lb');
-    expect(v.next.sub).toBe('+25 kg per side');
+    expect(warmupView(RAMP140, 1, 'lb', 'kg').addCaption).toBe('+25 kg');
   });
 });
 

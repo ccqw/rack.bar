@@ -10,12 +10,12 @@ import { PLATE_SETS, PLATE_SET_KEYS } from '../lib/platesets.ts';
 import type { PlateSetKey } from '../lib/platesets.ts';
 import { plateFace, withLimits } from '../lib/plates.ts';
 import { GRID_KG, cappedFewestOracle, greatestSumAtOrUnder } from '../lib/fewest.oracle.ts';
-import { displayCeilingKg, draftToKg, format, shownIn } from '../lib/units.ts';
+import { displayCeilingKg, draftToKg, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
 import { DEFAULT_RAMP } from '../lib/plan.ts';
 import {
   SEED, EPS, type Console, resetPool, q, sr, entryRoot, unitBtn, type, modeBtn, sideOnScreen,
-  stairs, nextBtn, commitWorking, statusLabel, nextRun,
+  stairs, commitWorking, statusLabel, nextRun,
 } from './properties.drivers.ts';
 import './app.ts';
 
@@ -167,7 +167,7 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
     // a loaded local run, and CI runners are ~2.5x slower than that.
   }, 30_000);
 
-  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" (name, Next and spoken label) exactly when it drifts past the band off the bare Bar, and the Working set reads short exactly when it is (ADR-0016 as amended, ADR-0015, ADR-0003)', async () => {
+  it('Warm up under the pairs on hand: every stair loads only Plates on hand, reads "~N%" (name and spoken label) exactly when it drifts past the band off the bare Bar, and the Working set reads short exactly when it is (ADR-0016 as amended, ADR-0015, ADR-0003)', async () => {
     // The band as ADR-0015 states it: a Warm-up set further than 5% of the Working Total
     // from its percentage has drifted (RBAR-72 slice 3) -- unless it is the bare Bar,
     // which cannot be lighter. In kg or lb: the working weight is typed in the display
@@ -219,9 +219,6 @@ describe('<rack-app> Pairs of Plates on Hand properties (ADR-0016, ADR-0007)', (
           const aria = stairs(c)[i].getAttribute('aria-label') ?? '';
           if (drifted) expect(aria).toContain(`${step.pct} percent planned, about ${real} percent loaded`);
           else expect(aria).not.toContain('planned');
-          // Next from the row before names the same step and its Total in the unit.
-          stairs(c)[i - 1].click();
-          expect(q(nextBtn(c), '[data-next-label]').textContent).toBe(`Next: ${want} - ${format(loads[i], u)}`);
         });
         expect(names[n - 1]).toBe('Work');
 
