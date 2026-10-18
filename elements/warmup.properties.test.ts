@@ -12,12 +12,15 @@ import { RAMP_BAND } from '../lib/moves.ts';
 import { pushRecent } from '../lib/recents.ts';
 import { draftToKg, displayCeilingKg, displayFloorKg, format, shownIn } from '../lib/units.ts';
 import type { Unit } from '../lib/units.ts';
-import { rampTotalsOracle, achievableTotals, warmWorkingOracle } from '../lib/properties.oracle.ts';
+import {
+  RIGS, rampTotalsOracle, achievableTotals, maxTotal, warmWorkingOracle,
+} from '../lib/properties.oracle.ts';
 import type { Rig } from '../lib/properties.oracle.ts';
 import {
   SEED, EPS, other, fresh, resetPool, q, sr, unitBtn, modeBtn, totalText, sideOnScreen,
   stairs, nextBtn, workDraft, commitWorking, storedRecents, rigDraftCaseArb, nextRun,
-  rigArb, unitArb, tapAdd, type, step, entryDraft, workRoot, expectedFor, statusLabel,
+  rigArb, unitArb, tapAdd, type, step, entryDraft, workRoot, expectedFor,
+  statusEl, statusKind, statusLabel, shownTarget, drawnTotalKg,
 } from './properties.drivers.ts';
 import type { Console } from './properties.drivers.ts';
 
@@ -376,6 +379,127 @@ describe('<rack-console> Warm up properties (RBAR-65, ADR-0005, ADR-0015)', () =
         expect([workDraft(el), ...stairTotals(el)]).toEqual(settled);
       }),
       { seed: SEED, numRuns: 25 },
+    );
+  });
+});
+
+// One lifter action for the mode-switch status property (RBAR-79): a mode toggle, or an
+// input only the mode on screen takes (a typed Target in By Weight, a working weight or
+// a stair in Warm up, a Plate tap in By Plates). An input for another mode is a no-op.
+type SwitchMode = 'decode' | 'encode' | 'warmup';
+type SwitchAct =
+  | { k: 'mode'; m: SwitchMode }
+  | { k: 'type'; d: string }
+  | { k: 'work'; d: string }
+  | { k: 'stair'; i: number }
+  | { k: 'plate'; i: number };
+
+// A weight the lifter could type on `rig` in `u`: a Total's own reading (Exact) or any
+// whole reading up to the rig's reach (mostly short).
+const weightArb = (rig: Rig, u: Unit) =>
+  fc.oneof(
+    fc.constantFrom(...achievableTotals(rig)).map((kg) => String(shownIn(kg, u))),
+    fc.integer({ min: 1, max: Math.round(shownIn(maxTotal(rig), u)) }).map(String),
+  );
+const switchCaseArb = rigArb.chain((rig) =>
+  unitArb.chain((u) =>
+    fc.tuple(
+      fc.constant(rig),
+      fc.constant(u),
+      fc.array(
+        fc.oneof(
+          {
+            weight: 4,
+            arbitrary: fc
+              .constantFrom<SwitchMode>('decode', 'encode', 'warmup')
+              .map((m): SwitchAct => ({ k: 'mode', m })),
+          },
+          { weight: 1, arbitrary: weightArb(rig, u).map((d): SwitchAct => ({ k: 'type', d })) },
+          { weight: 1, arbitrary: weightArb(rig, u).map((d): SwitchAct => ({ k: 'work', d })) },
+          { weight: 1, arbitrary: fc.nat({ max: 4 }).map((i): SwitchAct => ({ k: 'stair', i })) },
+          { weight: 1, arbitrary: fc.nat().map((i): SwitchAct => ({ k: 'plate', i })) },
+        ),
+        { minLength: 1, maxLength: 10 },
+      ),
+    ),
+  ),
+);
+
+describe('<rack-console> mode-switch status properties (RBAR-79, ADR-0003, ADR-0005, ADR-0015)', () => {
+  it('after any mode switch, the pill matches the shown Total vs Target: By Weight shows it whenever it decodes the Target, Warm up whenever it shows a Ramp, By Plates never (RBAR-79, ADR-0003, ADR-0005, ADR-0015)', async () => {
+    // When By Weight decodes on entry (ADR-0015, RBAR-87 amendment): always from Warm
+    // up, and from a By Plates visit that began in Warm up and left the Side as it found
+    // it. Any other By Plates exit is the ADR-0005 carry: no live decode, so no pill.
+    await fc.assert(
+      fc.asyncProperty(switchCaseArb, async ([rig, u, acts]) => {
+        await nextRun();
+        const el = fresh(rig, u);
+        let mode: SwitchMode = 'decode';
+        let peekFrom: SwitchMode | null = null;
+        let sideAtEntry = sideOnScreen(el);
+        for (const a of acts) {
+          if (a.k === 'type' && mode === 'decode') type(el, a.d);
+          else if (a.k === 'work' && mode === 'warmup') commitWorking(el, a.d);
+          else if (a.k === 'stair' && mode === 'warmup') stairs(el)[a.i]?.click();
+          else if (a.k === 'plate' && mode === 'encode') {
+            tapAdd(el, rig.inventory[a.i % rig.inventory.length].kg);
+          }
+          if (a.k !== 'mode' || a.m === mode) continue;
+          const from = mode;
+          const hasTarget = entryDraft(el) !== '';
+          const untouched =
+            JSON.stringify(sideOnScreen(el)) === JSON.stringify(sideAtEntry);
+          if (a.m === 'encode') {
+            peekFrom = from;
+            sideAtEntry = sideOnScreen(el);
+          }
+          modeBtn(el, a.m).click();
+          mode = a.m;
+          const shown = !statusEl(el).hidden;
+          if (mode === 'encode') {
+            // By Plates has no Target to miss (ADR-0005).
+            expect(shown).toBe(false);
+            continue;
+          }
+          if (mode === 'warmup') {
+            expect(shown).toBe(stairs(el).length > 0);
+            continue;
+          }
+          const decodes =
+            hasTarget && (from === 'warmup' || (peekFrom === 'warmup' && untouched));
+          expect(shown).toBe(decodes);
+          if (!shown) continue;
+          // The pill reads the shown Total vs the field's Target, as read (ADR-0010).
+          const target = shownTarget(el, u);
+          const total = shownIn(drawnTotalKg(el, rig), u);
+          const mag = String(Number(Math.abs(target - total).toFixed(2)));
+          expect(statusLabel(el)).toBe(
+            total === target ? 'Exact' : `${mag} ${u} ${total < target ? 'short' : 'over'}`,
+          );
+          const kinds =
+            total === target ? ['exact'] : total > target ? ['over'] : ['short', 'capacity'];
+          expect(kinds).toContain(statusKind(el));
+        }
+      }),
+      {
+        seed: SEED,
+        numRuns: 40,
+        // The ticket's repro: Warm up, Working set 115 kg selected, then By Weight.
+        examples: [
+          [
+            [
+              RIGS[0],
+              'kg',
+              [
+                { k: 'mode', m: 'warmup' },
+                { k: 'work', d: '115' },
+                { k: 'stair', i: 4 },
+                { k: 'mode', m: 'decode' },
+              ],
+            ],
+          ],
+        ],
+      },
     );
   });
 });
