@@ -173,3 +173,7 @@ Measured at 393x852 standalone (By Weight 112 kg / By Plates / Warm up Working s
 sleeve 235 / 235 / 231px (the drawn block 261 / 261 / 257px), bumper 227 / 227 / 223px
 (was 168), leftover under the Bar 107 / 23 / 0px, strip 0, over 0; the Bar never moves
 between modes. The four Safari viewports' fit-check lines are identical to main's.
+
+A desktop-installed app also matches `display-mode: standalone`. There the column is at
+most 520px wide, so a bumper may reach about 338px; the height and width fits still
+bound it, which is the rule as intended (the Bar scales with the room it has).
