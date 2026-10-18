@@ -15,4 +15,3 @@ export const GEAR_GLYPH =
 
 // Back to the calculator: a left chevron (viewBox 0 0 16 16).
 export const BACK_GLYPH = '<path d="M10 3L5 8l5 5"></path>';
-

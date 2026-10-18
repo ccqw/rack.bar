@@ -11,7 +11,8 @@ type Pt = [number, number];
 type Seg = [Pt, Pt];
 
 // The straight segments of an SVG path (M L H V Q Z, absolute or relative; a Q curve
-// counts as the chord to its end point, which is all the corner rounding needs).
+// counts as the chord to its end point, which is all the corner rounding needs). Arcs are
+// not parsed and throw: a hand-drawn glyph with arcs must be measured another way.
 function segments(d: string): Seg[] {
   const tokens = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
   const out: Seg[] = [];

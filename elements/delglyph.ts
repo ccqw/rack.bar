@@ -55,12 +55,8 @@ const cross =
   `M${pt(BODY_MID_X - X_HALF, MID_Y - X_HALF)}L${pt(BODY_MID_X + X_HALF, MID_Y + X_HALF)}` +
   `M${pt(BODY_MID_X + X_HALF, MID_Y - X_HALF)}L${pt(BODY_MID_X - X_HALF, MID_Y + X_HALF)}`;
 
-// The two path strings, exported for the geometry test.
-export const DEL_OUTLINE_D = outline;
-export const DEL_CROSS_D = cross;
-
 // The whole glyph, ready to drop into a key.
 export const DEL_ICON =
   '<svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" ' +
   'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">' +
-  `<path d="${DEL_OUTLINE_D}"></path><path d="${DEL_CROSS_D}"></path></svg>`;
+  `<path d="${outline}"></path><path d="${cross}"></path></svg>`;
